@@ -7,7 +7,7 @@ Updated: 19 July 2026
 - Product and architecture decisions are documented.
 - A shared Flutter project targets Windows and Android from one codebase.
 - A local Git repository exists on `main`; no remote or license has been created.
-- The generated counter application is only a verified scaffold, not a product feature.
+- The first product shell replaces the generated counter application.
 - Repository visibility remains undecided pending legal/source-adapter review.
 
 ## Verified foundation
@@ -17,7 +17,7 @@ Updated: 19 July 2026
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
 - `flutter analyze` passes with no issues.
-- The generated Flutter test passes.
+- `flutter analyze` passes and five model/widget tests pass.
 - `flutter build windows --release` produces `music_tabbler.exe`.
 - `flutter build apk --debug` produces a 146,210,932-byte debug APK.
 
@@ -36,6 +36,23 @@ Updated: 19 July 2026
 - Persistent per-device light/dark preference; gig mode first-install default is light content on black.
 - State import must be staged, checksummed, backed up, transactional, and non-destructive on failure.
 
+## Implemented first product slice
+
+- Responsive Song Pool, Gigs, and New / Import navigation for desktop and tablet-sized layouts.
+- An immutable semantic bass-chart model with BEADG tuning, measures, notes, durations, sections, and syllable-aligned lyrics.
+- A custom stage-oriented renderer with string lines cleared behind fret numbers, rhythm stems, measure labels, lyrics, and a simple standard-notation view.
+- Independent tablature, standard-notation, and title/artist visibility controls.
+- Direct note editing for string, fret, and duration, plus backing-vocal assignment and main-vocal contrast.
+- A direct URL intake field in the New / Import area as a clearly labelled workflow preview.
+- Dark and light app themes selectable for the current run.
+
+## Current limitations
+
+- Song data and theme preferences are not persisted yet.
+- File, image, clipboard, PDF, and URL imports are not connected yet.
+- The notation painter is an early semantic rendering spike, not full engraving.
+- PDF export, setlist storage, OCR/OMR, safe state transfer, Android gig mode, and source adapters remain future slices.
+
 ## Reference examples (external, not committed)
 
 - `9mm.pdf`: four A4 pages with standard notation and bass tab.
@@ -47,8 +64,8 @@ Updated: 19 July 2026
 
 ### Slice 1 - foundation and visual fallback
 
-- **In progress:** Flutter, Windows/Android targets, local Git, and both platform builds are verified.
-- Establish domain packages, SQLite repository boundary, asset storage, migrations, and deterministic layout primitives.
+- **In progress:** Flutter, Windows/Android targets, local Git, product navigation, an initial semantic domain model, renderer, editor, and both platform builds are verified.
+- Establish the SQLite repository boundary, asset storage, migrations, and deterministic A4 layout primitives.
 - Implement song pool, song creation, PDF/PNG/JPEG/clipboard import, cropping/arrangement, simple annotations, and A4 single-song export.
 - Add title/artist and notation visibility controls without committing to OCR.
 
