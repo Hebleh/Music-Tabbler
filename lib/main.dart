@@ -1,45 +1,53 @@
 import 'package:flutter/material.dart';
 
-import 'features/home/home_screen.dart';
+import 'app.dart';
+import 'application/app_services.dart';
+import 'application/pdf_export_service.dart';
+import 'application/visual_import_service.dart';
+import 'infrastructure/local_library.dart';
 
-void main() {
-  runApp(const MusicTabblerApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    final library = await LocalLibrary.open();
+    runApp(
+      MusicTabblerApp(
+        services: AppServices(
+          library: library,
+          importer: VisualImportService(library),
+          exporter: PdfExportService(library),
+        ),
+      ),
+    );
+  } catch (error) {
+    runApp(_StartupErrorApp(error: error));
+  }
 }
 
-class MusicTabblerApp extends StatefulWidget {
-  const MusicTabblerApp({super.key});
+class _StartupErrorApp extends StatelessWidget {
+  const _StartupErrorApp({required this.error});
 
-  @override
-  State<MusicTabblerApp> createState() => _MusicTabblerAppState();
-}
-
-class _MusicTabblerAppState extends State<MusicTabblerApp> {
-  var _isDark = true;
+  final Object error;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Music Tabbler',
-      debugShowCheckedModeBanner: false,
-      themeMode: _isDark ? ThemeMode.dark : ThemeMode.light,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF315CBA),
-          brightness: Brightness.light,
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 52),
+                const SizedBox(height: 12),
+                const Text('Music Tabbler could not open its local library.'),
+                const SizedBox(height: 8),
+                SelectableText(error.toString()),
+              ],
+            ),
+          ),
         ),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8CB4FF),
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF101216),
-        useMaterial3: true,
-      ),
-      home: HomeScreen(
-        isDark: _isDark,
-        onToggleTheme: () => setState(() => _isDark = !_isDark),
       ),
     );
   }

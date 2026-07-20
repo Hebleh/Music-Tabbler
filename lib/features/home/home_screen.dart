@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 
+import '../../application/app_services.dart';
+import '../../domain/visual_chart_models.dart';
 import '../chart/chart_editor_screen.dart';
+import '../import/visual_import_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
+    required this.services,
     required this.onToggleTheme,
     required this.isDark,
   });
 
+  final AppServices services;
   final VoidCallback onToggleTheme;
   final bool isDark;
 
@@ -18,12 +23,35 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   var _selectedIndex = 0;
+  late Future<List<VisualChartDraft>> _drafts;
+
+  @override
+  void initState() {
+    super.initState();
+    _reloadDrafts();
+  }
+
+  void _reloadDrafts() {
+    _drafts = widget.services.library.listDrafts();
+  }
+
+  Future<void> _openVisualEditor([VisualChartDraft? draft]) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            VisualImportScreen(services: widget.services, initialDraft: draft),
+      ),
+    );
+    if (mounted) setState(_reloadDrafts);
+  }
 
   @override
   Widget build(BuildContext context) {
     final pages = [
       _SongPool(
-        onOpenChart: () => Navigator.of(context).push(
+        drafts: _drafts,
+        onOpenVisual: _openVisualEditor,
+        onOpenSemantic: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ChartEditorScreen(
               onToggleTheme: widget.onToggleTheme,
@@ -33,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       const _GigsAndSetlists(),
-      const _ImportSource(),
+      _ImportSource(onStartVisual: _openVisualEditor),
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -114,31 +142,106 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _SongPool extends StatelessWidget {
-  const _SongPool({required this.onOpenChart});
+  const _SongPool({
+    required this.drafts,
+    required this.onOpenVisual,
+    required this.onOpenSemantic,
+  });
 
-  final VoidCallback onOpenChart;
+  final Future<List<VisualChartDraft>> drafts;
+  final ValueChanged<VisualChartDraft?> onOpenVisual;
+  final VoidCallback onOpenSemantic;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        Text('Song Pool', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 6),
-        Text(
-          'Processed songs, tunings, chart variants, lyrics and annotations.',
-          style: Theme.of(context).textTheme.bodyLarge,
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Song Pool',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Saved visual charts and semantic song variants.',
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ],
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: () => onOpenVisual(null),
+              icon: const Icon(Icons.add),
+              label: const Text('New visual chart'),
+            ),
+          ],
         ),
         const SizedBox(height: 24),
+        FutureBuilder<List<VisualChartDraft>>(
+          future: drafts,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Card(
+                child: ListTile(
+                  leading: const Icon(Icons.error_outline),
+                  title: const Text('Saved charts could not be loaded'),
+                  subtitle: Text(snapshot.error.toString()),
+                ),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final items = snapshot.data!;
+            if (items.isEmpty) {
+              return const Card(
+                child: ListTile(
+                  leading: Icon(Icons.photo_library_outlined),
+                  title: Text('No saved visual charts yet'),
+                  subtitle: Text(
+                    'Import screenshots or a PDF to create the first one.',
+                  ),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (final draft in items)
+                  Card(
+                    child: ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.view_stream),
+                      ),
+                      title: Text(draft.title),
+                      subtitle: Text(
+                        '${draft.artist.isEmpty ? 'Unknown artist' : draft.artist} - ${draft.strips.length} row(s)',
+                      ),
+                      trailing: FilledButton(
+                        onPressed: () => onOpenVisual(draft),
+                        child: const Text('Open'),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 16),
         Card(
           child: ListTile(
             leading: const CircleAvatar(child: Icon(Icons.music_note)),
             title: const Text('Foundation Groove'),
             subtitle: const Text(
-              'Music Tabbler • 5-string BEADG • Semantic sample',
+              'Music Tabbler - 5-string BEADG - Semantic sample',
             ),
             trailing: FilledButton(
-              onPressed: onOpenChart,
+              onPressed: onOpenSemantic,
               child: const Text('Open sample chart'),
             ),
           ),
@@ -170,7 +273,7 @@ class _GigsAndSetlists extends StatelessWidget {
             leading: Icon(Icons.event),
             title: Text('16 August 2026'),
             subtitle: Text(
-              'Setlist and gig mode will be built on this shared shell.',
+              'Setlist persistence and gig mode are a later slice.',
             ),
           ),
         ),
@@ -180,7 +283,9 @@ class _GigsAndSetlists extends StatelessWidget {
 }
 
 class _ImportSource extends StatelessWidget {
-  const _ImportSource();
+  const _ImportSource({required this.onStartVisual});
+
+  final ValueChanged<VisualChartDraft?> onStartVisual;
 
   @override
   Widget build(BuildContext context) {
@@ -190,7 +295,7 @@ class _ImportSource extends StatelessWidget {
         Text('New / Import', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 6),
         const Text(
-          'A chosen source link comes first; local material is always available as fallback.',
+          'Local screenshot and PDF import is available now. Source links remain future adapters.',
         ),
         const SizedBox(height: 24),
         TextField(
@@ -206,21 +311,25 @@ class _ImportSource extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        const Wrap(
+        Wrap(
           spacing: 12,
           runSpacing: 12,
           children: [
             _ImportCard(
-              icon: Icons.image_outlined,
-              title: 'Screenshots & images',
-              detail: 'PNG and JPEG crop/arrange is the first importer.',
+              icon: Icons.view_stream_outlined,
+              title: 'Visual chart workflow',
+              detail:
+                  'Import images, clipboard screenshots, or PDF pages; crop and arrange rows.',
+              buttonLabel: 'Start',
+              onPressed: () => onStartVisual(null),
             ),
-            _ImportCard(
-              icon: Icons.picture_as_pdf_outlined,
-              title: 'PDF score or tab',
-              detail: 'Extract visual regions, then convert or retain them.',
+            const _ImportCard(
+              icon: Icons.auto_fix_high_outlined,
+              title: 'Semantic recognition',
+              detail:
+                  'OCR and note conversion will build on saved source assets later.',
             ),
-            _ImportCard(
+            const _ImportCard(
               icon: Icons.search,
               title: 'Search sources',
               detail: 'Secondary workflow when no specific version is chosen.',
@@ -237,16 +346,20 @@ class _ImportCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.detail,
+    this.buttonLabel,
+    this.onPressed,
   });
 
   final IconData icon;
   final String title;
   final String detail;
+  final String? buttonLabel;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 260,
+      width: 280,
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(18),
@@ -258,6 +371,10 @@ class _ImportCard extends StatelessWidget {
               Text(title, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 6),
               Text(detail),
+              if (buttonLabel != null) ...[
+                const SizedBox(height: 14),
+                FilledButton(onPressed: onPressed, child: Text(buttonLabel!)),
+              ],
             ],
           ),
         ),

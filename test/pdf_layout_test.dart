@@ -1,0 +1,31 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:music_tabbler/application/pdf_export_service.dart';
+
+void main() {
+  test(
+    'A4 layout stacks strips in one column and adds a page before overflow',
+    () {
+      const layout = A4StripLayout();
+
+      final pages = layout.plan(List.filled(6, 4.0));
+
+      expect(pages, hasLength(2));
+      expect(pages.first.strips, hasLength(5));
+      expect(pages.last.strips, hasLength(1));
+      expect(
+        pages.expand((page) => page.strips).map((strip) => strip.index),
+        orderedEquals([0, 1, 2, 3, 4, 5]),
+      );
+    },
+  );
+
+  test('an A4-shaped source page is reduced only enough to fit one page', () {
+    const layout = A4StripLayout();
+
+    final pages = layout.plan([595.28 / 841.89]);
+    final strip = pages.single.strips.single;
+
+    expect(strip.height, lessThanOrEqualTo(841.89 - 44 - 28));
+    expect(strip.width / strip.height, closeTo(595.28 / 841.89, 0.0001));
+  });
+}

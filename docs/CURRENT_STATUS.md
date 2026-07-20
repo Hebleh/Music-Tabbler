@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 19 July 2026
+Updated: 20 July 2026
 
 ## Repository state
 
@@ -16,10 +16,9 @@ Updated: 19 July 2026
 - `flutter doctor -v` reports no issues for Windows or Android.
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
-- `flutter analyze` passes with no issues.
-- `flutter analyze` passes and five model/widget tests pass.
+- `flutter analyze` passes with no issues, and 13 model, persistence, image-processing, PDF, and widget tests pass.
 - `flutter build windows --release` produces `music_tabbler.exe`.
-- `flutter build apk --debug` produces a 146,210,932-byte debug APK.
+- `flutter build apk --debug` produces an installable debug APK.
 
 ## Confirmed product decisions
 
@@ -36,7 +35,7 @@ Updated: 19 July 2026
 - Persistent per-device light/dark preference; gig mode first-install default is light content on black.
 - State import must be staged, checksummed, backed up, transactional, and non-destructive on failure.
 
-## Implemented first product slice
+## Implemented product slices
 
 - Responsive Song Pool, Gigs, and New / Import navigation for desktop and tablet-sized layouts.
 - An immutable semantic bass-chart model with BEADG tuning, measures, notes, durations, sections, and syllable-aligned lyrics.
@@ -46,12 +45,25 @@ Updated: 19 July 2026
 - A direct URL intake field in the New / Import area as a clearly labelled workflow preview.
 - Dark and light app themes selectable for the current run.
 
+### Manual visual-chart workflow
+
+- PNG/JPEG screenshots and multi-page PDFs can be imported into an editable visual-chart draft.
+- Windows can also paste a bitmap directly from the clipboard; Android uses image/PDF file picking in this iteration.
+- Imports are normalized into immutable, SHA-256-addressed local assets and catalogued in SQLite.
+- A chart is arranged as full-width horizontal tab rows. Rows can be reordered, duplicated, cropped, or removed without changing the source asset.
+- Each row can use Original, Grayscale, Invert, or High contrast treatment, with a whole-tab dropdown to apply one treatment in one action.
+- Existing screenshot lyrics remain part of the source image. A lyric band can receive adjustable contrast and multiple translucent backing-vocal highlight regions.
+- Named drafts persist in Song Pool and reopen with their crop, ordering, display, lyric-band, and highlight edits intact.
+- A4 export uses deterministic, one-column pagination with optional compact title/artist headers and never includes provenance metadata.
+- The real `9mm (squeezed).pdf` reference was imported, split into rows, exported, rendered back to PNG, and visually inspected as a two-page A4 result.
+
 ## Current limitations
 
-- Song data and theme preferences are not persisted yet.
-- File, image, clipboard, PDF, and URL imports are not connected yet.
+- Semantic sample-song data and theme preferences are not persisted yet; visual-chart drafts are persisted.
+- Direct URL import is still a workflow placeholder. Image/PDF intake works on Windows and Android; clipboard-image paste is currently Windows-only.
 - The notation painter is an early semantic rendering spike, not full engraving.
-- PDF export, setlist storage, OCR/OMR, safe state transfer, Android gig mode, and source adapters remain future slices.
+- Setlist storage/export, OCR/OMR, safe state transfer, Android gig mode, source adapters, semantic lyric editing, and note editing for imported visual charts remain future slices.
+- `file_picker` is pinned to 10.3.10 because its current 11.x Android plugin assumes Flutter's built-in Kotlin migration; the app builds successfully today but reports a future Kotlin-migration warning.
 
 ## Reference examples (external, not committed)
 
@@ -64,10 +76,11 @@ Updated: 19 July 2026
 
 ### Slice 1 - foundation and visual fallback
 
-- **In progress:** Flutter, Windows/Android targets, local Git, product navigation, an initial semantic domain model, renderer, editor, and both platform builds are verified.
-- Establish the SQLite repository boundary, asset storage, migrations, and deterministic A4 layout primitives.
-- Implement song pool, song creation, PDF/PNG/JPEG/clipboard import, cropping/arrangement, simple annotations, and A4 single-song export.
-- Add title/artist and notation visibility controls without committing to OCR.
+- **Complete:** Flutter, Windows/Android targets, local Git, product navigation, an initial semantic domain model, renderer, editor, and both platform builds are verified.
+- **Complete:** Establish the SQLite repository boundary, content-addressed asset storage, schema-v1 draft persistence, and deterministic A4 layout primitives.
+- **Complete:** Implement visual Song Pool drafts, PDF/PNG/JPEG intake, Windows clipboard intake, cropping/arrangement, reversible lyric emphasis, and A4 single-song export.
+- **Complete:** Add compact title/artist PDF visibility and per-row/whole-tab display treatments without committing to OCR.
+- **Next:** Exercise the manual flow on a physical Android tablet, tune stage-readable density with real Songsterr screenshots, and add ordered setlist PDF export.
 
 ### Slice 2 - semantic editor
 
