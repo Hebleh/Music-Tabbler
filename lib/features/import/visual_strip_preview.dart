@@ -1,13 +1,14 @@
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../application/visual_image_processor.dart';
 import '../../application/service_contracts.dart';
+import '../../application/visual_image_processor.dart';
 import '../../domain/visual_chart_models.dart';
 
-class VisualStripPreview extends StatelessWidget {
+class VisualStripPreview extends StatefulWidget {
   const VisualStripPreview({
     super.key,
     required this.library,
@@ -20,33 +21,106 @@ class VisualStripPreview extends StatelessWidget {
   final VisualTreatment? globalTreatment;
 
   @override
+  State<VisualStripPreview> createState() => _VisualStripPreviewState();
+}
+
+class _VisualStripPreviewState extends State<VisualStripPreview> {
+  late Future<Uint8List> _future;
+  late String _cacheKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  @override
+  void didUpdateWidget(covariant VisualStripPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextKey = _keyFor(widget.strip, widget.globalTreatment);
+    if (nextKey != _cacheKey) _refresh();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Uint8List>(
-      future: _render(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(child: Text('Preview unavailable'));
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return Image.memory(
-          snapshot.data!,
-          key: ValueKey('${strip.id}-${strip.toJson()}-$globalTreatment'),
-          fit: BoxFit.contain,
-          gaplessPlayback: true,
-        );
-      },
+    return RepaintBoundary(
+      child: FutureBuilder<Uint8List>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(child: Text('Preview unavailable'));
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return Image.memory(
+            snapshot.data!,
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+          );
+        },
+      ),
     );
   }
 
-  Future<Uint8List> _render() async {
-    final file = File(library.assetPath(strip.assetHash, strip.assetExtension));
-    final bytes = await file.readAsBytes();
-    return const VisualImageProcessor().process(
-      bytes,
-      strip,
-      globalTreatment: globalTreatment,
-    );
+  void _refresh() {
+    _cacheKey = _keyFor(widget.strip, widget.globalTreatment);
+    _future = _PreviewCache.load(_cacheKey, () async {
+      final file = File(
+        widget.library.assetPath(
+          widget.strip.assetHash,
+          widget.strip.assetExtension,
+        ),
+      );
+      final bytes = await file.readAsBytes();
+      return compute(_renderPreview, <String, Object?>{
+        'bytes': bytes,
+        'strip': widget.strip.toJson(),
+        'globalTreatment': widget.globalTreatment?.name,
+      });
+    });
   }
+
+  String _keyFor(VisualStrip strip, VisualTreatment? treatment) =>
+      '${strip.assetHash}:${jsonEncode(strip.toJson())}:${treatment?.name}';
+}
+
+class _PreviewCache {
+  static const maxEntries = 24;
+  static final Map<String, Future<Uint8List>> _items = {};
+
+  static Future<Uint8List> load(
+    String key,
+    Future<Uint8List> Function() create,
+  ) {
+    final existing = _items.remove(key);
+    if (existing != null) {
+      _items[key] = existing;
+      return existing;
+    }
+    final future = create();
+    _items[key] = future;
+    if (_items.length > maxEntries) _items.remove(_items.keys.first);
+    future.catchError((Object _) {
+      _items.remove(key);
+      return Uint8List(0);
+    });
+    return future;
+  }
+}
+
+Uint8List _renderPreview(Map<String, Object?> request) {
+  final strip = VisualStrip.fromJson(
+    (request['strip']! as Map).cast<String, Object?>(),
+  );
+  final treatmentName = request['globalTreatment'] as String?;
+  return const VisualImageProcessor().process(
+    request['bytes']! as Uint8List,
+    strip,
+    globalTreatment: treatmentName == null
+        ? null
+        : VisualTreatment.values.byName(treatmentName),
+    maxWidth: 1400,
+  );
 }

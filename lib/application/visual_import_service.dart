@@ -60,6 +60,44 @@ class VisualImportService implements VisualImporter {
     return importImage(bytes, 'png');
   }
 
+  @override
+  Future<List<VisualStrip>> importPaths(Iterable<String> paths) async {
+    final files = <File>[];
+    for (final path in paths) {
+      final type = FileSystemEntity.typeSync(path, followLinks: false);
+      if (type == FileSystemEntityType.directory) {
+        final directoryFiles = Directory(path)
+            .listSync(recursive: true, followLinks: false)
+            .whereType<File>()
+            .where((file) => _isSupportedPath(file.path));
+        files.addAll(directoryFiles);
+      } else if (type == FileSystemEntityType.file && _isSupportedPath(path)) {
+        files.add(File(path));
+      }
+    }
+    files.sort(
+      (left, right) =>
+          left.path.toLowerCase().compareTo(right.path.toLowerCase()),
+    );
+    if (files.isEmpty) {
+      throw const VisualImportException(
+        'Drop PNG, JPEG, or PDF files, or a folder containing them.',
+      );
+    }
+
+    final strips = <VisualStrip>[];
+    for (final file in files) {
+      final extension = p.extension(file.path).toLowerCase();
+      final bytes = await file.readAsBytes();
+      if (extension == '.pdf') {
+        strips.addAll(await importPdf(bytes));
+      } else {
+        strips.add(await importImage(bytes, extension));
+      }
+    }
+    return strips;
+  }
+
   Future<VisualStrip> importImage(List<int> bytes, String extension) async {
     final decoded = img.decodeImage(Uint8List.fromList(bytes));
     if (decoded == null) {
@@ -142,5 +180,14 @@ class VisualImportService implements VisualImporter {
       'jpg' || 'png' => extension,
       _ => 'png',
     };
+  }
+
+  bool _isSupportedPath(String path) {
+    return const {
+      '.png',
+      '.jpg',
+      '.jpeg',
+      '.pdf',
+    }.contains(p.extension(path).toLowerCase());
   }
 }

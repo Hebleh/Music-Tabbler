@@ -3,6 +3,8 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  desktop_drop
+  flutter_ocr_native
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

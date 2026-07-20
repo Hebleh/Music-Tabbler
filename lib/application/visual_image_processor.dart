@@ -11,15 +11,33 @@ class VisualImageProcessor {
     Uint8List sourceBytes,
     VisualStrip strip, {
     VisualTreatment? globalTreatment,
+    int? maxWidth,
   }) {
     var image = img.decodeImage(sourceBytes);
     if (image == null) {
       throw const FormatException('Stored chart image is invalid.');
     }
     image = img.bakeOrientation(image);
+    final crop = _pixelRect(strip.crop, image.width, image.height);
+    image = img.copyCrop(
+      image,
+      x: crop.x,
+      y: crop.y,
+      width: crop.width,
+      height: crop.height,
+    );
+    if (maxWidth != null && image.width > maxWidth) {
+      image = img.copyResize(
+        image,
+        width: maxWidth,
+        interpolation: img.Interpolation.linear,
+      );
+    }
     image = _applyTreatment(image, globalTreatment ?? strip.treatment);
 
-    final lyricBand = strip.lyricBand;
+    final lyricBand = strip.lyricBand == null
+        ? null
+        : _relativeToCrop(strip.lyricBand!, strip.crop);
     if (lyricBand != null && strip.lyricContrast != 1) {
       final contrasted = img.adjustColor(
         img.Image.from(image),
@@ -42,7 +60,9 @@ class VisualImageProcessor {
     }
 
     for (final highlight in strip.highlights) {
-      final rect = _pixelRect(highlight.rect, image.width, image.height);
+      final relative = _relativeToCrop(highlight.rect, strip.crop);
+      if (relative == null) continue;
+      final rect = _pixelRect(relative, image.width, image.height);
       img.fillRect(
         image,
         x1: rect.x,
@@ -54,15 +74,7 @@ class VisualImageProcessor {
       );
     }
 
-    final crop = _pixelRect(strip.crop, image.width, image.height);
-    final cropped = img.copyCrop(
-      image,
-      x: crop.x,
-      y: crop.y,
-      width: crop.width,
-      height: crop.height,
-    );
-    return Uint8List.fromList(img.encodePng(cropped, level: 6));
+    return Uint8List.fromList(img.encodePng(image, level: 3));
   }
 
   img.Image _applyTreatment(img.Image image, VisualTreatment treatment) {
@@ -83,6 +95,20 @@ class VisualImageProcessor {
     final right = (rect.right * width).ceil().clamp(x + 1, width);
     final bottom = (rect.bottom * height).ceil().clamp(y + 1, height);
     return _PixelRect(x, y, right - x, bottom - y);
+  }
+
+  NormalizedRect? _relativeToCrop(NormalizedRect rect, NormalizedRect crop) {
+    final left = rect.left > crop.left ? rect.left : crop.left;
+    final top = rect.top > crop.top ? rect.top : crop.top;
+    final right = rect.right < crop.right ? rect.right : crop.right;
+    final bottom = rect.bottom < crop.bottom ? rect.bottom : crop.bottom;
+    if (right <= left || bottom <= top) return null;
+    return NormalizedRect(
+      (left - crop.left) / crop.width,
+      (top - crop.top) / crop.height,
+      (right - crop.left) / crop.width,
+      (bottom - crop.top) / crop.height,
+    ).clamp();
   }
 }
 

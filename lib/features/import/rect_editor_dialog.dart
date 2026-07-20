@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../domain/visual_chart_models.dart';
+import 'resizable_rect_overlay.dart';
 
 class RectEditorDialog extends StatefulWidget {
   const RectEditorDialog({
@@ -51,62 +52,10 @@ class _RectEditorDialogState extends State<RectEditorDialog> {
                       fit: StackFit.expand,
                       children: [
                         Image.file(File(widget.imagePath), fit: BoxFit.fill),
-                        Positioned.fromRect(
-                          rect: Rect.fromLTRB(
-                            _rect.left * width,
-                            _rect.top * height,
-                            _rect.right * width,
-                            _rect.bottom * height,
-                          ),
-                          child: GestureDetector(
-                            onPanUpdate: (details) {
-                              final dx = details.delta.dx / width;
-                              final dy = details.delta.dy / height;
-                              _setRect(
-                                NormalizedRect(
-                                  _rect.left + dx,
-                                  _rect.top + dy,
-                                  _rect.right + dx,
-                                  _rect.bottom + dy,
-                                ),
-                              );
-                            },
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: Colors.amber.withValues(alpha: 0.16),
-                                border: Border.all(
-                                  color: Colors.amber,
-                                  width: 3,
-                                ),
-                              ),
-                              child: Align(
-                                alignment: Alignment.bottomRight,
-                                child: GestureDetector(
-                                  onPanUpdate: (details) {
-                                    _setRect(
-                                      NormalizedRect(
-                                        _rect.left,
-                                        _rect.top,
-                                        (_rect.right + details.delta.dx / width)
-                                            .clamp(_rect.left + 0.01, 1.5),
-                                        (_rect.bottom +
-                                                details.delta.dy / height)
-                                            .clamp(_rect.top + 0.01, 1.5),
-                                      ),
-                                    );
-                                  },
-                                  child: const SizedBox(
-                                    width: 34,
-                                    height: 34,
-                                    child: Icon(
-                                      Icons.drag_handle,
-                                      color: Colors.amber,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
+                        ResizableRectOverlay(
+                          rect: _rect,
+                          canvasSize: Size(width, height),
+                          onChanged: _setRect,
                         ),
                       ],
                     );
@@ -115,7 +64,7 @@ class _RectEditorDialogState extends State<RectEditorDialog> {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Drag the box to move it. Drag the lower-right handle to resize. Fine-tune below.',
+                'Drag the box to move it. Use any edge or corner handle to resize. Fine-tune below.',
               ),
               _edgeSlider('Left', _rect.left, 0, _rect.right - 0.01, (value) {
                 _setRect(

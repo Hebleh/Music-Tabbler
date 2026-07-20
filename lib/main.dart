@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'application/app_services.dart';
 import 'application/pdf_export_service.dart';
+import 'application/text_recognition_service.dart';
 import 'application/visual_import_service.dart';
 import 'infrastructure/local_library.dart';
 
@@ -16,6 +17,7 @@ Future<void> main() async {
           library: library,
           importer: VisualImportService(library),
           exporter: PdfExportService(library),
+          textRecognition: NativeTextRecognitionService(library),
         ),
       ),
     );

@@ -1,9 +1,15 @@
+import 'dart:async';
+
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../application/app_services.dart';
 import '../../application/service_contracts.dart';
 import '../../domain/visual_chart_models.dart';
+import 'multi_row_split_dialog.dart';
 import 'rect_editor_dialog.dart';
+import 'text_highlighter_dialog.dart';
 import 'visual_strip_preview.dart';
 
 class VisualImportScreen extends StatefulWidget {
@@ -24,7 +30,9 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   late VisualChartDraft _draft;
   late final TextEditingController _titleController;
   late final TextEditingController _artistController;
+  late final FocusNode _shortcutFocusNode;
   bool _busy = false;
+  bool _dragging = false;
 
   @override
   void initState() {
@@ -41,157 +49,241 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         );
     _titleController = TextEditingController(text: _draft.title);
     _artistController = TextEditingController(text: _draft.artist);
+    _shortcutFocusNode = FocusNode(debugLabel: 'Visual editor shortcuts');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _shortcutFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _artistController.dispose();
+    _shortcutFocusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Visual chart editor'),
-        actions: [
-          TextButton.icon(
-            onPressed: _busy ? null : _save,
-            icon: const Icon(Icons.save_outlined),
-            label: const Text('Save'),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: _busy || _draft.strips.isEmpty ? null : _export,
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: const Text('Export A4'),
-          ),
-          const SizedBox(width: 16),
-        ],
-      ),
-      body: Column(
-        children: [
-          Material(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _titleController,
-                          decoration: const InputDecoration(
-                            labelText: 'Song title',
-                            border: OutlineInputBorder(),
-                          ),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true):
+            _pasteShortcut,
+      },
+      child: Focus(
+        focusNode: _shortcutFocusNode,
+        autofocus: true,
+        child: DropTarget(
+          onDragEntered: (_) => setState(() => _dragging = true),
+          onDragExited: (_) => setState(() => _dragging = false),
+          onDragDone: _importDropped,
+          child: Stack(
+            children: [
+              Scaffold(
+                appBar: AppBar(
+                  title: const Text('Visual chart editor'),
+                  actions: [
+                    TextButton.icon(
+                      onPressed: _busy ? null : _save,
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('Save'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _busy || _draft.strips.isEmpty
+                          ? null
+                          : _export,
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                      label: const Text('Export A4'),
+                    ),
+                    const SizedBox(width: 16),
+                  ],
+                ),
+                body: Column(
+                  children: [
+                    Material(
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _titleController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Song title',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _artistController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Artist',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                DropdownButton<VisualTreatment?>(
+                                  value: _draft.globalTreatment,
+                                  hint: const Text('Per-strip display'),
+                                  onChanged: (value) => setState(() {
+                                    _draft = value == null
+                                        ? _draft.copyWith(
+                                            clearGlobalTreatment: true,
+                                          )
+                                        : _draft.copyWith(
+                                            globalTreatment: value,
+                                          );
+                                  }),
+                                  items: [
+                                    const DropdownMenuItem<VisualTreatment?>(
+                                      value: null,
+                                      child: Text('Per-strip display'),
+                                    ),
+                                    ...VisualTreatment.values.map(
+                                      (value) =>
+                                          DropdownMenuItem<VisualTreatment?>(
+                                            value: value,
+                                            child: Text(
+                                              'Whole tab: ${value.label}',
+                                            ),
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(width: 12),
+                                FilterChip(
+                                  label: const Text('Title / artist in PDF'),
+                                  selected: _draft.showHeader,
+                                  onSelected: (value) => setState(() {
+                                    _draft = _draft.copyWith(showHeader: value);
+                                  }),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                FilledButton.tonalIcon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _add(_ImportKind.images),
+                                  icon: const Icon(
+                                    Icons.add_photo_alternate_outlined,
+                                  ),
+                                  label: const Text('Add PNG / JPEG'),
+                                ),
+                                FilledButton.tonalIcon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _add(_ImportKind.pdf),
+                                  icon: const Icon(
+                                    Icons.picture_as_pdf_outlined,
+                                  ),
+                                  label: const Text('Add PDF'),
+                                ),
+                                FilledButton.tonalIcon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _add(_ImportKind.clipboard),
+                                  icon: const Icon(
+                                    Icons.content_paste_outlined,
+                                  ),
+                                  label: const Text('Paste image (Ctrl+V)'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _busy || _draft.strips.isEmpty
+                                      ? null
+                                      : () => _recognizeMetadata(
+                                          _draft.strips.first,
+                                        ),
+                                  icon: const Icon(
+                                    Icons.auto_fix_high_outlined,
+                                  ),
+                                  label: const Text('Detect title / artist'),
+                                ),
+                                if (_busy)
+                                  const SizedBox.square(
+                                    dimension: 28,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 3,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'You can also drag images, PDFs, or an entire screenshot folder anywhere into this editor.',
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _artistController,
-                          decoration: const InputDecoration(
-                            labelText: 'Artist',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      DropdownButton<VisualTreatment?>(
-                        value: _draft.globalTreatment,
-                        hint: const Text('Per-strip display'),
-                        onChanged: (value) => setState(() {
-                          _draft = value == null
-                              ? _draft.copyWith(clearGlobalTreatment: true)
-                              : _draft.copyWith(globalTreatment: value);
-                        }),
-                        items: [
-                          const DropdownMenuItem<VisualTreatment?>(
-                            value: null,
-                            child: Text('Per-strip display'),
-                          ),
-                          ...VisualTreatment.values.map(
-                            (value) => DropdownMenuItem<VisualTreatment?>(
-                              value: value,
-                              child: Text('Whole tab: ${value.label}'),
+                    ),
+                    Expanded(
+                      child: _draft.strips.isEmpty
+                          ? const _EmptyImportState()
+                          : ReorderableListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _draft.strips.length,
+                              onReorderItem: _reorder,
+                              itemBuilder: (context, index) {
+                                final strip = _draft.strips[index];
+                                return _StripCard(
+                                  key: ValueKey(strip.id),
+                                  index: index,
+                                  strip: strip,
+                                  globalTreatment: _draft.globalTreatment,
+                                  services: widget.services,
+                                  onChanged: (value) =>
+                                      _replaceStrip(index, value),
+                                  onSplit: () => _splitRow(index),
+                                  onCrop: () => _editCrop(index),
+                                  onLyricBand: () => _editLyricBand(index),
+                                  onTextHighlight: () =>
+                                      _highlightRecognizedText(index),
+                                  onManualHighlight: () =>
+                                      _addManualHighlight(index),
+                                  onDuplicate: () => _duplicate(index),
+                                  onDelete: () => _delete(index),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_dragging)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.20),
+                      child: Center(
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(28),
+                            child: Text(
+                              'Drop images, PDFs, or screenshot folders',
+                              style: Theme.of(context).textTheme.headlineSmall,
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(width: 12),
-                      FilterChip(
-                        label: const Text('Title / artist in PDF'),
-                        selected: _draft.showHeader,
-                        onSelected: (value) => setState(() {
-                          _draft = _draft.copyWith(showHeader: value);
-                        }),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: _busy
-                            ? null
-                            : () => _add(_ImportKind.images),
-                        icon: const Icon(Icons.add_photo_alternate_outlined),
-                        label: const Text('Add PNG / JPEG'),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: _busy ? null : () => _add(_ImportKind.pdf),
-                        icon: const Icon(Icons.picture_as_pdf_outlined),
-                        label: const Text('Add PDF'),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: _busy
-                            ? null
-                            : () => _add(_ImportKind.clipboard),
-                        icon: const Icon(Icons.content_paste_outlined),
-                        label: const Text('Paste image'),
-                      ),
-                      if (_busy)
-                        const SizedBox.square(
-                          dimension: 28,
-                          child: CircularProgressIndicator(strokeWidth: 3),
                         ),
-                    ],
+                      ),
+                    ),
                   ),
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
-          Expanded(
-            child: _draft.strips.isEmpty
-                ? const _EmptyImportState()
-                : ReorderableListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _draft.strips.length,
-                    onReorderItem: _reorder,
-                    itemBuilder: (context, index) {
-                      final strip = _draft.strips[index];
-                      return _StripCard(
-                        key: ValueKey(strip.id),
-                        index: index,
-                        strip: strip,
-                        globalTreatment: _draft.globalTreatment,
-                        services: widget.services,
-                        onChanged: (value) => _replaceStrip(index, value),
-                        onCrop: () => _editCrop(index),
-                        onLyricBand: () => _editLyricBand(index),
-                        onAddHighlight: () => _addHighlight(index),
-                        onDuplicate: () => _duplicate(index),
-                        onDelete: () => _delete(index),
-                      );
-                    },
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -205,9 +297,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         _ImportKind.clipboard => [await widget.services.importer.pasteImage()],
       };
       if (!mounted) return;
-      setState(() {
-        _draft = _draft.copyWith(strips: [..._draft.strips, ...additions]);
-      });
+      _appendRows(additions);
     } on ImportCancelled {
       // Native picker cancellation is not an error.
     } catch (error) {
@@ -215,6 +305,112 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _pasteShortcut() {
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext?.widget is EditableText ||
+        focusContext?.findAncestorWidgetOfExactType<EditableText>() != null) {
+      return;
+    }
+    if (!_busy) unawaited(_add(_ImportKind.clipboard));
+  }
+
+  Future<void> _importDropped(DropDoneDetails details) async {
+    setState(() {
+      _dragging = false;
+      _busy = true;
+    });
+    try {
+      final additions = await widget.services.importer.importPaths(
+        details.files.map((item) => item.path),
+      );
+      if (mounted) _appendRows(additions);
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _appendRows(List<VisualStrip> additions) {
+    if (additions.isEmpty) return;
+    final shouldRecognize =
+        _draft.strips.isEmpty &&
+        (_titleController.text.trim().isEmpty ||
+            _titleController.text.trim() == 'Untitled chart');
+    setState(() {
+      _draft = _draft.copyWith(strips: [..._draft.strips, ...additions]);
+    });
+    if (shouldRecognize) unawaited(_recognizeMetadata(additions.first));
+  }
+
+  Future<void> _recognizeMetadata(VisualStrip strip) async {
+    try {
+      final suggestion = await widget.services.textRecognition.recognize(strip);
+      if (!mounted) return;
+      if (suggestion.title case final title? when title.trim().isNotEmpty) {
+        _titleController.text = title.trim();
+      }
+      if (suggestion.artist case final artist? when artist.trim().isNotEmpty) {
+        _artistController.text = artist.trim();
+      }
+      setState(() => _draft = _withMetadata());
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Title and artist were read locally. Check them before export.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'The chart was imported, but title/artist recognition was unsure: $error',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _splitRow(int index) async {
+    final strip = _draft.strips[index];
+    final rows = await showDialog<List<NormalizedRect>>(
+      context: context,
+      builder: (_) => MultiRowSplitDialog(
+        imagePath: widget.services.library.assetPath(
+          strip.assetHash,
+          strip.assetExtension,
+        ),
+        imageAspectRatio: strip.pixelWidth / strip.pixelHeight,
+        sourceRect: strip.crop,
+      ),
+    );
+    if (rows == null || rows.isEmpty) return;
+    final replacements = [
+      for (final crop in rows)
+        VisualStrip(
+          id: IdFactory.next('strip'),
+          assetHash: strip.assetHash,
+          assetExtension: strip.assetExtension,
+          pixelWidth: strip.pixelWidth,
+          pixelHeight: strip.pixelHeight,
+          sourceAssetHash: strip.sourceAssetHash,
+          sourcePage: strip.sourcePage,
+          crop: crop,
+          treatment: strip.treatment,
+          lyricBand: strip.lyricBand,
+          lyricContrast: strip.lyricContrast,
+          highlights: strip.highlights,
+        ),
+    ];
+    final strips = [..._draft.strips]
+      ..removeAt(index)
+      ..insertAll(index, replacements);
+    setState(() => _draft = _draft.copyWith(strips: strips));
   }
 
   Future<void> _editCrop(int index) async {
@@ -252,7 +448,34 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     if (value != null) _replaceStrip(index, strip.copyWith(lyricBand: value));
   }
 
-  Future<void> _addHighlight(int index) async {
+  Future<void> _highlightRecognizedText(int index) async {
+    final strip = _draft.strips[index];
+    final selection = await showDialog<TextHighlightSelection>(
+      context: context,
+      builder: (_) => TextHighlighterDialog(
+        imagePath: widget.services.library.assetPath(
+          strip.assetHash,
+          strip.assetExtension,
+        ),
+        imageAspectRatio: strip.pixelWidth / strip.pixelHeight,
+        strip: strip,
+        textRecognition: widget.services.textRecognition,
+      ),
+    );
+    if (selection == null) return;
+    _replaceStrip(
+      index,
+      strip.copyWith(
+        highlights: [
+          ...strip.highlights,
+          for (final rect in selection.rects)
+            VisualHighlight(id: IdFactory.next('highlight'), rect: rect),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addManualHighlight(int index) async {
     final strip = _draft.strips[index];
     final value = await showDialog<NormalizedRect>(
       context: context,
@@ -406,9 +629,11 @@ class _StripCard extends StatelessWidget {
     required this.globalTreatment,
     required this.services,
     required this.onChanged,
+    required this.onSplit,
     required this.onCrop,
     required this.onLyricBand,
-    required this.onAddHighlight,
+    required this.onTextHighlight,
+    required this.onManualHighlight,
     required this.onDuplicate,
     required this.onDelete,
   });
@@ -418,9 +643,11 @@ class _StripCard extends StatelessWidget {
   final VisualTreatment? globalTreatment;
   final AppServices services;
   final ValueChanged<VisualStrip> onChanged;
+  final VoidCallback onSplit;
   final VoidCallback onCrop;
   final VoidCallback onLyricBand;
-  final VoidCallback onAddHighlight;
+  final VoidCallback onTextHighlight;
+  final VoidCallback onManualHighlight;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
@@ -492,6 +719,11 @@ class _StripCard extends StatelessWidget {
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                FilledButton.tonalIcon(
+                  onPressed: onSplit,
+                  icon: const Icon(Icons.call_split),
+                  label: const Text('Split into rows'),
+                ),
                 OutlinedButton.icon(
                   onPressed: onCrop,
                   icon: const Icon(Icons.crop),
@@ -507,9 +739,14 @@ class _StripCard extends StatelessWidget {
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: onAddHighlight,
-                  icon: const Icon(Icons.format_color_fill),
-                  label: const Text('Highlight backing vocal'),
+                  onPressed: onTextHighlight,
+                  icon: const Icon(Icons.highlight_alt),
+                  label: const Text('Text highlighter'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onManualHighlight,
+                  icon: const Icon(Icons.crop_free),
+                  label: const Text('Manual highlight'),
                 ),
                 if (strip.lyricBand != null) ...[
                   const Text('Lyric contrast'),

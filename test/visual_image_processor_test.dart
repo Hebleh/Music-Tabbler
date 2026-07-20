@@ -55,4 +55,25 @@ void main() {
     expect(output.getPixel(5, 5).g, 255);
     expect(output.getPixel(30, 20).b, lessThan(255));
   });
+
+  test('preview processing bounds width after cropping', () {
+    final source = img.Image(width: 2400, height: 1200);
+    img.fill(source, color: img.ColorRgb8(255, 255, 255));
+    final bytes = Uint8List.fromList(img.encodePng(source));
+    const strip = VisualStrip(
+      id: 'strip',
+      assetHash: 'hash',
+      assetExtension: 'png',
+      pixelWidth: 2400,
+      pixelHeight: 1200,
+      crop: NormalizedRect(0, 0.25, 1, 0.75),
+    );
+
+    final output = img.decodePng(
+      const VisualImageProcessor().process(bytes, strip, maxWidth: 600),
+    )!;
+
+    expect(output.width, 600);
+    expect(output.height, 150);
+  });
 }

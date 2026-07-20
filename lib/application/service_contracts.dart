@@ -13,6 +13,26 @@ abstract interface class VisualImporter {
   Future<List<VisualStrip>> pickImages();
   Future<List<VisualStrip>> pickPdf();
   Future<VisualStrip> pasteImage();
+  Future<List<VisualStrip>> importPaths(Iterable<String> paths);
+}
+
+class RecognizedTextRegion {
+  const RecognizedTextRegion({required this.text, required this.rect});
+
+  final String text;
+  final NormalizedRect rect;
+}
+
+class MetadataSuggestion {
+  const MetadataSuggestion({this.title, this.artist, this.regions = const []});
+
+  final String? title;
+  final String? artist;
+  final List<RecognizedTextRegion> regions;
+}
+
+abstract interface class TextRecognitionService {
+  Future<MetadataSuggestion> recognize(VisualStrip strip);
 }
 
 abstract interface class ChartPdfExporter {

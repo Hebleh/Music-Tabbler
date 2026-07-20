@@ -1,0 +1,37 @@
+name: flutter_ocr_native
+description: "Flutter plugin for on-device OCR using ML Kit (Android), Vision (iOS/macOS), WinRT (Windows), Tesseract (Linux). Document parsing, validation, and masking."
+version: 0.3.0
+homepage: https://github.com/asaithambirajaa/flutter_ocr_native
+repository: https://github.com/asaithambirajaa/flutter_ocr_native
+issue_tracker: https://github.com/asaithambirajaa/flutter_ocr_native/issues
+
+
+
+environment:
+  sdk: ">=3.2.4 <4.0.0"
+  flutter: ">=3.19.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  path_provider: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.flutter_ocr_native
+        pluginClass: OcrPlugin
+      ios:
+        pluginClass: OcrPlugin
+      macos:
+        pluginClass: OcrPlugin
+      windows:
+        pluginClass: FlutterOcrNativePlugin
+      linux:
+        pluginClass: FlutterOcrNativePlugin
