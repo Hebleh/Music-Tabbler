@@ -20,6 +20,7 @@ void main() {
     final result = inferTabMetadata(const [
       'SEARCH',
       'Thank You for the Venom Bass Tab',
+      'Tab',
       'REVISION FROM: 09/07/2026',
       'My Chemical Romance',
     ]);

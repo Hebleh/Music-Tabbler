@@ -4,20 +4,25 @@ This file applies to the entire repository.
 
 ## Start here
 
+- Read `docs/HANDOVER.md` first when resuming the current uncommitted work.
 - Read `docs/CURRENT_STATUS.md` before planning or implementing work.
 - Treat `docs/SPEC.md` as the product requirements.
 - Treat `ARCHITECTURE.md` as the current technical direction.
 - Preserve the manual screenshot/PDF workflow as a reliable fallback even while semantic recognition improves.
 
-## Local-model delegation
+## Delegation hierarchy
 
-Use the user's local Pi/Qwen model for large, routine, well-bounded work when it is available. Good candidates include inventories, repetitive cross-checks, boilerplate with an exact specification, fixture cataloguing, test-matrix execution, and first-pass documentation cleanup.
+Use a three-tier hierarchy to stretch Codex and NanoGPT limits without lowering verification quality:
 
-Before delegating, tell the user what is being offloaded. Prefer a read-only first pass. Keep architecture decisions, music-domain ambiguity, security or legal-sensitive work, destructive edits, and final review/verification with the primary agent. Inspect every result before accepting it.
+1. **Codex is the primary agent.** Codex owns architecture, ambiguous product and music-domain behavior, security and legal-sensitive work, destructive changes, visual judgment, and final review and verification.
+2. **GLM 5.2 is the secondary reasoning and coding reviewer.** Invoke the text-only NanoGPT model `zai-org/glm-5.2:thinking` through Pi for bounded higher-level code review, implementation alternatives, complex test design, and well-specified coding drafts. GLM has no vision capability: never ask it to inspect screenshots, rendered PDFs, or other images. NanoGPT quota is limited, so use concise prompts, avoid redundant passes, and reserve GLM for work that benefits from stronger reasoning.
+3. **Qwen is the routine-work tier.** Prefer the local Pi/Qwen endpoint at `http://127.0.0.1:8080` for inventories, repetitive cross-checks, boilerplate with an exact specification, fixture cataloguing, mechanical refactors, test-matrix execution, and first-pass documentation cleanup. Query `/v1/models` before each delegation and use the model identifier it reports; never hard-code a transient model filename or claim a different served model is Qwen.
 
-Prefer direct non-interactive delegation through the configured Qwen endpoint at `http://127.0.0.1:8080`. Use a fresh bounded prompt and do not modify the user's interactive Pi Dev session. Do not start or reconfigure the model server without permission.
+Before delegating, tell the user what is being offloaded. Prefer a read-only first pass and use a fresh, bounded, non-interactive prompt so the user's interactive Pi Dev session is untouched. Inspect every result before accepting it, and never report unavailable, timed-out, or unverified delegated work as complete.
 
-The local rig generates slowly. Use a timeout of at least 20 minutes for substantive work, provide periodic status updates, and do not treat quiet output or a timeout as success.
+Do not silently spend limited GLM quota on routine work when Qwen is unavailable. Codex should either handle the task or clearly report which fallback local model is actually being used. Do not start or reconfigure the user's model server without permission.
+
+The local rig can generate slowly. Use a timeout of at least 20 minutes for substantive local work, provide periodic status updates, and do not treat quiet output or a timeout as success.
 
 ## Product and safety rules
 

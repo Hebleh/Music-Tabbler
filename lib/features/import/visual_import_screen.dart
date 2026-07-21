@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -31,6 +32,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   late final TextEditingController _titleController;
   late final TextEditingController _artistController;
   late final FocusNode _shortcutFocusNode;
+  final ScrollController _editorScrollController = ScrollController();
   bool _busy = false;
   bool _dragging = false;
 
@@ -60,6 +62,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     _titleController.dispose();
     _artistController.dispose();
     _shortcutFocusNode.dispose();
+    _editorScrollController.dispose();
     super.dispose();
   }
 
@@ -230,31 +233,39 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                     Expanded(
                       child: _draft.strips.isEmpty
                           ? const _EmptyImportState()
-                          : ReorderableListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: _draft.strips.length,
-                              onReorderItem: _reorder,
-                              itemBuilder: (context, index) {
-                                final strip = _draft.strips[index];
-                                return _StripCard(
-                                  key: ValueKey(strip.id),
-                                  index: index,
-                                  strip: strip,
-                                  globalTreatment: _draft.globalTreatment,
-                                  services: widget.services,
-                                  onChanged: (value) =>
-                                      _replaceStrip(index, value),
-                                  onSplit: () => _splitRow(index),
-                                  onCrop: () => _editCrop(index),
-                                  onLyricBand: () => _editLyricBand(index),
-                                  onTextHighlight: () =>
-                                      _highlightRecognizedText(index),
-                                  onManualHighlight: () =>
-                                      _addManualHighlight(index),
-                                  onDuplicate: () => _duplicate(index),
-                                  onDelete: () => _delete(index),
-                                );
-                              },
+                          : Scrollbar(
+                              controller: _editorScrollController,
+                              thumbVisibility: true,
+                              child: Listener(
+                                onPointerSignal: _routeEditorScroll,
+                                child: ReorderableListView.builder(
+                                  scrollController: _editorScrollController,
+                                  primary: false,
+                                  physics: const ClampingScrollPhysics(),
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount: _draft.strips.length,
+                                  onReorderItem: _reorder,
+                                  itemBuilder: (context, index) {
+                                    final strip = _draft.strips[index];
+                                    return _StripCard(
+                                      key: ValueKey(strip.id),
+                                      index: index,
+                                      strip: strip,
+                                      globalTreatment: _draft.globalTreatment,
+                                      services: widget.services,
+                                      onChanged: (value) =>
+                                          _replaceStrip(index, value),
+                                      onSplit: () => _splitRow(index),
+                                      onCrop: () => _editCrop(index),
+                                      onLyricBand: () => _editLyricBand(index),
+                                      onTextHighlight: () =>
+                                          _highlightRecognizedText(index),
+                                      onDuplicate: () => _duplicate(index),
+                                      onDelete: () => _delete(index),
+                                    );
+                                  },
+                                ),
+                              ),
                             ),
                     ),
                   ],
@@ -288,13 +299,31 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     );
   }
 
+  void _routeEditorScroll(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_editorScrollController.hasClients) {
+      return;
+    }
+    GestureBinding.instance.pointerSignalResolver.register(event, (
+      resolvedEvent,
+    ) {
+      final scroll = resolvedEvent as PointerScrollEvent;
+      final position = _editorScrollController.position;
+      _editorScrollController.jumpTo(
+        (position.pixels + scroll.scrollDelta.dy).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        ),
+      );
+    });
+  }
+
   Future<void> _add(_ImportKind kind) async {
     setState(() => _busy = true);
     try {
       final additions = switch (kind) {
         _ImportKind.images => await widget.services.importer.pickImages(),
         _ImportKind.pdf => await widget.services.importer.pickPdf(),
-        _ImportKind.clipboard => [await widget.services.importer.pasteImage()],
+        _ImportKind.clipboard => await widget.services.importer.pasteImages(),
       };
       if (!mounted) return;
       _appendRows(additions);
@@ -440,7 +469,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
           strip.assetExtension,
         ),
         imageAspectRatio: strip.pixelWidth / strip.pixelHeight,
-        title: 'Select original lyric area',
+        title: 'Set highlighter area',
         initialRect:
             strip.lyricBand ?? const NormalizedRect(0.02, 0.70, 0.98, 0.98),
       ),
@@ -470,33 +499,6 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
           ...strip.highlights,
           for (final rect in selection.rects)
             VisualHighlight(id: IdFactory.next('highlight'), rect: rect),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _addManualHighlight(int index) async {
-    final strip = _draft.strips[index];
-    final value = await showDialog<NormalizedRect>(
-      context: context,
-      builder: (_) => RectEditorDialog(
-        imagePath: widget.services.library.assetPath(
-          strip.assetHash,
-          strip.assetExtension,
-        ),
-        imageAspectRatio: strip.pixelWidth / strip.pixelHeight,
-        title: 'Highlight backing-vocal lyrics',
-        initialRect:
-            strip.lyricBand ?? const NormalizedRect(0.10, 0.76, 0.38, 0.94),
-      ),
-    );
-    if (value == null) return;
-    _replaceStrip(
-      index,
-      strip.copyWith(
-        highlights: [
-          ...strip.highlights,
-          VisualHighlight(id: IdFactory.next('highlight'), rect: value),
         ],
       ),
     );
@@ -633,7 +635,6 @@ class _StripCard extends StatelessWidget {
     required this.onCrop,
     required this.onLyricBand,
     required this.onTextHighlight,
-    required this.onManualHighlight,
     required this.onDuplicate,
     required this.onDelete,
   });
@@ -647,7 +648,6 @@ class _StripCard extends StatelessWidget {
   final VoidCallback onCrop;
   final VoidCallback onLyricBand;
   final VoidCallback onTextHighlight;
-  final VoidCallback onManualHighlight;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
@@ -734,22 +734,17 @@ class _StripCard extends StatelessWidget {
                   icon: const Icon(Icons.subtitles_outlined),
                   label: Text(
                     strip.lyricBand == null
-                        ? 'Select lyric area'
-                        : 'Edit lyric area',
+                        ? 'Set highlighter area'
+                        : 'Edit highlighter area',
                   ),
                 ),
                 OutlinedButton.icon(
                   onPressed: onTextHighlight,
                   icon: const Icon(Icons.highlight_alt),
-                  label: const Text('Text highlighter'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: onManualHighlight,
-                  icon: const Icon(Icons.crop_free),
-                  label: const Text('Manual highlight'),
+                  label: const Text('Open highlighter'),
                 ),
                 if (strip.lyricBand != null) ...[
-                  const Text('Lyric contrast'),
+                  const Text('Highlighter-area contrast'),
                   SizedBox(
                     width: 180,
                     child: Slider(
@@ -763,7 +758,7 @@ class _StripCard extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Remove lyric area',
+                    tooltip: 'Remove highlighter area',
                     onPressed: () => onChanged(
                       strip.copyWith(clearLyricBand: true, lyricContrast: 1),
                     ),

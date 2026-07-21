@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -21,8 +22,9 @@ class PlannedStrip {
 }
 
 class PlannedPage {
-  const PlannedPage(this.strips);
+  const PlannedPage(this.strips, {required this.headerHeight});
   final List<PlannedStrip> strips;
+  final double headerHeight;
 }
 
 class A4StripLayout {
@@ -31,7 +33,7 @@ class A4StripLayout {
     this.pageHeight = 841.89,
     this.margin = 22,
     this.headerHeight = 28,
-    this.gap = 8,
+    this.gap = 2,
   });
 
   final double pageWidth;
@@ -40,15 +42,23 @@ class A4StripLayout {
   final double headerHeight;
   final double gap;
 
-  List<PlannedPage> plan(List<double> aspectRatios) {
+  List<PlannedPage> plan(
+    List<double> aspectRatios, {
+    bool includeFirstPageHeader = true,
+  }) {
     final availableWidth = pageWidth - margin * 2;
-    final availableHeight = pageHeight - margin * 2 - headerHeight;
     final pages = <PlannedPage>[];
     var current = <PlannedStrip>[];
     var usedHeight = 0.0;
 
+    double availableHeightFor(int pageIndex) =>
+        pageHeight -
+        margin * 2 -
+        (pageIndex == 0 && includeFirstPageHeader ? headerHeight : 0);
+
     for (var index = 0; index < aspectRatios.length; index += 1) {
       final aspect = aspectRatios[index];
+      var availableHeight = availableHeightFor(pages.length);
       var width = availableWidth;
       var height = width / aspect;
       if (height > availableHeight) {
@@ -57,15 +67,36 @@ class A4StripLayout {
       }
       final needed = current.isEmpty ? height : gap + height;
       if (current.isNotEmpty && usedHeight + needed > availableHeight) {
-        pages.add(PlannedPage(List.unmodifiable(current)));
+        pages.add(
+          PlannedPage(
+            List.unmodifiable(current),
+            headerHeight: pages.isEmpty && includeFirstPageHeader
+                ? headerHeight
+                : 0,
+          ),
+        );
         current = <PlannedStrip>[];
         usedHeight = 0;
+        availableHeight = availableHeightFor(pages.length);
+        width = availableWidth;
+        height = width / aspect;
+        if (height > availableHeight) {
+          height = availableHeight;
+          width = height * aspect;
+        }
       }
       current.add(PlannedStrip(index: index, width: width, height: height));
       usedHeight += current.length == 1 ? height : gap + height;
     }
     if (current.isNotEmpty) {
-      pages.add(PlannedPage(List.unmodifiable(current)));
+      pages.add(
+        PlannedPage(
+          List.unmodifiable(current),
+          headerHeight: pages.isEmpty && includeFirstPageHeader
+              ? headerHeight
+              : 0,
+        ),
+      );
     }
     return pages;
   }
@@ -93,20 +124,28 @@ class PdfExportService implements ChartPdfExporter {
         library.assetPath(strip.assetHash, strip.assetExtension),
       );
       final bytes = await file.readAsBytes();
-      processed.add(
-        processor.process(bytes, strip, globalTreatment: draft.globalTreatment),
+      final rendered = processor.process(
+        bytes,
+        strip,
+        globalTreatment: draft.globalTreatment,
       );
+      processed.addAll(processor.compactForExport(rendered));
     }
 
-    final pages = layout.plan(
-      draft.strips.map((strip) => strip.croppedAspectRatio).toList(),
-    );
+    final pages = layout.plan([
+      for (final bytes in processed)
+        () {
+          final image = img.decodePng(bytes)!;
+          return image.width / image.height;
+        }(),
+    ], includeFirstPageHeader: draft.showHeader);
     final document = pw.Document(
       title: draft.title,
       author: draft.artist,
       creator: 'Music Tabbler',
     );
-    for (final page in pages) {
+    for (var pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+      final page = pages[pageIndex];
       document.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
@@ -114,34 +153,35 @@ class PdfExportService implements ChartPdfExporter {
           build: (_) => pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.SizedBox(
-                height: 28,
-                child: draft.showHeader
-                    ? pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            draft.title,
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          if (draft.artist.isNotEmpty)
+              if (page.headerHeight > 0)
+                pw.SizedBox(
+                  height: page.headerHeight,
+                  child: pageIndex == 0 && draft.showHeader
+                      ? pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
                             pw.Text(
-                              draft.artist,
-                              style: const pw.TextStyle(fontSize: 8),
+                              draft.title,
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
                             ),
-                        ],
-                      )
-                    : pw.SizedBox(),
-              ),
+                            if (draft.artist.isNotEmpty)
+                              pw.Text(
+                                draft.artist,
+                                style: const pw.TextStyle(fontSize: 8),
+                              ),
+                          ],
+                        )
+                      : pw.SizedBox(),
+                ),
               for (
                 var itemIndex = 0;
                 itemIndex < page.strips.length;
                 itemIndex += 1
               ) ...[
-                if (itemIndex > 0) pw.SizedBox(height: 8),
+                if (itemIndex > 0) pw.SizedBox(height: layout.gap),
                 pw.Align(
                   alignment: pw.Alignment.centerLeft,
                   child: pw.SizedBox(

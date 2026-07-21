@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
 import '../domain/visual_chart_models.dart';
+import 'horizontal_row_detector.dart';
 
 class VisualImageProcessor {
   const VisualImageProcessor();
@@ -75,6 +76,33 @@ class VisualImageProcessor {
     }
 
     return Uint8List.fromList(img.encodePng(image, level: 3));
+  }
+
+  List<Uint8List> compactForExport(Uint8List processedPng) {
+    final decoded = img.decodePng(processedPng);
+    if (decoded == null) return [processedPng];
+    final detected = const HorizontalRowDetector().detect(processedPng);
+    if (detected.isEmpty) return [processedPng];
+    final rows = decoded.width / decoded.height < 2.2
+        ? detected
+        : [NormalizedRect(0, detected.first.top, 1, detected.last.bottom)];
+    return [for (final row in rows) _encodeRect(decoded, row)];
+  }
+
+  Uint8List _encodeRect(img.Image image, NormalizedRect row) {
+    final top = (row.top * image.height).floor().clamp(0, image.height - 1);
+    final bottom = (row.bottom * image.height).ceil().clamp(
+      top + 1,
+      image.height,
+    );
+    final cropped = img.copyCrop(
+      image,
+      x: 0,
+      y: top,
+      width: image.width,
+      height: bottom - top,
+    );
+    return Uint8List.fromList(img.encodePng(cropped, level: 3));
   }
 
   img.Image _applyTreatment(img.Image image, VisualTreatment treatment) {

@@ -12,11 +12,13 @@ import 'service_contracts.dart';
 import 'windows_clipboard_reader.dart';
 
 class VisualImportService implements VisualImporter {
-  VisualImportService(this.library);
+  VisualImportService(
+    this.library, {
+    this.clipboardReader = const WindowsClipboardReader(),
+  });
 
   final LocalLibrary library;
-  final WindowsClipboardReader _clipboardReader =
-      const WindowsClipboardReader();
+  final WindowsClipboardReader clipboardReader;
   bool _pdfInitialized = false;
 
   @override
@@ -47,17 +49,23 @@ class VisualImportService implements VisualImporter {
   }
 
   @override
-  Future<VisualStrip> pasteImage() async {
+  Future<List<VisualStrip>> pasteImages() async {
     if (!Platform.isWindows) {
       throw const VisualImportException(
         'Clipboard image import is Windows-only in this iteration.',
       );
     }
-    final bytes = await _clipboardReader.readPng();
-    if (bytes == null) {
-      throw const VisualImportException('The clipboard has no readable image.');
+    final paths = await clipboardReader.readFilePaths();
+    if (paths.isNotEmpty) {
+      return importPaths(paths);
     }
-    return importImage(bytes, 'png');
+    final bytes = await clipboardReader.readPng();
+    if (bytes == null) {
+      throw const VisualImportException(
+        'The clipboard has no readable image or copied PNG/JPEG/PDF files.',
+      );
+    }
+    return [await importImage(bytes, 'png')];
   }
 
   @override

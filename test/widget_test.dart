@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:music_tabbler/app.dart';
@@ -77,7 +78,7 @@ void main() {
     );
     await tester.pump();
     await tester.tap(find.text('New visual chart'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
@@ -87,6 +88,37 @@ void main() {
 
     expect(importer.pasteCalls, 1);
     expect(find.text('Row 1'), findsOneWidget);
+  });
+
+  testWidgets('mouse wheel reaches rows below large unsplit previews', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final importer = _RecordingImporter(rowCount: 8);
+
+    await tester.pumpWidget(
+      MusicTabblerApp(services: await _testServices(importer: importer)),
+    );
+    await tester.pump();
+    await tester.tap(find.text('New visual chart'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.sendEventToBinding(
+      const PointerScrollEvent(
+        position: Offset(640, 700),
+        scrollDelta: Offset(0, 5000),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Row 8'), findsOneWidget);
   });
 }
 
@@ -100,18 +132,24 @@ Future<AppServices> _testServices({VisualImporter? importer}) async {
 }
 
 class _RecordingImporter implements VisualImporter {
+  _RecordingImporter({this.rowCount = 1});
+
+  final int rowCount;
   int pasteCalls = 0;
 
   @override
-  Future<VisualStrip> pasteImage() async {
+  Future<List<VisualStrip>> pasteImages() async {
     pasteCalls += 1;
-    return const VisualStrip(
-      id: 'pasted',
-      assetHash: 'asset',
-      assetExtension: 'png',
-      pixelWidth: 100,
-      pixelHeight: 50,
-    );
+    return [
+      for (var index = 0; index < rowCount; index += 1)
+        VisualStrip(
+          id: 'pasted-$index',
+          assetHash: 'asset',
+          assetExtension: 'png',
+          pixelWidth: 100,
+          pixelHeight: 50,
+        ),
+    ];
   }
 
   @override
@@ -129,6 +167,11 @@ class _FakeLibrary implements ChartLibrary {
 
   @override
   String assetPath(String hash, String extension) => '';
+
+  @override
+  Future<void> deleteDraft(String id) async {
+    drafts.removeWhere((item) => item.id == id);
+  }
 
   @override
   Future<List<VisualChartDraft>> listDrafts() async => List.of(drafts);
@@ -155,7 +198,7 @@ class _UnusedImporter implements VisualImporter {
   @override
   Future<List<VisualStrip>> pickPdf() => throw UnimplementedError();
   @override
-  Future<VisualStrip> pasteImage() => throw UnimplementedError();
+  Future<List<VisualStrip>> pasteImages() => throw UnimplementedError();
   @override
   Future<List<VisualStrip>> importPaths(Iterable<String> paths) =>
       throw UnimplementedError();

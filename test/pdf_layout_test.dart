@@ -12,6 +12,8 @@ void main() {
       expect(pages, hasLength(2));
       expect(pages.first.strips, hasLength(5));
       expect(pages.last.strips, hasLength(1));
+      expect(pages.first.headerHeight, 28);
+      expect(pages.last.headerHeight, 0);
       expect(
         pages.expand((page) => page.strips).map((strip) => strip.index),
         orderedEquals([0, 1, 2, 3, 4, 5]),
@@ -27,5 +29,14 @@ void main() {
 
     expect(strip.height, lessThanOrEqualTo(841.89 - 44 - 28));
     expect(strip.width / strip.height, closeTo(595.28 / 841.89, 0.0001));
+  });
+
+  test('hidden header reserves no space on any page', () {
+    const layout = A4StripLayout();
+    final pages = layout.plan(
+      List.filled(6, 4.0),
+      includeFirstPageHeader: false,
+    );
+    expect(pages.every((page) => page.headerHeight == 0), isTrue);
   });
 }

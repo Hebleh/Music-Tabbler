@@ -2,11 +2,43 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:image/image.dart' as img;
 import 'package:win32/win32.dart';
 
 class WindowsClipboardReader {
   const WindowsClipboardReader();
+
+  Future<List<String>> readFilePaths() async {
+    if (!Platform.isWindows) return const [];
+    for (var attempt = 0; attempt < 5; attempt += 1) {
+      if (OpenClipboard(0) != 0) {
+        try {
+          final handle = GetClipboardData(CF_HDROP);
+          if (handle == 0) return const [];
+          final count = DragQueryFile(handle, 0xFFFFFFFF, nullptr, 0);
+          final paths = <String>[];
+          for (var index = 0; index < count; index += 1) {
+            final length = DragQueryFile(handle, index, nullptr, 0);
+            if (length <= 0) continue;
+            final buffer = calloc<Uint16>(length + 1).cast<Utf16>();
+            try {
+              if (DragQueryFile(handle, index, buffer, length + 1) > 0) {
+                paths.add(buffer.toDartString());
+              }
+            } finally {
+              calloc.free(buffer);
+            }
+          }
+          return paths;
+        } finally {
+          CloseClipboard();
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 25));
+    }
+    return const [];
+  }
 
   Future<Uint8List?> readPng() async {
     if (!Platform.isWindows) return null;

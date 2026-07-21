@@ -36,9 +36,11 @@ class TextHighlighterDialog extends StatefulWidget {
 class _TextHighlighterDialogState extends State<TextHighlighterDialog> {
   late final Future<MetadataSuggestion> _recognition;
   final Set<int> _selected = {};
+  final List<NormalizedRect> _manualRects = [];
   Offset? _dragStart;
   NormalizedRect? _dragRect;
   bool _includeTabBelow = false;
+  bool _freeform = false;
 
   @override
   void initState() {
@@ -49,18 +51,13 @@ class _TextHighlighterDialogState extends State<TextHighlighterDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Highlight recognized lyrics'),
+      title: const Text('Backing-vocal highlighter'),
       content: SizedBox(
         width: 1050,
         child: FutureBuilder<MetadataSuggestion>(
           future: _recognition,
           builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return Text(
-                'Text recognition could not read this image. Use Manual highlight instead.\n\n${snapshot.error}',
-              );
-            }
-            if (!snapshot.hasData) {
+            if (!snapshot.hasData && !snapshot.hasError) {
               return const SizedBox(
                 height: 280,
                 child: Center(
@@ -75,17 +72,35 @@ class _TextHighlighterDialogState extends State<TextHighlighterDialog> {
                 ),
               );
             }
-            final regions = snapshot.data!.regions;
-            if (regions.isEmpty) {
-              return const Text(
-                'No printed text was detected. Use Manual highlight for this row.',
-              );
-            }
+            final regions =
+                snapshot.data?.regions ?? const <RecognizedTextRegion>[];
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Drag across words like a PDF highlighter, or click individual detected words.',
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                      value: false,
+                      icon: Icon(Icons.text_fields),
+                      label: Text('Recognized text'),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      icon: Icon(Icons.crop_free),
+                      label: Text('Freeform'),
+                    ),
+                  ],
+                  selected: {_freeform},
+                  onSelectionChanged: (value) =>
+                      setState(() => _freeform = value.single),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  regions.isEmpty
+                      ? 'OCR did not find selectable words here. Draw freeform highlight boxes instead.'
+                      : _freeform
+                      ? 'Drag a box over any lyric OCR missed.'
+                      : 'Drag across words like a PDF highlighter, or click individual detected words.',
                 ),
                 const SizedBox(height: 8),
                 Flexible(
@@ -100,20 +115,22 @@ class _TextHighlighterDialogState extends State<TextHighlighterDialog> {
                           );
                           return GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTapUp: (details) => _toggleAt(
-                              _normalized(details.localPosition, size),
-                              regions,
-                            ),
+                            onTapUp: _freeform
+                                ? null
+                                : (details) => _toggleAt(
+                                    _normalized(details.localPosition, size),
+                                    regions,
+                                  ),
                             onPanStart: (details) {
                               _dragStart = details.localPosition;
                               setState(() => _dragRect = null);
                             },
-                            onPanUpdate: (details) => _selectDrag(
+                            onPanUpdate: (details) => _updateDrag(
                               details.localPosition,
                               size,
                               regions,
                             ),
-                            onPanEnd: (_) => setState(() => _dragRect = null),
+                            onPanEnd: (_) => _finishDrag(),
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
@@ -126,6 +143,7 @@ class _TextHighlighterDialogState extends State<TextHighlighterDialog> {
                                     regions: regions,
                                     selected: _selected,
                                     dragRect: _dragRect,
+                                    manualRects: _manualRects,
                                   ),
                                 ),
                               ],
@@ -151,7 +169,9 @@ class _TextHighlighterDialogState extends State<TextHighlighterDialog> {
                 ),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('${_selected.length} text region(s) selected'),
+                  child: Text(
+                    '${_selected.length} text region(s), ${_manualRects.length} freeform box(es)',
+                  ),
                 ),
               ],
             );
@@ -164,20 +184,27 @@ class _TextHighlighterDialogState extends State<TextHighlighterDialog> {
           child: const Text('Cancel'),
         ),
         TextButton(
-          onPressed: () => setState(_selected.clear),
+          onPressed: () => setState(() {
+            _selected.clear();
+            _manualRects.clear();
+          }),
           child: const Text('Clear'),
         ),
         FutureBuilder<MetadataSuggestion>(
           future: _recognition,
           builder: (context, snapshot) => FilledButton.icon(
-            onPressed: !snapshot.hasData || _selected.isEmpty
+            onPressed: (_selected.isEmpty && _manualRects.isEmpty)
                 ? null
                 : () {
                     final rects = [
-                      for (final index in _selected)
-                        _includeTabBelow
-                            ? _withTabBelow(snapshot.data!.regions[index].rect)
-                            : snapshot.data!.regions[index].rect,
+                      if (snapshot.hasData)
+                        for (final index in _selected)
+                          _includeTabBelow
+                              ? _withTabBelow(
+                                  snapshot.data!.regions[index].rect,
+                                )
+                              : snapshot.data!.regions[index].rect,
+                      ..._manualRects,
                     ];
                     Navigator.pop(
                       context,
@@ -206,7 +233,7 @@ class _TextHighlighterDialogState extends State<TextHighlighterDialog> {
     }
   }
 
-  void _selectDrag(
+  void _updateDrag(
     Offset current,
     Size size,
     List<RecognizedTextRegion> regions,
@@ -223,9 +250,25 @@ class _TextHighlighterDialogState extends State<TextHighlighterDialog> {
     ).clamp();
     setState(() {
       _dragRect = rect;
-      for (var index = 0; index < regions.length; index += 1) {
-        if (_intersects(rect, regions[index].rect)) _selected.add(index);
+      if (!_freeform) {
+        for (var index = 0; index < regions.length; index += 1) {
+          if (_intersects(rect, regions[index].rect)) _selected.add(index);
+        }
       }
+    });
+  }
+
+  void _finishDrag() {
+    final rect = _dragRect;
+    setState(() {
+      if (_freeform &&
+          rect != null &&
+          rect.width > 0.004 &&
+          rect.height > 0.004) {
+        _manualRects.add(rect);
+      }
+      _dragRect = null;
+      _dragStart = null;
     });
   }
 
@@ -259,14 +302,27 @@ class _TextRegionPainter extends CustomPainter {
     required this.regions,
     required this.selected,
     required this.dragRect,
+    required this.manualRects,
   });
 
   final List<RecognizedTextRegion> regions;
   final Set<int> selected;
   final NormalizedRect? dragRect;
+  final List<NormalizedRect> manualRects;
 
   @override
   void paint(Canvas canvas, Size size) {
+    for (final region in manualRects) {
+      canvas.drawRect(
+        Rect.fromLTRB(
+          region.left * size.width,
+          region.top * size.height,
+          region.right * size.width,
+          region.bottom * size.height,
+        ),
+        Paint()..color = Colors.yellow.withValues(alpha: 0.42),
+      );
+    }
     for (var index = 0; index < regions.length; index += 1) {
       final region = regions[index].rect;
       final rect = Rect.fromLTRB(

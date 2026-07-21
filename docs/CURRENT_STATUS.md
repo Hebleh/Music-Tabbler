@@ -16,7 +16,7 @@ Updated: 20 July 2026
 - `flutter doctor -v` reports no issues for Windows or Android.
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
-- `flutter analyze` passes with no issues, and 18 model, persistence, bulk-import, image-processing, PDF, OCR-helper, and widget tests pass.
+- `flutter analyze` passes with no issues, and 25 model, persistence, bulk-import, image-processing, PDF, OCR-helper, and widget tests pass.
 - `flutter build windows --release` produces `music_tabbler.exe`.
 - `flutter build apk --debug` produces an installable debug APK.
 
@@ -48,23 +48,28 @@ Updated: 20 July 2026
 ### Manual visual-chart workflow
 
 - PNG/JPEG screenshots and multi-page PDFs can be imported into an editable visual-chart draft.
-- Windows can also paste a bitmap directly from the clipboard; Android uses image/PDF file picking in this iteration.
+- Windows can paste either copied bitmap pixels or one or more image/PDF files copied in Explorer; Android uses image/PDF file picking in this iteration.
 - Imports are normalized into immutable, SHA-256-addressed local assets and catalogued in SQLite.
 - A chart is arranged as full-width horizontal tab rows. Rows can be reordered, duplicated, cropped, or removed without changing the source asset.
 - Each row can use Original, Grayscale, Invert, or High contrast treatment, with a whole-tab dropdown to apply one treatment in one action.
 - Existing screenshot lyrics remain part of the source image. A lyric band can receive adjustable contrast and multiple translucent backing-vocal highlight regions.
 - Named drafts persist in Song Pool and reopen with their crop, ordering, display, lyric-band, and highlight edits intact.
+- Saved visual drafts can be deleted from Song Pool after an explicit confirmation; shared content-addressed source assets are retained.
 - A4 export uses deterministic, one-column pagination with optional compact title/artist headers and never includes provenance metadata.
 - The real `9mm (squeezed).pdf` reference was imported, split into rows, exported, rendered back to PNG, and visually inspected as a two-page A4 result.
 
 ### Bulk visual workflow revision
 
-- `Ctrl+V` now invokes Windows bitmap paste anywhere in the visual editor, while the existing paste button remains available.
+- `Ctrl+V` invokes Windows paste anywhere in the visual editor. It accepts bitmap pixels and multi-file Explorer selections, while the existing paste button remains available.
 - Images, PDFs, and whole screenshot folders can be dragged onto the editor; supported files are recursively collected and imported in stable path order.
-- Any imported page or screenshot has a **Split into rows** workspace. It starts with five full-width boxes, supports 1-16 evenly divided rows, and keeps every box visible and independently movable/resizable on the same page.
+- Any imported page or screenshot has a **Split into rows** workspace. It starts with five full-width boxes, supports up to 32 evenly divided rows, and keeps every box visible and independently movable/resizable on the same page.
+- **Detect rows** proposes editable boxes from repeated tab/staff systems and guarded blank bands, so manual work is fine tuning rather than drawing every row.
 - Crop, lyric-area, manual-highlight, and split-row rectangles now use direct PowerPoint-style movement plus eight edge/corner handles; sliders remain for crop/lyric fine tuning.
 - On-device OCR runs through ML Kit on Android and WinRT on Windows. The first imported page suggests title and artist automatically, with a manual re-detect button and editable correction fields.
-- The text highlighter displays OCR-detected word boxes and accepts click or drag selection. An optional checkbox extends selected lyric highlights into the corresponding horizontal tab area below; the original freeform highlighter remains available.
+- OCR input is upscaled, normalized, and contrast-enhanced in a background isolate. Songsterr UI labels such as `Tab` are excluded from artist suggestions.
+- The unified backing-vocal highlighter offers recognized-text selection and freeform boxes in one dialog. An optional checkbox extends selected lyric highlights into the corresponding horizontal tab area below.
+- The selected split-row box is always painted above overlapping boxes, and desktop wheel input is routed through Flutter's pointer-signal resolver to keep scrolling responsive.
+- Export uses the same conservative row detector as the split workspace, trims uniform outer whitespace, and compacts tall unsplit images without changing the saved chart. Staff-line grouping plus lyric/rhythm guard padding avoids the earlier clipped-notation cuts. Inter-row PDF spacing is 2 points; title and artist render only on page one, and later pages reclaim the header space.
 - Preview work crops first, caps preview width, runs image processing in a background isolate, reuses a bounded LRU cache, and isolates row repainting. Full-resolution processing remains reserved for final PDF export.
 - The MIT-licensed OCR plugin is vendored under `third_party/flutter_ocr_native`; its Windows WinRT initialization is patched to join Flutter runner's existing STA apartment instead of aborting during startup.
 
@@ -75,6 +80,7 @@ Updated: 20 July 2026
 - The notation painter is an early semantic rendering spike, not full engraving.
 - Setlist storage/export, full tab OMR/semantic conversion, safe state transfer, Android gig mode, source adapters, semantic lyric editing, and note editing for imported visual charts remain future slices.
 - Title/artist and text-region OCR are assistive proposals and must remain user-correctable. The "corresponding tab below" option is currently a geometric same-column extension, not semantic note-to-lyric alignment.
+- Export whitespace detection is intentionally conservative. Tiny isolated footer marks or source page numbers can preserve trailing whitespace rather than risk deleting notation or lyrics.
 - `file_picker` is pinned to 10.3.10 because its current 11.x Android plugin assumes Flutter's built-in Kotlin migration. `file_picker`, `desktop_drop`, and `flutter_ocr_native` currently emit the same future Kotlin-migration warning, although the APK builds successfully today.
 
 ## Reference examples (external, not committed)

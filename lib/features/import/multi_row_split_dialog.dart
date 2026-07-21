@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/visual_chart_models.dart';
+import '../../application/horizontal_row_detector.dart';
 import 'resizable_rect_overlay.dart';
 
 class MultiRowSplitDialog extends StatefulWidget {
@@ -24,11 +27,19 @@ class MultiRowSplitDialog extends StatefulWidget {
 class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
   late List<NormalizedRect> _rows;
   int _selected = 0;
+  final ScrollController _scrollController = ScrollController();
+  bool _detecting = false;
 
   @override
   void initState() {
     super.initState();
     _rows = _evenRows(5);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -47,14 +58,24 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
               children: [
                 const Text('Rows'),
                 DropdownButton<int>(
-                  value: _rows.length.clamp(1, 16),
+                  value: _rows.length.clamp(1, 32),
                   items: [
-                    for (var count = 1; count <= 16; count += 1)
+                    for (var count = 1; count <= 32; count += 1)
                       DropdownMenuItem(value: count, child: Text('$count')),
                   ],
                   onChanged: (count) {
                     if (count != null) setState(() => _rows = _evenRows(count));
                   },
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _detecting ? null : _detectRows,
+                  icon: _detecting
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_fix_high_outlined),
+                  label: Text(_detecting ? 'Detecting...' : 'Detect rows'),
                 ),
                 OutlinedButton.icon(
                   onPressed: () =>
@@ -85,37 +106,67 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
             ),
             const SizedBox(height: 10),
             Flexible(
-              child: SingleChildScrollView(
-                child: AspectRatio(
-                  aspectRatio: widget.imageAspectRatio,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final size = Size(
-                        constraints.maxWidth,
-                        constraints.maxHeight,
-                      );
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.file(File(widget.imagePath), fit: BoxFit.fill),
-                          for (var index = 0; index < _rows.length; index += 1)
-                            ResizableRectOverlay(
-                              rect: _rows[index],
-                              canvasSize: size,
-                              color: Colors
-                                  .primaries[index % Colors.primaries.length],
-                              label: 'Row ${index + 1}',
-                              selected: index == _selected,
-                              onSelected: () =>
-                                  setState(() => _selected = index),
-                              onChanged: (value) => setState(() {
-                                _selected = index;
-                                _rows[index] = value;
-                              }),
+              child: Scrollbar(
+                controller: _scrollController,
+                thumbVisibility: true,
+                child: Listener(
+                  onPointerSignal: (event) {
+                    if (event is PointerScrollEvent &&
+                        _scrollController.hasClients) {
+                      GestureBinding.instance.pointerSignalResolver.register(
+                        event,
+                        (resolvedEvent) {
+                          final scroll = resolvedEvent as PointerScrollEvent;
+                          final position = _scrollController.position;
+                          _scrollController.jumpTo(
+                            (position.pixels + scroll.scrollDelta.dy).clamp(
+                              position.minScrollExtent,
+                              position.maxScrollExtent,
                             ),
-                        ],
+                          );
+                        },
                       );
-                    },
+                    }
+                  },
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    primary: false,
+                    child: AspectRatio(
+                      aspectRatio: widget.imageAspectRatio,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final size = Size(
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          );
+                          return Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.file(
+                                File(widget.imagePath),
+                                fit: BoxFit.fill,
+                              ),
+                              for (final index in _paintOrder)
+                                ResizableRectOverlay(
+                                  rect: _rows[index],
+                                  canvasSize: size,
+                                  color:
+                                      Colors.primaries[index %
+                                          Colors.primaries.length],
+                                  label: 'Row ${index + 1}',
+                                  selected: index == _selected,
+                                  onSelected: () =>
+                                      setState(() => _selected = index),
+                                  onChanged: (value) => setState(() {
+                                    _selected = index;
+                                    _rows[index] = value;
+                                  }),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -138,6 +189,34 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
         ),
       ],
     );
+  }
+
+  List<int> get _paintOrder => [
+    for (var index = 0; index < _rows.length; index += 1)
+      if (index != _selected) index,
+    if (_rows.isNotEmpty) _selected,
+  ];
+
+  Future<void> _detectRows() async {
+    setState(() => _detecting = true);
+    try {
+      final bytes = await File(widget.imagePath).readAsBytes();
+      final detected = await compute(_detectRowsInBackground, {
+        'bytes': bytes,
+        'sourceRect': widget.sourceRect.toJson(),
+      });
+      if (!mounted) return;
+      final rows = [
+        for (final value in detected)
+          NormalizedRect.fromJson(value.cast<String, Object?>()),
+      ];
+      setState(() {
+        _rows = rows.isEmpty ? _evenRows(5) : rows;
+        _selected = 0;
+      });
+    } finally {
+      if (mounted) setState(() => _detecting = false);
+    }
   }
 
   List<NormalizedRect> _evenRows(int count) {
@@ -184,6 +263,16 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
       _selected = _selected.clamp(0, _rows.length - 1);
     });
   }
+}
+
+List<Map<String, Object>> _detectRowsInBackground(Map<String, Object> request) {
+  final sourceRect = NormalizedRect.fromJson(
+    (request['sourceRect']! as Map).cast<String, Object?>(),
+  );
+  return const HorizontalRowDetector()
+      .detect(request['bytes']! as Uint8List, sourceRect: sourceRect)
+      .map((row) => row.toJson())
+      .toList(growable: false);
 }
 
 List<NormalizedRect> evenRowRects(NormalizedRect source, int count) {

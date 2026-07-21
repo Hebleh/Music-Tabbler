@@ -42,5 +42,9 @@ void main() {
     expect(File(first.path).existsSync(), isTrue);
     expect(loaded.single.title, 'Saved chart');
     expect(loaded.single.strips.single.assetHash, first.hash);
+
+    await library.deleteDraft(draft.id);
+    expect(await library.listDrafts(), isEmpty);
+    expect(File(first.path).existsSync(), isTrue);
   });
 }

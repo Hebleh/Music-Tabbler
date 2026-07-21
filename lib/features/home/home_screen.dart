@@ -45,12 +45,42 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(_reloadDrafts);
   }
 
+  Future<void> _deleteVisualDraft(VisualChartDraft draft) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete saved chart?'),
+        content: Text(
+          'Delete "${draft.title}" from Song Pool? Imported source assets are kept.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await widget.services.library.deleteDraft(draft.id);
+    if (!mounted) return;
+    setState(_reloadDrafts);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Deleted "${draft.title}" from Song Pool.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
       _SongPool(
         drafts: _drafts,
         onOpenVisual: _openVisualEditor,
+        onDeleteVisual: _deleteVisualDraft,
         onOpenSemantic: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ChartEditorScreen(
@@ -145,11 +175,13 @@ class _SongPool extends StatelessWidget {
   const _SongPool({
     required this.drafts,
     required this.onOpenVisual,
+    required this.onDeleteVisual,
     required this.onOpenSemantic,
   });
 
   final Future<List<VisualChartDraft>> drafts;
   final ValueChanged<VisualChartDraft?> onOpenVisual;
+  final ValueChanged<VisualChartDraft> onDeleteVisual;
   final VoidCallback onOpenSemantic;
 
   @override
@@ -222,9 +254,19 @@ class _SongPool extends StatelessWidget {
                       subtitle: Text(
                         '${draft.artist.isEmpty ? 'Unknown artist' : draft.artist} - ${draft.strips.length} row(s)',
                       ),
-                      trailing: FilledButton(
-                        onPressed: () => onOpenVisual(draft),
-                        child: const Text('Open'),
+                      trailing: Wrap(
+                        spacing: 8,
+                        children: [
+                          IconButton(
+                            tooltip: 'Delete saved chart',
+                            onPressed: () => onDeleteVisual(draft),
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                          FilledButton(
+                            onPressed: () => onOpenVisual(draft),
+                            child: const Text('Open'),
+                          ),
+                        ],
                       ),
                     ),
                   ),

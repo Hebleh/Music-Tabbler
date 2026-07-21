@@ -5,6 +5,7 @@ import '../domain/visual_chart_models.dart';
 abstract interface class ChartLibrary {
   String assetPath(String hash, String extension);
   Future<void> saveDraft(VisualChartDraft draft);
+  Future<void> deleteDraft(String id);
   Future<List<VisualChartDraft>> listDrafts();
   Future<VisualChartDraft?> loadDraft(String id);
 }
@@ -12,7 +13,7 @@ abstract interface class ChartLibrary {
 abstract interface class VisualImporter {
   Future<List<VisualStrip>> pickImages();
   Future<List<VisualStrip>> pickPdf();
-  Future<VisualStrip> pasteImage();
+  Future<List<VisualStrip>> pasteImages();
   Future<List<VisualStrip>> importPaths(Iterable<String> paths);
 }
 

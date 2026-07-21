@@ -109,6 +109,11 @@ class LocalLibrary implements ChartLibrary {
   }
 
   @override
+  Future<void> deleteDraft(String id) async {
+    _database.execute('DELETE FROM visual_charts WHERE id = ?;', [id]);
+  }
+
+  @override
   Future<List<VisualChartDraft>> listDrafts() async {
     final rows = _database.select(
       'SELECT payload_json FROM visual_charts ORDER BY updated_at DESC;',
