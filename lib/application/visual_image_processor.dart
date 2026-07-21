@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
 import '../domain/visual_chart_models.dart';
+import 'highlight_geometry.dart';
 import 'horizontal_row_detector.dart';
 
 class VisualImageProcessor {
@@ -14,14 +15,47 @@ class VisualImageProcessor {
     VisualTreatment? globalTreatment,
     int? maxWidth,
   }) {
-    var image = img.decodeImage(sourceBytes);
-    if (image == null) {
+    var decoded = img.decodeImage(sourceBytes);
+    if (decoded == null) {
       throw const FormatException('Stored chart image is invalid.');
     }
-    image = img.bakeOrientation(image);
-    final crop = _pixelRect(strip.crop, image.width, image.height);
-    image = img.copyCrop(
-      image,
+    decoded = img.bakeOrientation(decoded);
+    final image = _processDecoded(
+      decoded,
+      strip,
+      globalTreatment: globalTreatment,
+      maxWidth: maxWidth,
+    );
+    return Uint8List.fromList(img.encodePng(image, level: 3));
+  }
+
+  List<List<ProcessedExportImage>> processForExportBatch(
+    Uint8List sourceBytes,
+    List<VisualStrip> strips, {
+    VisualTreatment? globalTreatment,
+  }) {
+    var decoded = img.decodeImage(sourceBytes);
+    if (decoded == null) {
+      throw const FormatException('Stored chart image is invalid.');
+    }
+    decoded = img.bakeOrientation(decoded);
+    return [
+      for (final strip in strips)
+        _compactImage(
+          _processDecoded(decoded, strip, globalTreatment: globalTreatment),
+        ),
+    ];
+  }
+
+  img.Image _processDecoded(
+    img.Image source,
+    VisualStrip strip, {
+    VisualTreatment? globalTreatment,
+    int? maxWidth,
+  }) {
+    final crop = _pixelRect(strip.crop, source.width, source.height);
+    var image = img.copyCrop(
+      source,
       x: crop.x,
       y: crop.y,
       width: crop.width,
@@ -38,7 +72,7 @@ class VisualImageProcessor {
 
     final lyricBand = strip.lyricBand == null
         ? null
-        : _relativeToCrop(strip.lyricBand!, strip.crop);
+        : assetRectToCropLocal(strip.lyricBand!, strip.crop);
     if (lyricBand != null && strip.lyricContrast != 1) {
       final contrasted = img.adjustColor(
         img.Image.from(image),
@@ -61,21 +95,13 @@ class VisualImageProcessor {
     }
 
     for (final highlight in strip.highlights) {
-      final relative = _relativeToCrop(highlight.rect, strip.crop);
+      final relative = assetRectToCropLocal(highlight.rect, strip.crop);
       if (relative == null) continue;
       final rect = _pixelRect(relative, image.width, image.height);
-      img.fillRect(
-        image,
-        x1: rect.x,
-        y1: rect.y,
-        x2: rect.x + rect.width,
-        y2: rect.y + rect.height,
-        color: img.ColorRgba8(255, 225, 40, 82),
-        alphaBlend: true,
-      );
+      _paintOpaqueHighlight(image, rect);
     }
 
-    return Uint8List.fromList(img.encodePng(image, level: 3));
+    return image;
   }
 
   List<Uint8List> compactForExport(Uint8List processedPng) {
@@ -87,6 +113,32 @@ class VisualImageProcessor {
         ? detected
         : [NormalizedRect(0, detected.first.top, 1, detected.last.bottom)];
     return [for (final row in rows) _encodeRect(decoded, row)];
+  }
+
+  List<ProcessedExportImage> _compactImage(img.Image image) {
+    final rendered = Uint8List.fromList(img.encodePng(image, level: 3));
+    final detected = const HorizontalRowDetector().detect(rendered);
+    if (detected.isEmpty) {
+      return [ProcessedExportImage(rendered, image.width / image.height)];
+    }
+    final rows = image.width / image.height < 2.2
+        ? detected
+        : [NormalizedRect(0, detected.first.top, 1, detected.last.bottom)];
+    return [
+      for (final row in rows)
+        () {
+          final top = (row.top * image.height).floor().clamp(
+            0,
+            image.height - 1,
+          );
+          final bottom = (row.bottom * image.height).ceil().clamp(
+            top + 1,
+            image.height,
+          );
+          final bytes = _encodeRect(image, row);
+          return ProcessedExportImage(bytes, image.width / (bottom - top));
+        }(),
+    ];
   }
 
   Uint8List _encodeRect(img.Image image, NormalizedRect row) {
@@ -105,6 +157,28 @@ class VisualImageProcessor {
     return Uint8List.fromList(img.encodePng(cropped, level: 3));
   }
 
+  void _paintOpaqueHighlight(img.Image image, _PixelRect rect) {
+    const opacity = 0.32;
+    const red = 255.0;
+    const green = 225.0;
+    const blue = 40.0;
+    final right = (rect.x + rect.width).clamp(0, image.width);
+    final bottom = (rect.y + rect.height).clamp(0, image.height);
+    for (var y = rect.y; y < bottom; y += 1) {
+      for (var x = rect.x; x < right; x += 1) {
+        final pixel = image.getPixel(x, y);
+        image.setPixelRgba(
+          x,
+          y,
+          pixel.r * (1 - opacity) + red * opacity,
+          pixel.g * (1 - opacity) + green * opacity,
+          pixel.b * (1 - opacity) + blue * opacity,
+          255,
+        );
+      }
+    }
+  }
+
   img.Image _applyTreatment(img.Image image, VisualTreatment treatment) {
     return switch (treatment) {
       VisualTreatment.original => image,
@@ -113,6 +187,10 @@ class VisualImageProcessor {
       VisualTreatment.highContrast => img.adjustColor(
         img.grayscale(image),
         contrast: 1.8,
+      ),
+      VisualTreatment.invertedHighContrast => img.adjustColor(
+        img.grayscale(img.invert(image)),
+        contrast: 2.1,
       ),
     };
   }
@@ -124,20 +202,13 @@ class VisualImageProcessor {
     final bottom = (rect.bottom * height).ceil().clamp(y + 1, height);
     return _PixelRect(x, y, right - x, bottom - y);
   }
+}
 
-  NormalizedRect? _relativeToCrop(NormalizedRect rect, NormalizedRect crop) {
-    final left = rect.left > crop.left ? rect.left : crop.left;
-    final top = rect.top > crop.top ? rect.top : crop.top;
-    final right = rect.right < crop.right ? rect.right : crop.right;
-    final bottom = rect.bottom < crop.bottom ? rect.bottom : crop.bottom;
-    if (right <= left || bottom <= top) return null;
-    return NormalizedRect(
-      (left - crop.left) / crop.width,
-      (top - crop.top) / crop.height,
-      (right - crop.left) / crop.width,
-      (bottom - crop.top) / crop.height,
-    ).clamp();
-  }
+class ProcessedExportImage {
+  const ProcessedExportImage(this.bytes, this.aspectRatio);
+
+  final Uint8List bytes;
+  final double aspectRatio;
 }
 
 class _PixelRect {

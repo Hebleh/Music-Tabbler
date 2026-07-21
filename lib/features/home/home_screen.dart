@@ -250,9 +250,14 @@ class _SongPool extends StatelessWidget {
                       leading: const CircleAvatar(
                         child: Icon(Icons.view_stream),
                       ),
-                      title: Text(draft.title),
+                      title: Text(_displayTitle(draft)),
                       subtitle: Text(
-                        '${draft.artist.isEmpty ? 'Unknown artist' : draft.artist} - ${draft.strips.length} row(s)',
+                        [
+                          if (_displayArtist(draft).isNotEmpty)
+                            _displayArtist(draft),
+                          '${draft.strips.length} row(s)',
+                          'Last edited ${_formatEditedDate(draft.updatedAt)}',
+                        ].join(' | '),
                       ),
                       trailing: Wrap(
                         spacing: 8,
@@ -291,6 +296,44 @@ class _SongPool extends StatelessWidget {
       ],
     );
   }
+}
+
+String _displayTitle(VisualChartDraft draft) {
+  if (_isUntitled(draft.title) && draft.artist.trim().isNotEmpty) {
+    return draft.artist.trim();
+  }
+  return draft.title;
+}
+
+String _displayArtist(VisualChartDraft draft) =>
+    _isUntitled(draft.title) ? '' : draft.artist.trim();
+
+bool _isUntitled(String value) {
+  final normalized = value.trim().toLowerCase();
+  return normalized.isEmpty ||
+      normalized == 'untitled' ||
+      normalized == 'untitled chart';
+}
+
+String _formatEditedDate(DateTime value) {
+  final local = value.toLocal();
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final hour = local.hour.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '${local.day} ${months[local.month - 1]} ${local.year}, $hour:$minute';
 }
 
 class _GigsAndSetlists extends StatelessWidget {

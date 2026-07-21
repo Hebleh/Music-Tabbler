@@ -24,9 +24,14 @@
 #include <shlobj.h>
 
 #include <fstream>
+#include <future>
+#include <cwctype>
 #include <memory>
 #include <regex>
+#include <set>
+#include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #pragma comment(lib, "gdiplus.lib")
@@ -40,6 +45,18 @@ namespace streams = winrt::Windows::Storage::Streams;
 namespace globalization = winrt::Windows::Globalization;
 
 namespace {
+
+class ScopedMtaApartment {
+ public:
+  ScopedMtaApartment() {
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+  }
+
+  ~ScopedMtaApartment() { winrt::uninit_apartment(); }
+
+  ScopedMtaApartment(const ScopedMtaApartment&) = delete;
+  ScopedMtaApartment& operator=(const ScopedMtaApartment&) = delete;
+};
 
 class FlutterOcrNativePlugin : public flutter::Plugin {
  public:
@@ -92,7 +109,6 @@ class FlutterOcrNativePlugin : public flutter::Plugin {
   std::vector<uint8_t> DrawWatermark(const std::vector<uint8_t>& bytes,
                                       const flutter::EncodableMap& lines, int quality);
 
-  ocr::OcrEngine ocr_engine_{nullptr};
   ULONG_PTR gdiplus_token_{0};
 };
 
@@ -120,12 +136,6 @@ FlutterOcrNativePlugin::FlutterOcrNativePlugin() {
   Gdiplus::GdiplusStartupInput gdiplus_input;
   Gdiplus::GdiplusStartup(&gdiplus_token_, &gdiplus_input, nullptr);
 
-  // Create OCR engine for English
-  ocr_engine_ = ocr::OcrEngine::TryCreateFromLanguage(
-      globalization::Language(L"en-US"));
-  if (!ocr_engine_) {
-    ocr_engine_ = ocr::OcrEngine::TryCreateFromUserProfileLanguages();
-  }
 }
 
 FlutterOcrNativePlugin::~FlutterOcrNativePlugin() {
@@ -215,31 +225,76 @@ void FlutterOcrNativePlugin::RecognizeFromPath(
 void FlutterOcrNativePlugin::RecognizeFromBytes(
     const std::vector<uint8_t>& bytes,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-  if (!ocr_engine_) {
-    result->Error("NOT_INITIALIZED", "OCR engine not available");
-    return;
-  }
-
   try {
-    auto stream = streams::InMemoryRandomAccessStream();
-    auto writer = streams::DataWriter(stream.GetOutputStreamAt(0));
-    writer.WriteBytes(winrt::array_view<const uint8_t>(bytes));
-    writer.StoreAsync().get();
-    writer.FlushAsync().get();
-    writer.DetachStream();
-    stream.Seek(0);
+    std::packaged_task<flutter::EncodableMap()> task([this, &bytes]() {
+      ScopedMtaApartment apartment;
 
-    auto decoder = imaging::BitmapDecoder::CreateAsync(stream).get();
-    auto bitmap = decoder.GetSoftwareBitmapAsync().get();
+      std::vector<ocr::OcrEngine> engines;
+      std::set<std::wstring> language_tags;
+      auto add_engine = [&engines, &language_tags](const ocr::OcrEngine& engine) {
+        if (!engine) return;
+        auto tag = std::wstring(engine.RecognizerLanguage().LanguageTag());
+        if (language_tags.insert(tag).second) engines.push_back(engine);
+      };
+      add_engine(ocr::OcrEngine::TryCreateFromLanguage(
+          globalization::Language(L"en-US")));
+      add_engine(ocr::OcrEngine::TryCreateFromLanguage(
+          globalization::Language(L"ja-JP")));
+      add_engine(ocr::OcrEngine::TryCreateFromUserProfileLanguages());
+      if (engines.empty()) {
+        throw std::runtime_error("OCR engine not available");
+      }
 
-    if (bitmap.BitmapPixelFormat() != imaging::BitmapPixelFormat::Bgra8 ||
-        bitmap.BitmapAlphaMode() != imaging::BitmapAlphaMode::Premultiplied) {
-      bitmap = imaging::SoftwareBitmap::Convert(bitmap, imaging::BitmapPixelFormat::Bgra8,
-                                                 imaging::BitmapAlphaMode::Premultiplied);
-    }
+      auto stream = streams::InMemoryRandomAccessStream();
+      auto writer = streams::DataWriter(stream.GetOutputStreamAt(0));
+      writer.WriteBytes(winrt::array_view<const uint8_t>(bytes));
+      writer.StoreAsync().get();
+      writer.FlushAsync().get();
+      writer.DetachStream();
+      stream.Seek(0);
 
-    auto ocr_result = ocr_engine_.RecognizeAsync(bitmap).get();
-    auto response = ProcessOcrResult(ocr_result, bytes);
+      auto decoder = imaging::BitmapDecoder::CreateAsync(stream).get();
+      auto bitmap = decoder.GetSoftwareBitmapAsync().get();
+
+      if (bitmap.BitmapPixelFormat() != imaging::BitmapPixelFormat::Bgra8 ||
+          bitmap.BitmapAlphaMode() != imaging::BitmapAlphaMode::Premultiplied) {
+        bitmap = imaging::SoftwareBitmap::Convert(
+            bitmap, imaging::BitmapPixelFormat::Bgra8,
+            imaging::BitmapAlphaMode::Premultiplied);
+      }
+
+      ocr::OcrResult best_result{nullptr};
+      size_t best_score = 0;
+      for (const auto& engine : engines) {
+        auto candidate = engine.RecognizeAsync(bitmap).get();
+        size_t score = 0;
+        bool contains_japanese = false;
+        for (const auto character : candidate.Text()) {
+          if (!std::iswspace(character)) score += 1;
+          if ((character >= 0x3040 && character <= 0x30ff) ||
+              (character >= 0x3400 && character <= 0x9fff)) {
+            contains_japanese = true;
+          }
+        }
+        const auto language_tag =
+            std::wstring(engine.RecognizerLanguage().LanguageTag());
+        if (contains_japanese) {
+          score += 100000;
+        } else if (language_tag.rfind(L"en", 0) == 0) {
+          score += 10000;
+        }
+        if (!best_result || score > best_score) {
+          best_result = candidate;
+          best_score = score;
+        }
+      }
+      return ProcessOcrResult(best_result, bytes);
+    });
+
+    auto response_future = task.get_future();
+    std::thread worker(std::move(task));
+    worker.join();
+    auto response = response_future.get();
     result->Success(flutter::EncodableValue(response));
   } catch (const winrt::hresult_error& e) {
     result->Error("RECOGNITION_FAILED", winrt::to_string(e.message()));
@@ -252,7 +307,6 @@ flutter::EncodableMap FlutterOcrNativePlugin::ProcessOcrResult(
     const ocr::OcrResult& ocr_result, const std::vector<uint8_t>& image_bytes) {
   std::string full_text;
   flutter::EncodableList blocks;
-  std::regex english_pattern("[A-Za-z0-9]");
 
   for (const auto& line : ocr_result.Lines()) {
     std::string line_text;
@@ -262,7 +316,7 @@ flutter::EncodableMap FlutterOcrNativePlugin::ProcessOcrResult(
 
     for (const auto& word : line.Words()) {
       auto text = winrt::to_string(word.Text());
-      if (!std::regex_search(text, english_pattern)) continue;
+      if (text.empty()) continue;
 
       auto rect = word.BoundingRect();
       flutter::EncodableMap bbox;

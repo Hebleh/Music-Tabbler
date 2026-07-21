@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 
 import '../../domain/visual_chart_models.dart';
 import 'resizable_rect_overlay.dart';
@@ -12,12 +14,14 @@ class RectEditorDialog extends StatefulWidget {
     required this.imageAspectRatio,
     required this.title,
     required this.initialRect,
+    this.viewportRect = const NormalizedRect.full(),
   });
 
   final String imagePath;
   final double imageAspectRatio;
   final String title;
   final NormalizedRect initialRect;
+  final NormalizedRect viewportRect;
 
   @override
   State<RectEditorDialog> createState() => _RectEditorDialogState();
@@ -25,11 +29,16 @@ class RectEditorDialog extends StatefulWidget {
 
 class _RectEditorDialogState extends State<RectEditorDialog> {
   late NormalizedRect _rect;
+  late final Future<Uint8List> _imageBytes;
 
   @override
   void initState() {
     super.initState();
     _rect = widget.initialRect;
+    _imageBytes = compute(_cropDialogImage, {
+      'path': widget.imagePath,
+      'crop': widget.viewportRect.toJson(),
+    });
   }
 
   @override
@@ -51,7 +60,25 @@ class _RectEditorDialogState extends State<RectEditorDialog> {
                     return Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.file(File(widget.imagePath), fit: BoxFit.fill),
+                        FutureBuilder<Uint8List>(
+                          future: _imageBytes,
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return const Center(
+                                child: Text('Crop preview unavailable'),
+                              );
+                            }
+                            if (!snapshot.hasData) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
+                            return Image.memory(
+                              snapshot.data!,
+                              fit: BoxFit.fill,
+                            );
+                          },
+                        ),
                         ResizableRectOverlay(
                           rect: _rect,
                           canvasSize: Size(width, height),
@@ -66,24 +93,24 @@ class _RectEditorDialogState extends State<RectEditorDialog> {
               const Text(
                 'Drag the box to move it. Use any edge or corner handle to resize. Fine-tune below.',
               ),
-              _edgeSlider('Left', _rect.left, 0, _rect.right - 0.01, (value) {
-                _setRect(
-                  NormalizedRect(value, _rect.top, _rect.right, _rect.bottom),
-                );
-              }),
               _edgeSlider('Top', _rect.top, 0, _rect.bottom - 0.01, (value) {
                 _setRect(
                   NormalizedRect(_rect.left, value, _rect.right, _rect.bottom),
                 );
               }),
-              _edgeSlider('Right', _rect.right, _rect.left + 0.01, 1, (value) {
-                _setRect(
-                  NormalizedRect(_rect.left, _rect.top, value, _rect.bottom),
-                );
-              }),
               _edgeSlider('Bottom', _rect.bottom, _rect.top + 0.01, 1, (value) {
                 _setRect(
                   NormalizedRect(_rect.left, _rect.top, _rect.right, value),
+                );
+              }),
+              _edgeSlider('Left', _rect.left, 0, _rect.right - 0.01, (value) {
+                _setRect(
+                  NormalizedRect(value, _rect.top, _rect.right, _rect.bottom),
+                );
+              }),
+              _edgeSlider('Right', _rect.right, _rect.left + 0.01, 1, (value) {
+                _setRect(
+                  NormalizedRect(_rect.left, _rect.top, value, _rect.bottom),
                 );
               }),
             ],
@@ -153,4 +180,32 @@ class _RectEditorDialogState extends State<RectEditorDialog> {
       _rect = NormalizedRect(left, top, right, bottom).clamp();
     });
   }
+}
+
+Uint8List _cropDialogImage(Map<String, Object> request) {
+  var image = img.decodeImage(
+    File(request['path']! as String).readAsBytesSync(),
+  );
+  if (image == null) {
+    throw const FormatException('Stored chart image is invalid.');
+  }
+  image = img.bakeOrientation(image);
+  final crop = NormalizedRect.fromJson(
+    (request['crop']! as Map).cast<String, Object?>(),
+  );
+  final left = (crop.left * image.width).floor().clamp(0, image.width - 1);
+  final top = (crop.top * image.height).floor().clamp(0, image.height - 1);
+  final right = (crop.right * image.width).ceil().clamp(left + 1, image.width);
+  final bottom = (crop.bottom * image.height).ceil().clamp(
+    top + 1,
+    image.height,
+  );
+  final cropped = img.copyCrop(
+    image,
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  );
+  return Uint8List.fromList(img.encodePng(cropped, level: 3));
 }

@@ -18,6 +18,8 @@ Use a three-tier hierarchy to stretch Codex and NanoGPT limits without lowering 
 2. **GLM 5.2 is the secondary reasoning and coding reviewer.** Invoke the text-only NanoGPT model `zai-org/glm-5.2:thinking` through Pi for bounded higher-level code review, implementation alternatives, complex test design, and well-specified coding drafts. GLM has no vision capability: never ask it to inspect screenshots, rendered PDFs, or other images. NanoGPT quota is limited, so use concise prompts, avoid redundant passes, and reserve GLM for work that benefits from stronger reasoning.
 3. **Qwen is the routine-work tier.** Prefer the local Pi/Qwen endpoint at `http://127.0.0.1:8080` for inventories, repetitive cross-checks, boilerplate with an exact specification, fixture cataloguing, mechanical refactors, test-matrix execution, and first-pass documentation cleanup. Query `/v1/models` before each delegation and use the model identifier it reports; never hard-code a transient model filename or claim a different served model is Qwen.
 
+Pi's GitHub access is available again. It may be used for bounded, explicitly specified GitHub and release-packaging chores, but Codex retains commit/release scope decisions and final verification.
+
 Before delegating, tell the user what is being offloaded. Prefer a read-only first pass and use a fresh, bounded, non-interactive prompt so the user's interactive Pi Dev session is untouched. Inspect every result before accepting it, and never report unavailable, timed-out, or unverified delegated work as complete.
 
 Do not silently spend limited GLM quota on routine work when Qwen is unavailable. Codex should either handle the task or clearly report which fallback local model is actually being used. Do not start or reconfigure the user's model server without permission.
@@ -42,4 +44,6 @@ The local rig can generate slowly. Use a timeout of at least 20 minutes for subs
 - Use deterministic rendering for screen and A4 PDF; test both tab-only and tab-plus-notation layouts.
 - Store stylus annotations as nondestructive vector overlays.
 - Add migration tests before changing persisted schemas or bundle formats.
-- Verification for relevant changes must include unit tests, strict static analysis, a production build for the affected platform, and visual checks of representative charts/PDFs.
+- Use `dev.bat` for normal Windows development (`dev.ps1` is the underlying PowerShell launcher). It launches `flutter run` and does not create a release package.
+- During active development, verification normally means focused tests, the full relevant test suite, strict static analysis, a dev-mode smoke check, and representative chart/PDF visual checks.
+- Do not create release builds, installers, archives, checksums, tags, or versioned packages during ordinary iteration. Run production builds and delegate mechanical packaging only for an explicit user-requested release or milestone checkpoint; Codex performs final artifact verification.

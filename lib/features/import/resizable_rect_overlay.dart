@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/visual_chart_models.dart';
 
-class ResizableRectOverlay extends StatelessWidget {
+class ResizableRectOverlay extends StatefulWidget {
   const ResizableRectOverlay({
     super.key,
     required this.rect,
@@ -23,12 +23,20 @@ class ResizableRectOverlay extends StatelessWidget {
   final VoidCallback? onSelected;
 
   @override
+  State<ResizableRectOverlay> createState() => _ResizableRectOverlayState();
+}
+
+class _ResizableRectOverlayState extends State<ResizableRectOverlay> {
+  NormalizedRect? _gestureStartRect;
+  Offset? _gestureStartGlobal;
+
+  @override
   Widget build(BuildContext context) {
     final pixelRect = Rect.fromLTRB(
-      rect.left * canvasSize.width,
-      rect.top * canvasSize.height,
-      rect.right * canvasSize.width,
-      rect.bottom * canvasSize.height,
+      widget.rect.left * widget.canvasSize.width,
+      widget.rect.top * widget.canvasSize.height,
+      widget.rect.right * widget.canvasSize.width,
+      widget.rect.bottom * widget.canvasSize.height,
     );
     return Stack(
       clipBehavior: Clip.none,
@@ -37,27 +45,34 @@ class ResizableRectOverlay extends StatelessWidget {
           rect: pixelRect,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: onSelected,
-            onPanStart: (_) => onSelected?.call(),
-            onPanUpdate: (details) => _move(details.delta),
+            onTap: widget.onSelected,
+            onPanStart: (details) => _startGesture(details.globalPosition),
+            onPanUpdate: (details) => _move(details.globalPosition),
+            onPanEnd: (_) => _endGesture(),
+            onPanCancel: _endGesture,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: color.withValues(alpha: selected ? 0.16 : 0.08),
-                border: Border.all(color: color, width: selected ? 3 : 2),
+                color: widget.color.withValues(
+                  alpha: widget.selected ? 0.16 : 0.08,
+                ),
+                border: Border.all(
+                  color: widget.color,
+                  width: widget.selected ? 3 : 2,
+                ),
               ),
-              child: label == null
+              child: widget.label == null
                   ? null
                   : Align(
                       alignment: Alignment.topLeft,
                       child: ColoredBox(
-                        color: color,
+                        color: widget.color,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 6,
                             vertical: 2,
                           ),
                           child: Text(
-                            label!,
+                            widget.label!,
                             style: const TextStyle(
                               color: Colors.black,
                               fontWeight: FontWeight.bold,
@@ -70,7 +85,7 @@ class ResizableRectOverlay extends StatelessWidget {
             ),
           ),
         ),
-        if (selected)
+        if (widget.selected)
           for (final handle in _Handle.values) _buildHandle(handle, pixelRect),
       ],
     );
@@ -95,14 +110,16 @@ class ResizableRectOverlay extends StatelessWidget {
       height: hitSize,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onPanStart: (_) => onSelected?.call(),
-        onPanUpdate: (details) => _resize(handle, details.delta),
+        onPanStart: (details) => _startGesture(details.globalPosition),
+        onPanUpdate: (details) => _resize(handle, details.globalPosition),
+        onPanEnd: (_) => _endGesture(),
+        onPanCancel: _endGesture,
         child: Center(
           child: Container(
             width: 11,
             height: 11,
             decoration: BoxDecoration(
-              color: color,
+              color: widget.color,
               border: Border.all(color: Colors.black87),
               shape: BoxShape.circle,
             ),
@@ -112,28 +129,52 @@ class ResizableRectOverlay extends StatelessWidget {
     );
   }
 
-  void _move(Offset delta) {
-    final dx = delta.dx / canvasSize.width;
-    final dy = delta.dy / canvasSize.height;
-    final width = rect.width;
-    final height = rect.height;
-    final left = (rect.left + dx).clamp(0.0, 1.0 - width);
-    final top = (rect.top + dy).clamp(0.0, 1.0 - height);
-    onChanged(NormalizedRect(left, top, left + width, top + height));
+  void _startGesture(Offset globalPosition) {
+    widget.onSelected?.call();
+    _gestureStartRect = widget.rect;
+    _gestureStartGlobal = globalPosition;
   }
 
-  void _resize(_Handle handle, Offset delta) {
-    final dx = delta.dx / canvasSize.width;
-    final dy = delta.dy / canvasSize.height;
+  void _endGesture() {
+    _gestureStartRect = null;
+    _gestureStartGlobal = null;
+  }
+
+  Offset? _totalDelta(Offset globalPosition) {
+    final start = _gestureStartGlobal;
+    if (start == null) return null;
+    return Offset(
+      (globalPosition.dx - start.dx) / widget.canvasSize.width,
+      (globalPosition.dy - start.dy) / widget.canvasSize.height,
+    );
+  }
+
+  void _move(Offset globalPosition) {
+    final rect = _gestureStartRect;
+    final delta = _totalDelta(globalPosition);
+    if (rect == null || delta == null) return;
+    final width = rect.width;
+    final height = rect.height;
+    final left = (rect.left + delta.dx).clamp(0.0, 1.0 - width);
+    final top = (rect.top + delta.dy).clamp(0.0, 1.0 - height);
+    widget.onChanged(NormalizedRect(left, top, left + width, top + height));
+  }
+
+  void _resize(_Handle handle, Offset globalPosition) {
+    final rect = _gestureStartRect;
+    final delta = _totalDelta(globalPosition);
+    if (rect == null || delta == null) return;
     var left = rect.left;
     var top = rect.top;
     var right = rect.right;
     var bottom = rect.bottom;
+    final dx = delta.dx;
+    final dy = delta.dy;
     if (handle.usesLeft) left = (left + dx).clamp(0.0, right - 0.01);
     if (handle.usesRight) right = (right + dx).clamp(left + 0.01, 1.0);
     if (handle.usesTop) top = (top + dy).clamp(0.0, bottom - 0.01);
     if (handle.usesBottom) bottom = (bottom + dy).clamp(top + 0.01, 1.0);
-    onChanged(NormalizedRect(left, top, right, bottom));
+    widget.onChanged(NormalizedRect(left, top, right, bottom));
   }
 }
 

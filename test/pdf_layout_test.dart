@@ -12,7 +12,7 @@ void main() {
       expect(pages, hasLength(2));
       expect(pages.first.strips, hasLength(5));
       expect(pages.last.strips, hasLength(1));
-      expect(pages.first.headerHeight, 28);
+      expect(pages.first.headerHeight, 24);
       expect(pages.last.headerHeight, 0);
       expect(
         pages.expand((page) => page.strips).map((strip) => strip.index),
@@ -27,7 +27,7 @@ void main() {
     final pages = layout.plan([595.28 / 841.89]);
     final strip = pages.single.strips.single;
 
-    expect(strip.height, lessThanOrEqualTo(841.89 - 44 - 28));
+    expect(strip.height, lessThanOrEqualTo(841.89 - 10 - 24));
     expect(strip.width / strip.height, closeTo(595.28 / 841.89, 0.0001));
   });
 
@@ -38,5 +38,12 @@ void main() {
       includeFirstPageHeader: false,
     );
     expect(pages.every((page) => page.headerHeight == 0), isTrue);
+  });
+
+  test('default A4 layout leaves no artificial gap between tab rows', () {
+    const layout = A4StripLayout();
+
+    expect(layout.gap, 0);
+    expect(layout.margin, lessThanOrEqualTo(5));
   });
 }

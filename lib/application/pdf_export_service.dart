@@ -1,8 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:image/image.dart' as img;
+import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -31,9 +30,9 @@ class A4StripLayout {
   const A4StripLayout({
     this.pageWidth = 595.28,
     this.pageHeight = 841.89,
-    this.margin = 22,
-    this.headerHeight = 28,
-    this.gap = 2,
+    this.margin = 5,
+    this.headerHeight = 24,
+    this.gap = 0,
   });
 
   final double pageWidth;
@@ -118,88 +117,47 @@ class PdfExportService implements ChartPdfExporter {
     if (draft.strips.isEmpty) {
       throw StateError('Add at least one tab strip before exporting.');
     }
-    final processed = <Uint8List>[];
-    for (final strip in draft.strips) {
-      final file = File(
-        library.assetPath(strip.assetHash, strip.assetExtension),
-      );
-      final bytes = await file.readAsBytes();
-      final rendered = processor.process(
-        bytes,
-        strip,
-        globalTreatment: draft.globalTreatment,
-      );
-      processed.addAll(processor.compactForExport(rendered));
+    final grouped = <String, List<(int, VisualStrip)>>{};
+    for (var index = 0; index < draft.strips.length; index += 1) {
+      final strip = draft.strips[index];
+      final key = '${strip.assetHash}.${strip.assetExtension}';
+      grouped.putIfAbsent(key, () => []).add((index, strip));
     }
+    final processed = <Map<String, Object>>[];
+    for (final group in grouped.values) {
+      final first = group.first.$2;
+      final bytes = await File(
+        library.assetPath(first.assetHash, first.assetExtension),
+      ).readAsBytes();
+      processed.addAll(
+        await compute(_processAssetForExport, {
+          'bytes': bytes,
+          'strips': [for (final item in group) item.$2.toJson()],
+          'indices': [for (final item in group) item.$1],
+          'globalTreatment': draft.globalTreatment?.name,
+        }),
+      );
+    }
+    processed.sort((left, right) {
+      final stripOrder = (left['stripIndex']! as int).compareTo(
+        right['stripIndex']! as int,
+      );
+      return stripOrder != 0
+          ? stripOrder
+          : (left['rowIndex']! as int).compareTo(right['rowIndex']! as int);
+    });
 
-    final pages = layout.plan([
-      for (final bytes in processed)
-        () {
-          final image = img.decodePng(bytes)!;
-          return image.width / image.height;
-        }(),
-    ], includeFirstPageHeader: draft.showHeader);
-    final document = pw.Document(
-      title: draft.title,
-      author: draft.artist,
-      creator: 'Music Tabbler',
-    );
-    for (var pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
-      final page = pages[pageIndex];
-      document.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(22),
-          build: (_) => pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              if (page.headerHeight > 0)
-                pw.SizedBox(
-                  height: page.headerHeight,
-                  child: pageIndex == 0 && draft.showHeader
-                      ? pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text(
-                              draft.title,
-                              style: pw.TextStyle(
-                                fontSize: 11,
-                                fontWeight: pw.FontWeight.bold,
-                              ),
-                            ),
-                            if (draft.artist.isNotEmpty)
-                              pw.Text(
-                                draft.artist,
-                                style: const pw.TextStyle(fontSize: 8),
-                              ),
-                          ],
-                        )
-                      : pw.SizedBox(),
-                ),
-              for (
-                var itemIndex = 0;
-                itemIndex < page.strips.length;
-                itemIndex += 1
-              ) ...[
-                if (itemIndex > 0) pw.SizedBox(height: layout.gap),
-                pw.Align(
-                  alignment: pw.Alignment.centerLeft,
-                  child: pw.SizedBox(
-                    width: page.strips[itemIndex].width,
-                    height: page.strips[itemIndex].height,
-                    child: pw.Image(
-                      pw.MemoryImage(processed[page.strips[itemIndex].index]),
-                      fit: pw.BoxFit.fill,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-    }
-    return Uint8List.fromList(await document.save());
+    return compute(_buildPdfInBackground, {
+      'processed': processed,
+      'title': draft.title,
+      'artist': draft.artist,
+      'showHeader': draft.showHeader,
+      'pageWidth': layout.pageWidth,
+      'pageHeight': layout.pageHeight,
+      'margin': layout.margin,
+      'headerHeight': layout.headerHeight,
+      'gap': layout.gap,
+    });
   }
 
   @override
@@ -220,4 +178,118 @@ class PdfExportService implements ChartPdfExporter {
     await File(path).writeAsBytes(await exportBytes(draft), flush: true);
     return path;
   }
+}
+
+List<Map<String, Object>> _processAssetForExport(Map<String, Object?> request) {
+  final strips = [
+    for (final value in request['strips']! as List)
+      VisualStrip.fromJson((value as Map).cast<String, Object?>()),
+  ];
+  final indices = (request['indices']! as List).cast<int>();
+  final treatmentName = request['globalTreatment'] as String?;
+  final treatment = treatmentName == null
+      ? null
+      : VisualTreatment.values.byName(treatmentName);
+  final batches = const VisualImageProcessor().processForExportBatch(
+    request['bytes']! as Uint8List,
+    strips,
+    globalTreatment: treatment,
+  );
+  return [
+    for (var stripIndex = 0; stripIndex < batches.length; stripIndex += 1)
+      for (
+        var rowIndex = 0;
+        rowIndex < batches[stripIndex].length;
+        rowIndex += 1
+      )
+        {
+          'stripIndex': indices[stripIndex],
+          'rowIndex': rowIndex,
+          'bytes': batches[stripIndex][rowIndex].bytes,
+          'aspectRatio': batches[stripIndex][rowIndex].aspectRatio,
+        },
+  ];
+}
+
+Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
+  final processed = (request['processed']! as List)
+      .map((value) => (value as Map).cast<String, Object>())
+      .toList(growable: false);
+  final showHeader = request['showHeader']! as bool;
+  final layout = A4StripLayout(
+    pageWidth: request['pageWidth']! as double,
+    pageHeight: request['pageHeight']! as double,
+    margin: request['margin']! as double,
+    headerHeight: request['headerHeight']! as double,
+    gap: request['gap']! as double,
+  );
+  final pages = layout.plan([
+    for (final item in processed) item['aspectRatio']! as double,
+  ], includeFirstPageHeader: showHeader);
+  final title = request['title']! as String;
+  final artist = request['artist']! as String;
+  final document = pw.Document(
+    title: title,
+    author: artist,
+    creator: 'Music Tabbler',
+  );
+  for (var pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+    final page = pages[pageIndex];
+    document.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: pw.EdgeInsets.all(layout.margin),
+        build: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            if (page.headerHeight > 0)
+              pw.SizedBox(
+                height: page.headerHeight,
+                child: pageIndex == 0 && showHeader
+                    ? pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            title,
+                            style: pw.TextStyle(
+                              fontSize: 11,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          if (artist.isNotEmpty)
+                            pw.Text(
+                              artist,
+                              style: const pw.TextStyle(fontSize: 8),
+                            ),
+                        ],
+                      )
+                    : pw.SizedBox(),
+              ),
+            for (
+              var itemIndex = 0;
+              itemIndex < page.strips.length;
+              itemIndex += 1
+            ) ...[
+              if (itemIndex > 0) pw.SizedBox(height: layout.gap),
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.SizedBox(
+                  width: page.strips[itemIndex].width,
+                  height: page.strips[itemIndex].height,
+                  child: pw.Image(
+                    pw.MemoryImage(
+                      processed[page.strips[itemIndex].index]['bytes']!
+                          as Uint8List,
+                    ),
+                    fit: pw.BoxFit.fill,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+  return Uint8List.fromList(await document.save());
 }

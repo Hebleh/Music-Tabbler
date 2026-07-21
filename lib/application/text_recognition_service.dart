@@ -17,12 +17,16 @@ class NativeTextRecognitionService implements TextRecognitionService {
 
   @override
   Future<MetadataSuggestion> recognize(VisualStrip strip) {
-    return _cache.putIfAbsent(strip.assetHash, () => _recognize(strip));
+    return _cache.putIfAbsent(
+      textRecognitionCacheKey(strip),
+      () => _recognize(strip),
+    );
   }
 
   Future<MetadataSuggestion> _recognize(VisualStrip strip) async {
     final prepared = await _prepareForRecognition(
       library.assetPath(strip.assetHash, strip.assetExtension),
+      strip.crop,
     );
     final result = await _reader.readFromBytes(prepared.bytes);
     final lines = [for (final block in result.blocks) ...block.lines]
@@ -75,21 +79,47 @@ class NativeTextRecognitionService implements TextRecognitionService {
     return NormalizedRect(left, top, right, bottom);
   }
 
-  Future<_PreparedOcrImage> _prepareForRecognition(String path) async {
-    return compute(_prepareOcrImage, path);
+  Future<_PreparedOcrImage> _prepareForRecognition(
+    String path,
+    NormalizedRect crop,
+  ) async {
+    return compute(_prepareOcrImage, {'path': path, 'crop': crop.toJson()});
   }
 }
 
-_PreparedOcrImage _prepareOcrImage(String path) {
+String textRecognitionCacheKey(VisualStrip strip) {
+  final crop = strip.crop;
+  return '${strip.assetHash}:'
+      '${crop.left.toStringAsFixed(6)}:'
+      '${crop.top.toStringAsFixed(6)}:'
+      '${crop.right.toStringAsFixed(6)}:'
+      '${crop.bottom.toStringAsFixed(6)}';
+}
+
+_PreparedOcrImage _prepareOcrImage(Map<String, Object> request) {
+  final path = request['path']! as String;
+  final crop = NormalizedRect.fromJson(
+    (request['crop']! as Map).cast<String, Object?>(),
+  );
   var image = img.decodeImage(File(path).readAsBytesSync());
   if (image == null) {
     throw const FormatException('Stored chart image is invalid.');
   }
   image = img.bakeOrientation(image);
-  if (image.width < 2400) {
+  final x = (crop.left * image.width).floor().clamp(0, image.width - 1);
+  final y = (crop.top * image.height).floor().clamp(0, image.height - 1);
+  final right = (crop.right * image.width).ceil().clamp(x + 1, image.width);
+  final bottom = (crop.bottom * image.height).ceil().clamp(y + 1, image.height);
+  image = img.copyCrop(image, x: x, y: y, width: right - x, height: bottom - y);
+
+  var scale = 1.0;
+  if (image.width < 3200) scale = 3200 / image.width;
+  if (image.height * scale < 240) scale = 240 / image.height;
+  if (image.width * scale > 4800) scale = 4800 / image.width;
+  if (scale > 1.01) {
     image = img.copyResize(
       image,
-      width: 2400,
+      width: (image.width * scale).round(),
       interpolation: img.Interpolation.cubic,
     );
   }
@@ -109,7 +139,7 @@ _PreparedOcrImage _prepareOcrImage(String path) {
   }
   image = img.grayscale(image);
   if (samples > 0 && luminance / samples < 118) image = img.invert(image);
-  image = img.adjustColor(image, contrast: 1.65);
+  image = img.adjustColor(image, contrast: 1.35);
   return _PreparedOcrImage(
     Uint8List.fromList(img.encodePng(image, level: 2)),
     image.width,
@@ -133,16 +163,16 @@ class _PreparedOcrImage {
 
   var titleIndex = candidates.indexWhere(
     (item) => RegExp(
-      r'\b(bass\s+tab|guitar\s+tab|tab|chords?)\b',
+      r'\b(bass\s+transcription|bass\s+tab|guitar\s+tab|tab|chords?)\b',
       caseSensitive: false,
     ).hasMatch(item),
   );
   if (titleIndex < 0) titleIndex = 0;
   final rawTitle = candidates[titleIndex];
-  final title = rawTitle
+  var title = rawTitle
       .replaceFirst(
         RegExp(
-          r'\s*[-|:]?\s*(bass\s+tab|guitar\s+tab|tab|chords?)\s*$',
+          r'\s*[-|:]?\s*(bass\s+transcription|bass\s+tab|guitar\s+tab|tab|chords?)\s*$',
           caseSensitive: false,
         ),
         '',
@@ -150,13 +180,23 @@ class _PreparedOcrImage {
       .trim();
 
   String? artist;
+  if (RegExp(
+        r'\bbass\s+transcription\s*$',
+        caseSensitive: false,
+      ).hasMatch(rawTitle) &&
+      title.contains(' - ')) {
+    final separator = title.indexOf(' - ');
+    artist = title.substring(0, separator).trim();
+    title = title.substring(separator + 3).trim();
+  }
   for (var index = titleIndex + 1; index < candidates.length; index += 1) {
     final value = candidates[index];
     final lower = value.toLowerCase();
     if (lower != title.toLowerCase() &&
         !_metadataUiWords.contains(lower) &&
+        artist == null &&
         !RegExp(
-          r'\b(bass\s+tab|guitar\s+tab|tab|chords?)\b',
+          r'\b(bass\s+transcription|bass\s+tab|guitar\s+tab|tab|chords?)\b',
           caseSensitive: false,
         ).hasMatch(value)) {
       artist = value;
@@ -168,7 +208,9 @@ class _PreparedOcrImage {
 
 bool _looksLikeMetadata(String value) {
   if (value.length < 2 || value.length > 100) return false;
-  if (!RegExp(r'[A-Za-z]').hasMatch(value)) return false;
+  if (!RegExp(r'[A-Za-z\u3040-\u30ff\u3400-\u9fff]').hasMatch(value)) {
+    return false;
+  }
   final lower = value.toLowerCase();
   return !lower.contains('revision from') &&
       lower != 'search' &&

@@ -1,6 +1,12 @@
 import 'dart:convert';
 
-enum VisualTreatment { original, grayscale, invert, highContrast }
+enum VisualTreatment {
+  original,
+  grayscale,
+  invert,
+  highContrast,
+  invertedHighContrast,
+}
 
 extension VisualTreatmentLabel on VisualTreatment {
   String get label => switch (this) {
@@ -8,6 +14,7 @@ extension VisualTreatmentLabel on VisualTreatment {
     VisualTreatment.grayscale => 'Grayscale',
     VisualTreatment.invert => 'Invert',
     VisualTreatment.highContrast => 'High contrast',
+    VisualTreatment.invertedHighContrast => 'Invert + high contrast',
   };
 }
 

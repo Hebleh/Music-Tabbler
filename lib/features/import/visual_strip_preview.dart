@@ -43,24 +43,39 @@ class _VisualStripPreviewState extends State<VisualStripPreview> {
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: FutureBuilder<Uint8List>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(child: Text('Preview unavailable'));
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return Image.memory(
-            snapshot.data!,
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-            filterQuality: FilterQuality.medium,
-          );
-        },
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final preferredHeight = visualStripPreviewHeight(
+          constraints.maxWidth,
+          widget.strip.croppedAspectRatio,
+        );
+        final height = preferredHeight.clamp(
+          constraints.minHeight,
+          constraints.maxHeight,
+        );
+        return SizedBox(
+          height: height,
+          child: RepaintBoundary(
+            child: FutureBuilder<Uint8List>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Text('Preview unavailable'));
+                }
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return Image.memory(
+                  snapshot.data!,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -87,7 +102,7 @@ class _VisualStripPreviewState extends State<VisualStripPreview> {
 }
 
 class _PreviewCache {
-  static const maxEntries = 24;
+  static const maxEntries = 48;
   static final Map<String, Future<Uint8List>> _items = {};
 
   static Future<Uint8List> load(
@@ -108,6 +123,12 @@ class _PreviewCache {
     });
     return future;
   }
+}
+
+double visualStripPreviewHeight(double availableWidth, double aspectRatio) {
+  if (!availableWidth.isFinite || availableWidth <= 0) return 90;
+  final safeAspect = aspectRatio.isFinite && aspectRatio > 0 ? aspectRatio : 1;
+  return (availableWidth / safeAspect).clamp(90.0, 320.0);
 }
 
 Uint8List _renderPreview(Map<String, Object?> request) {

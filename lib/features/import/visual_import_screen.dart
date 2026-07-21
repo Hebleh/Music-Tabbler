@@ -1,11 +1,12 @@
 import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../application/app_services.dart';
+import '../../application/draft_edit_session.dart';
+import '../../application/highlight_geometry.dart';
 import '../../application/service_contracts.dart';
 import '../../domain/visual_chart_models.dart';
 import 'multi_row_split_dialog.dart';
@@ -33,8 +34,12 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   late final TextEditingController _artistController;
   late final FocusNode _shortcutFocusNode;
   final ScrollController _editorScrollController = ScrollController();
+  final DraftUndoHistory _undoHistory = DraftUndoHistory();
+  late final DebouncedDraftAutosaver _autosaver;
   bool _busy = false;
   bool _dragging = false;
+  bool _syncingMetadata = false;
+  Object? _autosaveError;
 
   @override
   void initState() {
@@ -51,14 +56,55 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         );
     _titleController = TextEditingController(text: _draft.title);
     _artistController = TextEditingController(text: _draft.artist);
+    _titleController.addListener(_metadataChanged);
+    _artistController.addListener(_metadataChanged);
+    _autosaver = DebouncedDraftAutosaver(
+      save: (draft) async {
+        await widget.services.library.saveDraft(draft);
+        if (mounted && _autosaveError != null) {
+          setState(() => _autosaveError = null);
+        }
+      },
+      onError: (error, _) {
+        if (mounted) setState(() => _autosaveError = error);
+      },
+    );
     _shortcutFocusNode = FocusNode(debugLabel: 'Visual editor shortcuts');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _shortcutFocusNode.requestFocus();
     });
   }
 
+  void _metadataChanged() {
+    if (_syncingMetadata) return;
+    _commitDraft(_withMetadata());
+  }
+
+  void _commitDraft(VisualChartDraft next, {bool recordUndo = true}) {
+    if (recordUndo) _undoHistory.record(_draft);
+    setState(() {
+      _draft = next;
+      _autosaveError = null;
+    });
+    if (_draft.strips.isNotEmpty) _autosaver.schedule(_draft);
+  }
+
+  void _undo() {
+    final previous = _undoHistory.undo();
+    if (previous == null) return;
+    final restored = previous.copyWith(updatedAt: DateTime.now().toUtc());
+    _syncingMetadata = true;
+    _titleController.text = restored.title;
+    _artistController.text = restored.artist;
+    _syncingMetadata = false;
+    _commitDraft(restored, recordUndo: false);
+  }
+
   @override
   void dispose() {
+    _titleController.removeListener(_metadataChanged);
+    _artistController.removeListener(_metadataChanged);
+    unawaited(_autosaver.dispose());
     _titleController.dispose();
     _artistController.dispose();
     _shortcutFocusNode.dispose();
@@ -72,6 +118,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyV, control: true):
             _pasteShortcut,
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
       },
       child: Focus(
         focusNode: _shortcutFocusNode,
@@ -86,6 +133,21 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                 appBar: AppBar(
                   title: const Text('Visual chart editor'),
                   actions: [
+                    IconButton(
+                      tooltip: 'Undo last edit (Ctrl+Z)',
+                      onPressed: _undoHistory.canUndo ? _undo : null,
+                      icon: const Icon(Icons.undo),
+                    ),
+                    if (_autosaveError != null)
+                      const Tooltip(
+                        message: 'Autosave failed; use Save to retry.',
+                        child: Icon(Icons.cloud_off_outlined),
+                      )
+                    else
+                      const Tooltip(
+                        message: 'Edits autosave locally',
+                        child: Icon(Icons.cloud_done_outlined),
+                      ),
                     TextButton.icon(
                       onPressed: _busy ? null : _save,
                       icon: const Icon(Icons.save_outlined),
@@ -118,6 +180,15 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                                     decoration: const InputDecoration(
                                       labelText: 'Song title',
                                       border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.fromLTRB(
+                                        14,
+                                        20,
+                                        14,
+                                        16,
+                                      ),
+                                      constraints: BoxConstraints(
+                                        minHeight: 60,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -128,6 +199,15 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                                     decoration: const InputDecoration(
                                       labelText: 'Artist',
                                       border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.fromLTRB(
+                                        14,
+                                        20,
+                                        14,
+                                        16,
+                                      ),
+                                      constraints: BoxConstraints(
+                                        minHeight: 60,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -135,15 +215,15 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                                 DropdownButton<VisualTreatment?>(
                                   value: _draft.globalTreatment,
                                   hint: const Text('Per-strip display'),
-                                  onChanged: (value) => setState(() {
-                                    _draft = value == null
+                                  onChanged: (value) => _commitDraft(
+                                    value == null
                                         ? _draft.copyWith(
                                             clearGlobalTreatment: true,
                                           )
                                         : _draft.copyWith(
                                             globalTreatment: value,
-                                          );
-                                  }),
+                                          ),
+                                  ),
                                   items: [
                                     const DropdownMenuItem<VisualTreatment?>(
                                       value: null,
@@ -164,9 +244,9 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                                 FilterChip(
                                   label: const Text('Title / artist in PDF'),
                                   selected: _draft.showHeader,
-                                  onSelected: (value) => setState(() {
-                                    _draft = _draft.copyWith(showHeader: value);
-                                  }),
+                                  onSelected: (value) => _commitDraft(
+                                    _draft.copyWith(showHeader: value),
+                                  ),
                                 ),
                               ],
                             ),
@@ -213,6 +293,13 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                                   ),
                                   label: const Text('Detect title / artist'),
                                 ),
+                                OutlinedButton.icon(
+                                  onPressed: _busy || _draft.strips.isEmpty
+                                      ? null
+                                      : _openChartHighlighter,
+                                  icon: const Icon(Icons.highlight_alt),
+                                  label: const Text('Open chart highlighter'),
+                                ),
                                 if (_busy)
                                   const SizedBox.square(
                                     dimension: 28,
@@ -236,35 +323,30 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                           : Scrollbar(
                               controller: _editorScrollController,
                               thumbVisibility: true,
-                              child: Listener(
-                                onPointerSignal: _routeEditorScroll,
-                                child: ReorderableListView.builder(
-                                  scrollController: _editorScrollController,
-                                  primary: false,
-                                  physics: const ClampingScrollPhysics(),
-                                  padding: const EdgeInsets.all(16),
-                                  itemCount: _draft.strips.length,
-                                  onReorderItem: _reorder,
-                                  itemBuilder: (context, index) {
-                                    final strip = _draft.strips[index];
-                                    return _StripCard(
-                                      key: ValueKey(strip.id),
-                                      index: index,
-                                      strip: strip,
-                                      globalTreatment: _draft.globalTreatment,
-                                      services: widget.services,
-                                      onChanged: (value) =>
-                                          _replaceStrip(index, value),
-                                      onSplit: () => _splitRow(index),
-                                      onCrop: () => _editCrop(index),
-                                      onLyricBand: () => _editLyricBand(index),
-                                      onTextHighlight: () =>
-                                          _highlightRecognizedText(index),
-                                      onDuplicate: () => _duplicate(index),
-                                      onDelete: () => _delete(index),
-                                    );
-                                  },
-                                ),
+                              child: ReorderableListView.builder(
+                                scrollController: _editorScrollController,
+                                primary: false,
+                                physics: const ClampingScrollPhysics(),
+                                padding: const EdgeInsets.all(16),
+                                itemCount: _draft.strips.length,
+                                onReorderItem: _reorder,
+                                itemBuilder: (context, index) {
+                                  final strip = _draft.strips[index];
+                                  return _StripCard(
+                                    key: ValueKey(strip.id),
+                                    index: index,
+                                    strip: strip,
+                                    sourceLabel: _sourceLabelAt(index),
+                                    globalTreatment: _draft.globalTreatment,
+                                    services: widget.services,
+                                    onChanged: (value) =>
+                                        _replaceStrip(index, value),
+                                    onSplit: () => _splitRow(index),
+                                    onCrop: () => _editCrop(index),
+                                    onDuplicate: () => _duplicate(index),
+                                    onDelete: () => _delete(index),
+                                  );
+                                },
                               ),
                             ),
                     ),
@@ -299,24 +381,6 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     );
   }
 
-  void _routeEditorScroll(PointerSignalEvent event) {
-    if (event is! PointerScrollEvent || !_editorScrollController.hasClients) {
-      return;
-    }
-    GestureBinding.instance.pointerSignalResolver.register(event, (
-      resolvedEvent,
-    ) {
-      final scroll = resolvedEvent as PointerScrollEvent;
-      final position = _editorScrollController.position;
-      _editorScrollController.jumpTo(
-        (position.pixels + scroll.scrollDelta.dy).clamp(
-          position.minScrollExtent,
-          position.maxScrollExtent,
-        ),
-      );
-    });
-  }
-
   Future<void> _add(_ImportKind kind) async {
     setState(() => _busy = true);
     try {
@@ -334,6 +398,19 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  String _sourceLabelAt(int stripIndex) {
+    final strip = _draft.strips[stripIndex];
+    if (strip.sourcePage case final page?) return 'PDF page $page';
+    final imageHashes = <String>[];
+    for (final candidate in _draft.strips) {
+      if (candidate.sourcePage != null) continue;
+      if (!imageHashes.contains(candidate.assetHash)) {
+        imageHashes.add(candidate.assetHash);
+      }
+    }
+    return 'Image source ${imageHashes.indexOf(strip.assetHash) + 1}';
   }
 
   void _pasteShortcut() {
@@ -368,23 +445,26 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         _draft.strips.isEmpty &&
         (_titleController.text.trim().isEmpty ||
             _titleController.text.trim() == 'Untitled chart');
-    setState(() {
-      _draft = _draft.copyWith(strips: [..._draft.strips, ...additions]);
-    });
+    _commitDraft(_draft.copyWith(strips: [..._draft.strips, ...additions]));
     if (shouldRecognize) unawaited(_recognizeMetadata(additions.first));
   }
 
   Future<void> _recognizeMetadata(VisualStrip strip) async {
     try {
-      final suggestion = await widget.services.textRecognition.recognize(strip);
+      final sourceStrip = strip.copyWith(crop: const NormalizedRect.full());
+      final suggestion = await widget.services.textRecognition.recognize(
+        sourceStrip,
+      );
       if (!mounted) return;
+      _syncingMetadata = true;
       if (suggestion.title case final title? when title.trim().isNotEmpty) {
         _titleController.text = title.trim();
       }
       if (suggestion.artist case final artist? when artist.trim().isNotEmpty) {
         _artistController.text = artist.trim();
       }
-      setState(() => _draft = _withMetadata());
+      _syncingMetadata = false;
+      _commitDraft(_withMetadata());
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -407,6 +487,18 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
 
   Future<void> _splitRow(int index) async {
     final strip = _draft.strips[index];
+    final siblingIndexes = <int>[
+      for (
+        var candidateIndex = 0;
+        candidateIndex < _draft.strips.length;
+        candidateIndex += 1
+      )
+        if (_sameSourcePage(_draft.strips[candidateIndex], strip))
+          candidateIndex,
+    ];
+    final siblings = [
+      for (final siblingIndex in siblingIndexes) _draft.strips[siblingIndex],
+    ];
     final rows = await showDialog<List<NormalizedRect>>(
       context: context,
       builder: (_) => MultiRowSplitDialog(
@@ -415,32 +507,71 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
           strip.assetExtension,
         ),
         imageAspectRatio: strip.pixelWidth / strip.pixelHeight,
-        sourceRect: strip.crop,
+        sourceRect: const NormalizedRect.full(),
+        initialRows: [for (final sibling in siblings) sibling.crop],
       ),
     );
     if (rows == null || rows.isEmpty) return;
     final replacements = [
-      for (final crop in rows)
-        VisualStrip(
-          id: IdFactory.next('strip'),
-          assetHash: strip.assetHash,
-          assetExtension: strip.assetExtension,
-          pixelWidth: strip.pixelWidth,
-          pixelHeight: strip.pixelHeight,
-          sourceAssetHash: strip.sourceAssetHash,
-          sourcePage: strip.sourcePage,
-          crop: crop,
-          treatment: strip.treatment,
-          lyricBand: strip.lyricBand,
-          lyricContrast: strip.lyricContrast,
-          highlights: strip.highlights,
-        ),
+      for (final crop in rows) _resplitStrip(crop, siblings),
     ];
-    final strips = [..._draft.strips]
-      ..removeAt(index)
-      ..insertAll(index, replacements);
-    setState(() => _draft = _draft.copyWith(strips: strips));
+    final insertAt = siblingIndexes.first;
+    final siblingSet = siblingIndexes.toSet();
+    final strips = <VisualStrip>[];
+    for (
+      var candidateIndex = 0;
+      candidateIndex < _draft.strips.length;
+      candidateIndex += 1
+    ) {
+      if (candidateIndex == insertAt) strips.addAll(replacements);
+      if (!siblingSet.contains(candidateIndex)) {
+        strips.add(_draft.strips[candidateIndex]);
+      }
+    }
+    _commitDraft(_draft.copyWith(strips: strips));
   }
+
+  bool _sameSourcePage(VisualStrip left, VisualStrip right) =>
+      left.assetHash == right.assetHash && left.sourcePage == right.sourcePage;
+
+  VisualStrip _resplitStrip(NormalizedRect crop, List<VisualStrip> siblings) {
+    final template = siblings.reduce((best, candidate) {
+      final bestOverlap = _verticalOverlap(best.crop, crop);
+      final candidateOverlap = _verticalOverlap(candidate.crop, crop);
+      return candidateOverlap > bestOverlap ? candidate : best;
+    });
+    final highlights = <VisualHighlight>[
+      for (final sibling in siblings)
+        for (final highlight in sibling.highlights)
+          if (_rectsIntersect(highlight.rect, crop)) highlight,
+    ];
+    return VisualStrip(
+      id: IdFactory.next('strip'),
+      assetHash: template.assetHash,
+      assetExtension: template.assetExtension,
+      pixelWidth: template.pixelWidth,
+      pixelHeight: template.pixelHeight,
+      sourceAssetHash: template.sourceAssetHash,
+      sourcePage: template.sourcePage,
+      crop: crop,
+      treatment: template.treatment,
+      lyricBand: template.lyricBand,
+      lyricContrast: template.lyricContrast,
+      highlights: highlights,
+    );
+  }
+
+  double _verticalOverlap(NormalizedRect left, NormalizedRect right) {
+    final top = left.top > right.top ? left.top : right.top;
+    final bottom = left.bottom < right.bottom ? left.bottom : right.bottom;
+    return (bottom - top).clamp(0.0, 1.0);
+  }
+
+  bool _rectsIntersect(NormalizedRect left, NormalizedRect right) =>
+      left.left < right.right &&
+      left.right > right.left &&
+      left.top < right.bottom &&
+      left.bottom > right.top;
 
   Future<void> _editCrop(int index) async {
     final strip = _draft.strips[index];
@@ -451,57 +582,47 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
           strip.assetHash,
           strip.assetExtension,
         ),
-        imageAspectRatio: strip.pixelWidth / strip.pixelHeight,
+        imageAspectRatio: strip.croppedAspectRatio,
         title: 'Crop tab row',
-        initialRect: strip.crop,
+        initialRect: const NormalizedRect.full(),
+        viewportRect: strip.crop,
       ),
     );
-    if (value != null) _replaceStrip(index, strip.copyWith(crop: value));
+    if (value != null) {
+      _replaceStrip(
+        index,
+        strip.copyWith(crop: cropLocalRectToAsset(value, strip.crop)),
+      );
+    }
   }
 
-  Future<void> _editLyricBand(int index) async {
-    final strip = _draft.strips[index];
-    final value = await showDialog<NormalizedRect>(
-      context: context,
-      builder: (_) => RectEditorDialog(
-        imagePath: widget.services.library.assetPath(
-          strip.assetHash,
-          strip.assetExtension,
-        ),
-        imageAspectRatio: strip.pixelWidth / strip.pixelHeight,
-        title: 'Set highlighter area',
-        initialRect:
-            strip.lyricBand ?? const NormalizedRect(0.02, 0.70, 0.98, 0.98),
-      ),
-    );
-    if (value != null) _replaceStrip(index, strip.copyWith(lyricBand: value));
-  }
-
-  Future<void> _highlightRecognizedText(int index) async {
-    final strip = _draft.strips[index];
+  Future<void> _openChartHighlighter() async {
     final selection = await showDialog<TextHighlightSelection>(
       context: context,
       builder: (_) => TextHighlighterDialog(
-        imagePath: widget.services.library.assetPath(
-          strip.assetHash,
-          strip.assetExtension,
-        ),
-        imageAspectRatio: strip.pixelWidth / strip.pixelHeight,
-        strip: strip,
+        strips: _draft.strips,
+        library: widget.services.library,
         textRecognition: widget.services.textRecognition,
+        globalTreatment: _draft.globalTreatment,
       ),
     );
     if (selection == null) return;
-    _replaceStrip(
-      index,
-      strip.copyWith(
-        highlights: [
-          ...strip.highlights,
-          for (final rect in selection.rects)
-            VisualHighlight(id: IdFactory.next('highlight'), rect: rect),
-        ],
-      ),
-    );
+    final strips = [
+      for (final strip in _draft.strips)
+        strip.copyWith(
+          clearLyricBand: true,
+          lyricContrast: 1,
+          highlights: [
+            for (final localRect
+                in selection.rectsByStrip[strip.id] ?? const [])
+              VisualHighlight(
+                id: IdFactory.next('highlight'),
+                rect: cropLocalRectToAsset(localRect, strip.crop),
+              ),
+          ],
+        ),
+    ];
+    _commitDraft(_draft.copyWith(strips: strips));
   }
 
   void _duplicate(int index) {
@@ -521,24 +642,24 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       highlights: strip.highlights,
     );
     final strips = [..._draft.strips]..insert(index + 1, duplicate);
-    setState(() => _draft = _draft.copyWith(strips: strips));
+    _commitDraft(_draft.copyWith(strips: strips));
   }
 
   void _delete(int index) {
     final strips = [..._draft.strips]..removeAt(index);
-    setState(() => _draft = _draft.copyWith(strips: strips));
+    _commitDraft(_draft.copyWith(strips: strips));
   }
 
   void _replaceStrip(int index, VisualStrip strip) {
     final strips = [..._draft.strips]..[index] = strip;
-    setState(() => _draft = _draft.copyWith(strips: strips));
+    _commitDraft(_draft.copyWith(strips: strips));
   }
 
   void _reorder(int oldIndex, int newIndex) {
     final strips = [..._draft.strips];
     final strip = strips.removeAt(oldIndex);
     strips.insert(newIndex, strip);
-    setState(() => _draft = _draft.copyWith(strips: strips));
+    _commitDraft(_draft.copyWith(strips: strips));
   }
 
   VisualChartDraft _withMetadata() {
@@ -551,12 +672,11 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   }
 
   Future<void> _save() async {
-    setState(() {
-      _busy = true;
-      _draft = _withMetadata();
-    });
+    setState(() => _busy = true);
     try {
-      await widget.services.library.saveDraft(_draft);
+      _autosaver.schedule(_draft);
+      await _autosaver.flush();
+      if (_autosaveError case final error?) throw error;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Chart saved to Song Pool.')),
@@ -570,12 +690,11 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   }
 
   Future<void> _export() async {
-    setState(() {
-      _busy = true;
-      _draft = _withMetadata();
-    });
+    setState(() => _busy = true);
     try {
-      await widget.services.library.saveDraft(_draft);
+      _autosaver.schedule(_draft);
+      await _autosaver.flush();
+      if (_autosaveError case final error?) throw error;
       final destination = await widget.services.exporter.exportWithPicker(
         _draft,
       );
@@ -628,26 +747,24 @@ class _StripCard extends StatelessWidget {
     super.key,
     required this.index,
     required this.strip,
+    required this.sourceLabel,
     required this.globalTreatment,
     required this.services,
     required this.onChanged,
     required this.onSplit,
     required this.onCrop,
-    required this.onLyricBand,
-    required this.onTextHighlight,
     required this.onDuplicate,
     required this.onDelete,
   });
 
   final int index;
   final VisualStrip strip;
+  final String sourceLabel;
   final VisualTreatment? globalTreatment;
   final AppServices services;
   final ValueChanged<VisualStrip> onChanged;
   final VoidCallback onSplit;
   final VoidCallback onCrop;
-  final VoidCallback onLyricBand;
-  final VoidCallback onTextHighlight;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
@@ -670,10 +787,8 @@ class _StripCard extends StatelessWidget {
                   ),
                 ),
                 Text('Row ${index + 1}'),
-                if (strip.sourcePage case final page?) ...[
-                  const SizedBox(width: 8),
-                  Chip(label: Text('PDF page $page')),
-                ],
+                const SizedBox(width: 8),
+                Chip(label: Text(sourceLabel)),
                 const Spacer(),
                 DropdownButton<VisualTreatment>(
                   value: strip.treatment,
@@ -729,42 +844,6 @@ class _StripCard extends StatelessWidget {
                   icon: const Icon(Icons.crop),
                   label: const Text('Crop row'),
                 ),
-                OutlinedButton.icon(
-                  onPressed: onLyricBand,
-                  icon: const Icon(Icons.subtitles_outlined),
-                  label: Text(
-                    strip.lyricBand == null
-                        ? 'Set highlighter area'
-                        : 'Edit highlighter area',
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: onTextHighlight,
-                  icon: const Icon(Icons.highlight_alt),
-                  label: const Text('Open highlighter'),
-                ),
-                if (strip.lyricBand != null) ...[
-                  const Text('Highlighter-area contrast'),
-                  SizedBox(
-                    width: 180,
-                    child: Slider(
-                      value: strip.lyricContrast,
-                      min: 0.25,
-                      max: 2,
-                      divisions: 7,
-                      label: '${strip.lyricContrast.toStringAsFixed(2)}x',
-                      onChanged: (value) =>
-                          onChanged(strip.copyWith(lyricContrast: value)),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Remove highlighter area',
-                    onPressed: () => onChanged(
-                      strip.copyWith(clearLyricBand: true, lyricContrast: 1),
-                    ),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
                 if (strip.highlights.isNotEmpty)
                   ActionChip(
                     avatar: const Icon(Icons.layers_clear_outlined, size: 18),

@@ -90,14 +90,14 @@ void main() {
     expect(find.text('Row 1'), findsOneWidget);
   });
 
-  testWidgets('mouse wheel reaches rows below large unsplit previews', (
+  testWidgets('mouse wheel can return upward after loading a long row list', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final importer = _RecordingImporter(rowCount: 8);
+    final importer = _RecordingImporter(rowCount: 43);
 
     await tester.pumpWidget(
       MusicTabblerApp(services: await _testServices(importer: importer)),
@@ -110,21 +110,80 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.sendEventToBinding(
-      const PointerScrollEvent(
-        position: Offset(640, 700),
-        scrollDelta: Offset(0, 5000),
-      ),
+    const mouseDevice = 42;
+    final mouse = await tester.createGesture(
+      pointer: mouseDevice,
+      kind: PointerDeviceKind.mouse,
     );
-    await tester.pump(const Duration(milliseconds: 500));
+    await mouse.addPointer(location: const Offset(640, 700));
+    addTearDown(mouse.removePointer);
+    for (var index = 0; index < 30; index += 1) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          device: mouseDevice,
+          kind: PointerDeviceKind.mouse,
+          position: const Offset(640, 700),
+          scrollDelta: const Offset(0, 1200),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('Row 8'), findsOneWidget);
+    expect(find.text('Row 43'), findsOneWidget);
+
+    for (var index = 0; index < 30; index += 1) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          device: mouseDevice,
+          kind: PointerDeviceKind.mouse,
+          position: const Offset(640, 700),
+          scrollDelta: const Offset(0, -1200),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Row 1'), findsOneWidget);
+  });
+
+  testWidgets('song pool falls back to artist and shows last edited metadata', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final library = _FakeLibrary()
+      ..drafts.add(
+        VisualChartDraft(
+          id: 'untitled',
+          title: 'Untitled',
+          artist: 'Hitorie',
+          createdAt: DateTime.utc(2026, 7, 20, 12),
+          updatedAt: DateTime.utc(2026, 7, 21, 12),
+        ),
+      );
+
+    await tester.pumpWidget(
+      MusicTabblerApp(services: await _testServices(library: library)),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Hitorie'), findsOneWidget);
+    expect(find.textContaining('Last edited'), findsOneWidget);
+    expect(find.textContaining('Unknown artist'), findsNothing);
   });
 }
 
-Future<AppServices> _testServices({VisualImporter? importer}) async {
+Future<AppServices> _testServices({
+  VisualImporter? importer,
+  ChartLibrary? library,
+}) async {
   return AppServices(
-    library: _FakeLibrary(),
+    library: library ?? _FakeLibrary(),
     importer: importer ?? const _UnusedImporter(),
     exporter: const _UnusedExporter(),
     textRecognition: const _UnusedTextRecognition(),

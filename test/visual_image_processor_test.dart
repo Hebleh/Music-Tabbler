@@ -55,6 +55,7 @@ void main() {
 
     expect(output.getPixel(5, 5).g, 255);
     expect(output.getPixel(30, 20).b, lessThan(255));
+    expect(output.getPixel(30, 20).a, 255);
   });
 
   test('preview processing bounds width after cropping', () {
@@ -76,6 +77,59 @@ void main() {
 
     expect(output.width, 600);
     expect(output.height, 150);
+  });
+
+  test('invert plus high contrast expands a grey tonal range', () {
+    final source = img.Image(width: 2, height: 1);
+    source.setPixelRgb(0, 0, 90, 90, 90);
+    source.setPixelRgb(1, 0, 170, 170, 170);
+    const strip = VisualStrip(
+      id: 'strip',
+      assetHash: 'hash',
+      assetExtension: 'png',
+      pixelWidth: 2,
+      pixelHeight: 1,
+      treatment: VisualTreatment.invertedHighContrast,
+    );
+
+    final output = img.decodePng(
+      const VisualImageProcessor().process(
+        Uint8List.fromList(img.encodePng(source)),
+        strip,
+      ),
+    )!;
+
+    final spread = (output.getPixel(0, 0).r - output.getPixel(1, 0).r).abs();
+    expect(spread, greaterThan(80));
+  });
+
+  test('batch export preserves strip order and precomputes aspect ratios', () {
+    final source = img.Image(width: 200, height: 100);
+    img.fill(source, color: img.ColorRgb8(255, 255, 255));
+    final batches = const VisualImageProcessor().processForExportBatch(
+      Uint8List.fromList(img.encodePng(source)),
+      const [
+        VisualStrip(
+          id: 'left',
+          assetHash: 'hash',
+          assetExtension: 'png',
+          pixelWidth: 200,
+          pixelHeight: 100,
+          crop: NormalizedRect(0, 0, 0.5, 1),
+        ),
+        VisualStrip(
+          id: 'wide',
+          assetHash: 'hash',
+          assetExtension: 'png',
+          pixelWidth: 200,
+          pixelHeight: 100,
+        ),
+      ],
+    );
+
+    expect(batches, hasLength(2));
+    expect(batches[0].single.aspectRatio, closeTo(1, 0.001));
+    expect(batches[1].single.aspectRatio, closeTo(2, 0.001));
   });
 
   test('export compaction splits a tall image only across a blank band', () {
@@ -182,29 +236,70 @@ void main() {
     expect(rows.first.bottom * source.height, greaterThan(130));
   });
 
-  test('row detection separates repeated staff systems without clipping lyrics', () {
-    final source = img.Image(width: 1000, height: 720);
-    img.fill(source, color: img.ColorRgb8(250, 250, 250));
+  test(
+    'row detection separates repeated staff systems without clipping lyrics',
+    () {
+      final source = img.Image(width: 1000, height: 720);
+      img.fill(source, color: img.ColorRgb8(250, 250, 250));
 
-    for (final top in [70, 280, 490]) {
-      for (var line = 0; line < 4; line++) {
+      for (final top in [70, 280, 490]) {
+        for (var line = 0; line < 4; line++) {
+          img.fillRect(
+            source,
+            x1: 40,
+            y1: top + line * 12,
+            x2: 960,
+            y2: top + line * 12 + 1,
+            color: img.ColorRgb8(45, 45, 45),
+          );
+        }
         img.fillRect(
           source,
-          x1: 40,
-          y1: top + line * 12,
-          x2: 960,
-          y2: top + line * 12 + 1,
-          color: img.ColorRgb8(45, 45, 45),
+          x1: 180,
+          y1: top + 62,
+          x2: 820,
+          y2: top + 67,
+          color: img.ColorRgb8(150, 150, 150),
         );
       }
-      img.fillRect(
-        source,
-        x1: 180,
-        y1: top + 62,
-        x2: 820,
-        y2: top + 67,
-        color: img.ColorRgb8(150, 150, 150),
+
+      final rows = const HorizontalRowDetector().detect(
+        Uint8List.fromList(img.encodePng(source)),
       );
+
+      expect(rows, hasLength(3));
+      expect(rows[0].bottom * source.height, greaterThan(137));
+      expect(rows[1].top * source.height, lessThan(280));
+      expect(rows[1].bottom * source.height, greaterThan(347));
+      expect(rows[2].top * source.height, lessThan(490));
+    },
+  );
+
+  test('row detection separates subtle staff systems on a noisy dark page', () {
+    final source = img.Image(width: 1200, height: 700);
+    img.fill(source, color: img.ColorRgb8(28, 28, 30));
+
+    for (final top in [90, 300, 510]) {
+      for (var line = 0; line < 4; line += 1) {
+        img.fillRect(
+          source,
+          x1: 45,
+          y1: top + line * 10,
+          x2: 1150,
+          y2: top + line * 10 + 1,
+          color: img.ColorRgb8(82, 82, 85),
+        );
+      }
+      for (var word = 0; word < 8; word += 1) {
+        img.fillRect(
+          source,
+          x1: 80 + word * 125,
+          y1: top + 58,
+          x2: 92 + word * 125,
+          y2: top + 62,
+          color: img.ColorRgb8(58, 58, 61),
+        );
+      }
     }
 
     final rows = const HorizontalRowDetector().detect(
@@ -212,9 +307,5 @@ void main() {
     );
 
     expect(rows, hasLength(3));
-    expect(rows[0].bottom * source.height, greaterThan(137));
-    expect(rows[1].top * source.height, lessThan(280));
-    expect(rows[1].bottom * source.height, greaterThan(347));
-    expect(rows[2].top * source.height, lessThan(490));
   });
 }

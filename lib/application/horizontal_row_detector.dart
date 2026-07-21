@@ -57,10 +57,10 @@ class HorizontalRowDetector {
         if (distance >= 16) strongInk += 1;
         samples += 1;
       }
-      final requiredInk = (samples * 0.0015).ceil().clamp(2, 8);
+      final requiredInk = (samples * 0.003).ceil().clamp(3, 10);
       active[localY] = ink >= requiredInk || strongInk >= 2;
       wideLine[localY] =
-          samples > 0 && ink / samples >= 0.28 && strongInk / samples >= 0.08;
+          samples > 0 && ink / samples >= 0.18 && strongInk / samples >= 0.04;
     }
 
     final guard = (height * 0.004).round().clamp(4, 14);

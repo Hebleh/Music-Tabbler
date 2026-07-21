@@ -1,14 +1,16 @@
 # Current status
 
-Updated: 20 July 2026
+Updated: 21 July 2026
 
 ## Repository state
 
 - Product and architecture decisions are documented.
 - A shared Flutter project targets Windows and Android from one codebase.
-- A local Git repository exists on `main`; no remote or license has been created.
+- `dev.bat` is the normal Windows development entry point and wraps `dev.ps1`; release builds and packaging are reserved for explicit release or milestone checkpoints.
+- Accepted post-MVP limitations are tracked in `docs/TECHNICAL_DEBT.md`.
+- A local Git repository exists on `master` with the private `Hebleh/Music-Tabbler` remote. Public licensing remains intentionally undecided.
 - The first product shell replaces the generated counter application.
-- Repository visibility remains undecided pending legal/source-adapter review.
+- The repository is private pending legal/source-adapter and public-license review.
 
 ## Verified foundation
 
@@ -16,8 +18,9 @@ Updated: 20 July 2026
 - `flutter doctor -v` reports no issues for Windows or Android.
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
-- `flutter analyze` passes with no issues, and 25 model, persistence, bulk-import, image-processing, PDF, OCR-helper, and widget tests pass.
-- `flutter build windows --release` produces `music_tabbler.exe`.
+- `flutter analyze` passes with no issues, and the current source suite passes 40/40 tests.
+- `flutter build windows --release --no-pub` produces the `v0.1.0+1` Windows runtime.
+- `tool/package_windows.ps1` produces a single-file user-level installer EXE, a portable ZIP, and SHA-256 sidecars for the Windows MVP.
 - `flutter build apk --debug` produces an installable debug APK.
 
 ## Confirmed product decisions
@@ -62,16 +65,22 @@ Updated: 20 July 2026
 
 - `Ctrl+V` invokes Windows paste anywhere in the visual editor. It accepts bitmap pixels and multi-file Explorer selections, while the existing paste button remains available.
 - Images, PDFs, and whole screenshot folders can be dragged onto the editor; supported files are recursively collected and imported in stable path order.
-- Any imported page or screenshot has a **Split into rows** workspace. It starts with five full-width boxes, supports up to 32 evenly divided rows, and keeps every box visible and independently movable/resizable on the same page.
-- **Detect rows** proposes editable boxes from repeated tab/staff systems and guarded blank bands, so manual work is fine tuning rather than drawing every row.
-- Crop, lyric-area, manual-highlight, and split-row rectangles now use direct PowerPoint-style movement plus eight edge/corner handles; sliders remain for crop/lyric fine tuning.
-- On-device OCR runs through ML Kit on Android and WinRT on Windows. The first imported page suggests title and artist automatically, with a manual re-detect button and editable correction fields.
+- Any imported page or screenshot has a **Split into rows** workspace. Reopening it from any already-split sibling restores every row box from that source page instead of showing only the clicked crop. It supports up to 32 evenly divided rows and keeps every box visible and independently movable/resizable on the same page.
+- **Detect rows** proposes editable boxes from repeated tab/staff systems and guarded blank bands. Dark-theme line thresholds cover Songsterr-style pages as well as white score pages.
+- Two sticky master side-crop bars now live in a fixed control rail above the scrollable page. They catch a row only when an inward drag actually crosses that row edge, retain their positions through detect/even/add/delete actions, then pull caught edges together in either direction. Individual row-box resizing remains independent. Selected row boxes delete with Backspace/Delete.
+- Crop, manual-highlight, and split-row rectangles use direct PowerPoint-style movement plus eight edge/corner handles. Gesture calculations use total pointer travel from the drag start, avoiding lost movement during fast drags. The old separate lyric-area workflow is retained only for loading older saved drafts; new highlight editing happens in the chart highlighter.
+- On-device OCR runs through ML Kit on Android and WinRT on Windows. Windows tries installed English, Japanese, and profile recognizers, preserves non-Latin words, and chooses the result with the most recognized content. Metadata parsing accepts Japanese titles. Detection always reruns against the original full page, even after its title row has been removed.
 - OCR input is upscaled, normalized, and contrast-enhanced in a background isolate. Songsterr UI labels such as `Tab` are excluded from artist suggestions.
-- The unified backing-vocal highlighter offers recognized-text selection and freeform boxes in one dialog. An optional checkbox extends selected lyric highlights into the corresponding horizontal tab area below.
-- The selected split-row box is always painted above overlapping boxes, and desktop wheel input is routed through Flutter's pointer-signal resolver to keep scrolling responsive.
-- Export uses the same conservative row detector as the split workspace, trims uniform outer whitespace, and compacts tall unsplit images without changing the saved chart. Staff-line grouping plus lyric/rhythm guard padding avoids the earlier clipped-notation cuts. Inter-row PDF spacing is 2 points; title and artist render only on page one, and later pages reclaim the header space.
+- The chart-wide backing-vocal highlighter combines every current split and unsplit chart row in order. Recognized-text selection and freeform boxes share one dialog; freeform boxes can be selected, moved, resized, or deleted after drawing and replace the old separate lyric-area workflow. An optional checkbox extends recognized lyric highlights into the corresponding horizontal tab area below.
+- Highlight coordinates are crop-local while editing and are mapped back to the source asset when saved. This keeps highlights attached to the correct split row and visible in the editor preview.
+- The selected split-row box is always painted above overlapping boxes. Visual row previews reserve deterministic heights before asynchronous image work completes, and the native list owns wheel scrolling; this prevents lazy preview loading from repeatedly shifting the scroll extent while moving upward through long charts.
+- Export uses the same conservative row detector as the split workspace, trims uniform outer whitespace, and compacts tall unsplit images without changing the saved chart. Shared source files are read and decoded once per export group, image processing and PDF assembly run off the UI isolate, and precomputed aspect ratios avoid layout-time image decoding. Staff-line grouping plus lyric/rhythm guard padding avoids the earlier clipped-notation cuts. The PDF uses a 5-point outer margin, adds no artificial inter-row gap, renders title/artist only on page one, and lets later pages reclaim the header space.
+- Split rows carry an image-source or PDF-page chip, Song Pool cards show persisted last-edited metadata, and Untitled charts with an artist fall back to that artist as the card title without a placeholder subtitle.
+- Visual treatments include a combined **Invert + high contrast** option for turning Songsterr's inverted greys into stronger stage-readable whites and blacks.
+- Highlight pixels are flattened into the processed image as an opaque PNG containing a translucent-looking yellow blend. Editor and PDF renderers therefore cannot replace highlighted regions with black/white transparency blocks.
+- Every completed editor mutation autosaves locally after a short debounce. Writes are serialized, Ctrl+Z/the toolbar undo restores up to 50 prior draft snapshots, and the restored state is autosaved. Saved/freeform highlight boxes and selected split boxes support Backspace/Delete in their editors.
 - Preview work crops first, caps preview width, runs image processing in a background isolate, reuses a bounded LRU cache, and isolates row repainting. Full-resolution processing remains reserved for final PDF export.
-- The MIT-licensed OCR plugin is vendored under `third_party/flutter_ocr_native`; its Windows WinRT initialization is patched to join Flutter runner's existing STA apartment instead of aborting during startup.
+- The MIT-licensed OCR plugin is vendored under `third_party/flutter_ocr_native`. Flutter's Windows runner remains STA, while blocking WinRT bitmap/OCR waits run on a dedicated MTA worker and return plain results on the original platform thread. This prevents the debug C++/WinRT `!is_sta_thread()` assertion when opening the highlighter.
 
 ## Current limitations
 
@@ -79,8 +88,11 @@ Updated: 20 July 2026
 - Direct URL import is still a workflow placeholder. Image/PDF and OCR intake work on Windows and Android; clipboard-image paste is currently Windows-only.
 - The notation painter is an early semantic rendering spike, not full engraving.
 - Setlist storage/export, full tab OMR/semantic conversion, safe state transfer, Android gig mode, source adapters, semantic lyric editing, and note editing for imported visual charts remain future slices.
-- Title/artist and text-region OCR are assistive proposals and must remain user-correctable. The "corresponding tab below" option is currently a geometric same-column extension, not semantic note-to-lyric alignment.
+- Title/artist and text-region OCR are assistive proposals and must remain user-correctable. OCR is now performed on each cropped chart row with stronger upscaling so small, faint, widely spaced lyric fragments have more pixels to work with, but isolated characters may still need freeform selection. The "corresponding tab below" option is currently a geometric same-column extension, not semantic note-to-lyric alignment.
+- Japanese OCR on Windows requires the optional Japanese Windows OCR language capability to be installed. If `ja-JP` is unavailable, the plugin falls back to the installed English/profile recognizers.
 - Export whitespace detection is intentionally conservative. Tiny isolated footer marks or source page numbers can preserve trailing whitespace rather than risk deleting notation or lyrics.
+- The reported 43-row upward wheel-scroll stall is covered by a regression test after stabilizing preview heights. It still needs user confirmation with the real saved chart through `dev.bat`.
+- A combined full-chart performance/gig preview is deliberately deferred. The chart-wide highlighter is the first shared-row composition surface, but it is not yet a gig/setlist preview.
 - `file_picker` is pinned to 10.3.10 because its current 11.x Android plugin assumes Flutter's built-in Kotlin migration. `file_picker`, `desktop_drop`, and `flutter_ocr_native` currently emit the same future Kotlin-migration warning, although the APK builds successfully today.
 
 ## Reference examples (external, not committed)
