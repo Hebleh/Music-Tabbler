@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../domain/library_models.dart';
 import '../domain/visual_chart_models.dart';
 
 abstract interface class ChartLibrary {
@@ -8,6 +9,16 @@ abstract interface class ChartLibrary {
   Future<void> deleteDraft(String id);
   Future<List<VisualChartDraft>> listDrafts();
   Future<VisualChartDraft?> loadDraft(String id);
+}
+
+abstract interface class SongVariantLibrary {
+  Future<List<LibrarySong>> listSongs();
+  Future<List<ChartVariantIdentity>> listVariants(String songId);
+  Future<ChartVariantIdentity?> identityForDraft(String draftId);
+  Future<void> saveDraftAsVariant(
+    VisualChartDraft draft, {
+    required String songId,
+  });
 }
 
 abstract interface class VisualImporter {
