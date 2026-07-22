@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 21 July 2026
+Updated: 22 July 2026
 
 ## Repository state
 
@@ -18,7 +18,7 @@ Updated: 21 July 2026
 - `flutter doctor -v` reports no issues for Windows or Android.
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
-- `flutter analyze` passes with no issues, and the current source suite passes 40/40 tests.
+- `flutter analyze` passes with no issues, and the current source suite passes 45/45 tests.
 - `flutter build windows --release --no-pub` produces the `v0.1.0+1` Windows runtime.
 - `tool/package_windows.ps1` produces a single-file user-level installer EXE, a portable ZIP, and SHA-256 sidecars for the Windows MVP.
 - `flutter build apk --debug` produces an installable debug APK.
@@ -59,6 +59,7 @@ Updated: 21 July 2026
 - Named drafts persist in Song Pool and reopen with their crop, ordering, display, lyric-band, and highlight edits intact.
 - Saved visual drafts can be deleted from Song Pool after an explicit confirmation; shared content-addressed source assets are retained.
 - A4 export uses deterministic, one-column pagination with optional compact title/artist headers and never includes provenance metadata.
+- A4 export offers three persisted density profiles. **Original** preserves the v0.1.0 portrait behavior for old and new drafts by default, **Balanced** uses more conservative compaction with a 34-point row-height floor, and **Stage-readable** uses landscape A4 with a 48-point row-height floor for larger at-a-glance content.
 - The real `9mm (squeezed).pdf` reference was imported, split into rows, exported, rendered back to PNG, and visually inspected as a two-page A4 result.
 
 ### Bulk visual workflow revision
@@ -110,7 +111,8 @@ Updated: 21 July 2026
 - **Complete:** Establish the SQLite repository boundary, content-addressed asset storage, schema-v1 draft persistence, and deterministic A4 layout primitives.
 - **Complete:** Implement visual Song Pool drafts, PDF/PNG/JPEG intake, Windows clipboard intake, cropping/arrangement, reversible lyric emphasis, and A4 single-song export.
 - **Complete:** Add compact title/artist PDF visibility and per-row/whole-tab display treatments without committing to OCR.
-- **Next:** Exercise the manual flow on a physical Android tablet, tune stage-readable density with real Songsterr screenshots, and add ordered setlist PDF export.
+- **Complete:** Add deterministic Original, Balanced, and Stage-readable export profiles and approve the landscape Stage-readable result against a real Songsterr screenshot.
+- **Next:** Add versioned migrations and stable song/chart-variant identities, followed by ordered setlist storage and combined setlist PDF export.
 
 ### Slice 2 - semantic editor
 

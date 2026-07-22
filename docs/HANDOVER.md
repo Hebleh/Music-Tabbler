@@ -1,17 +1,19 @@
 # Music Tabbler handover
 
-Updated: 21 July 2026
+Updated: 22 July 2026
 
-This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset the current working tree: the latest verified work is intentionally uncommitted.
+This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset user work; inspect the current branch and working tree before starting a contract.
 
 ## Immediate state
 
 - Repository: `C:\vibes\Music Tabbler`
-- Branch: `master`
+- Stable integration branch: `master`
+- Current sprint integration branch: `codex/sprint-gig-ready`
+- Immutable MVP archive branch: `mvp/v0.1.0`
 - Release checkpoint: Windows MVP `v0.1.0`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Current tree: the visual-chart MVP described below is the release checkpoint; inspect `git status --short` before starting the next feature slice
+- Latest completed feature contract: MT-101 Stage-density profiles; the next planned contract is MT-104 Versioned migrations and stable library identities
 - Near-term product target: dependable, stage-readable charts for the user's 16 August 2026 gig
 
 Before making changes, run:
@@ -54,6 +56,7 @@ Music Tabbler is a fully local Flutter application that turns mixed music source
 8. Open the chart-wide highlighter to work through all current split and unsplit rows in order. Select detected lyric words or draw freeform regions; freeform boxes remain editable. Optionally extend a recognized lyric selection downward to the corresponding tab column.
 9. Edits autosave locally after a short debounce. Ctrl+Z or the toolbar undo restores prior draft snapshots. The Save button remains as an explicit retry/checkpoint. Saved visual drafts can be deleted after confirmation without deleting shared content-addressed assets.
 10. Export A4. Title/artist appears only on page one when enabled; provenance is omitted.
+11. Choose **Original**, **Balanced**, or **Stage-readable** export density. Original preserves the MVP portrait layout, while Stage-readable uses landscape A4 and larger minimum rows for at-a-glance use.
 
 ## Windows MVP checkpoint
 
@@ -111,6 +114,8 @@ The latest slice has the following verification evidence:
 - No APK was produced for this MVP checkpoint.
 - `git diff --check`: passed; only Git's existing LF-to-CRLF warnings were printed.
 - A real Songsterr screenshot was compacted and visually inspected. Detected rows retained lyrics/rhythm notation and used thin 2-point gaps.
+- MT-101 real-chart QA on 22 July 2026 generated Original, Balanced, and Stage-readable PDFs from the reference Songsterr screenshot. The approved Stage-readable profile produced one landscape page with larger content and no clipped notation, lyrics, or invented trailing page.
+- `flutter test --no-pub` after MT-101: 45/45 passed; `flutter analyze --no-pub` reported no issues.
 
 Release artifacts:
 
@@ -142,9 +147,9 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 
 Keep the reliable visual fallback ahead of semantic research until the gig workflow is dependable.
 
-1. Have the user test **Detect rows** and A4 export on a complete set of actual Songsterr screenshots. Iterate on stage-readable density and any remaining unsafe/over-conservative cuts.
-2. Exercise the current import, split, highlighter, save/reopen, delete, and export flow on the physical Samsung tablet. Record Android-specific failures before expanding scope.
-3. Add ordered setlist storage and combined setlist PDF export using references to Song Pool charts.
+1. Add versioned database migrations and stable song/chart-variant identities while preserving existing visual drafts and content-addressed assets.
+2. Add ordered setlist storage and combined setlist PDF export using references to Song Pool chart variants.
+3. Exercise the current import, split, highlighter, save/reopen, delete, and export flow on the physical Samsung tablet. Record Android-specific failures before expanding scope.
 4. Add safe `.mtstate`/`.mtsong` export/import with checksum validation, staging, last-known-good preservation, and failure recovery.
 5. Persist theme/gig-display preference, then implement Android gig navigation, keep-awake behavior, and nondestructive S Pen vector overlays.
 6. Start Songsterr semantic recognition only with an annotated fixture set, explicit metrics, confidence states, and side-by-side correction.

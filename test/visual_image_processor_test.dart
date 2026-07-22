@@ -163,6 +163,37 @@ void main() {
     );
   });
 
+  test('density threshold changes only safe detected blank-band splits', () {
+    final source = img.Image(width: 600, height: 240);
+    img.fill(source, color: img.ColorRgb8(255, 255, 255));
+    img.fillRect(
+      source,
+      x1: 20,
+      y1: 25,
+      x2: 580,
+      y2: 70,
+      color: img.ColorRgb8(0, 0, 0),
+    );
+    img.fillRect(
+      source,
+      x1: 20,
+      y1: 165,
+      x2: 580,
+      y2: 210,
+      color: img.ColorRgb8(0, 0, 0),
+    );
+    final bytes = Uint8List.fromList(img.encodePng(source));
+
+    final original = const VisualImageProcessor().compactForExport(bytes);
+    final stage = const VisualImageProcessor().compactForExport(
+      bytes,
+      splitDetectedRowsBelowAspectRatio: 3.5,
+    );
+
+    expect(original, hasLength(1));
+    expect(stage, hasLength(2));
+  });
+
   test('row detection keeps faint lyrics inside their notation row', () {
     final source = img.Image(width: 800, height: 600);
     img.fill(source, color: img.ColorRgb8(20, 20, 20));

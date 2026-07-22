@@ -33,6 +33,7 @@ class A4StripLayout {
     this.margin = 5,
     this.headerHeight = 24,
     this.gap = 0,
+    this.minimumRowHeight = 0,
   });
 
   final double pageWidth;
@@ -40,6 +41,7 @@ class A4StripLayout {
   final double margin;
   final double headerHeight;
   final double gap;
+  final double minimumRowHeight;
 
   List<PlannedPage> plan(
     List<double> aspectRatios, {
@@ -64,6 +66,14 @@ class A4StripLayout {
         height = availableHeight;
         width = height * aspect;
       }
+      if (height < minimumRowHeight) {
+        throw StateError(
+          'Row ${index + 1} would render at ${height.toStringAsFixed(1)} pt, '
+          'below the ${minimumRowHeight.toStringAsFixed(0)} pt minimum for '
+          'this density profile. Choose Original (v0.1.0) or crop the row '
+          'more tightly.',
+        );
+      }
       final needed = current.isEmpty ? height : gap + height;
       if (current.isNotEmpty && usedHeight + needed > availableHeight) {
         pages.add(
@@ -82,6 +92,12 @@ class A4StripLayout {
         if (height > availableHeight) {
           height = availableHeight;
           width = height * aspect;
+        }
+        if (height < minimumRowHeight) {
+          throw StateError(
+            'Row ${index + 1} would render below the minimum height for this '
+            'density profile.',
+          );
         }
       }
       current.add(PlannedStrip(index: index, width: width, height: height));
@@ -117,6 +133,10 @@ class PdfExportService implements ChartPdfExporter {
     if (draft.strips.isEmpty) {
       throw StateError('Add at least one tab strip before exporting.');
     }
+    final density = _ExportDensitySettings.forDensity(draft.exportDensity);
+    final exportLayout = draft.exportDensity == VisualExportDensity.original
+        ? layout
+        : density.layout;
     final grouped = <String, List<(int, VisualStrip)>>{};
     for (var index = 0; index < draft.strips.length; index += 1) {
       final strip = draft.strips[index];
@@ -135,6 +155,8 @@ class PdfExportService implements ChartPdfExporter {
           'strips': [for (final item in group) item.$2.toJson()],
           'indices': [for (final item in group) item.$1],
           'globalTreatment': draft.globalTreatment?.name,
+          'splitDetectedRowsBelowAspectRatio':
+              density.splitDetectedRowsBelowAspectRatio,
         }),
       );
     }
@@ -152,11 +174,12 @@ class PdfExportService implements ChartPdfExporter {
       'title': draft.title,
       'artist': draft.artist,
       'showHeader': draft.showHeader,
-      'pageWidth': layout.pageWidth,
-      'pageHeight': layout.pageHeight,
-      'margin': layout.margin,
-      'headerHeight': layout.headerHeight,
-      'gap': layout.gap,
+      'pageWidth': exportLayout.pageWidth,
+      'pageHeight': exportLayout.pageHeight,
+      'margin': exportLayout.margin,
+      'headerHeight': exportLayout.headerHeight,
+      'gap': exportLayout.gap,
+      'minimumRowHeight': exportLayout.minimumRowHeight,
     });
   }
 
@@ -194,6 +217,8 @@ List<Map<String, Object>> _processAssetForExport(Map<String, Object?> request) {
     request['bytes']! as Uint8List,
     strips,
     globalTreatment: treatment,
+    splitDetectedRowsBelowAspectRatio:
+        (request['splitDetectedRowsBelowAspectRatio']! as num).toDouble(),
   );
   return [
     for (var stripIndex = 0; stripIndex < batches.length; stripIndex += 1)
@@ -222,6 +247,7 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
     margin: request['margin']! as double,
     headerHeight: request['headerHeight']! as double,
     gap: request['gap']! as double,
+    minimumRowHeight: request['minimumRowHeight']! as double,
   );
   final pages = layout.plan([
     for (final item in processed) item['aspectRatio']! as double,
@@ -237,7 +263,7 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
     final page = pages[pageIndex];
     document.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: PdfPageFormat(layout.pageWidth, layout.pageHeight),
         margin: pw.EdgeInsets.all(layout.margin),
         build: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -292,4 +318,35 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
     );
   }
   return Uint8List.fromList(await document.save());
+}
+
+class _ExportDensitySettings {
+  const _ExportDensitySettings({
+    required this.layout,
+    required this.splitDetectedRowsBelowAspectRatio,
+  });
+
+  final A4StripLayout layout;
+  final double splitDetectedRowsBelowAspectRatio;
+
+  static _ExportDensitySettings forDensity(VisualExportDensity density) {
+    return switch (density) {
+      VisualExportDensity.original => const _ExportDensitySettings(
+        layout: A4StripLayout(),
+        splitDetectedRowsBelowAspectRatio: 2.2,
+      ),
+      VisualExportDensity.balanced => const _ExportDensitySettings(
+        layout: A4StripLayout(minimumRowHeight: 34),
+        splitDetectedRowsBelowAspectRatio: 2.8,
+      ),
+      VisualExportDensity.stageReadable => const _ExportDensitySettings(
+        layout: A4StripLayout(
+          pageWidth: 841.89,
+          pageHeight: 595.28,
+          minimumRowHeight: 48,
+        ),
+        splitDetectedRowsBelowAspectRatio: 3.5,
+      ),
+    };
+  }
 }

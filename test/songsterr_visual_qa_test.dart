@@ -10,6 +10,8 @@ void main() {
   test('exports the supplied Songsterr screenshot for visual QA', () async {
     final inputPath = Platform.environment['MUSIC_TABBLER_SONGSTERR_INPUT'];
     final outputPath = Platform.environment['MUSIC_TABBLER_VISUAL_OUTPUT'];
+    final densityName =
+        Platform.environment['MUSIC_TABBLER_EXPORT_DENSITY'] ?? 'original';
     if (inputPath == null || outputPath == null) return;
     final temporary = await Directory.systemTemp.createTemp(
       'music-tabbler-qa-',
@@ -29,6 +31,7 @@ void main() {
         artist: 'My Chemical Romance',
         createdAt: now,
         updatedAt: now,
+        exportDensity: VisualExportDensity.values.byName(densityName),
         strips: [strip],
       );
       final bytes = await PdfExportService(library).exportBytes(draft);

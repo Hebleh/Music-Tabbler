@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:music_tabbler/application/pdf_export_service.dart';
 import 'package:music_tabbler/application/visual_import_service.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
@@ -10,6 +12,68 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 void main() {
+  test('PDF export applies the density saved on the draft', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_density_',
+    );
+    final library = await LocalLibrary.forTesting(directory);
+    addTearDown(() {
+      library.close();
+      directory.deleteSync(recursive: true);
+    });
+    final source = img.Image(width: 600, height: 240);
+    img.fill(source, color: img.ColorRgb8(255, 255, 255));
+    img.fillRect(
+      source,
+      x1: 20,
+      y1: 35,
+      x2: 580,
+      y2: 90,
+      color: img.ColorRgb8(0, 0, 0),
+    );
+    img.fillRect(
+      source,
+      x1: 20,
+      y1: 155,
+      x2: 580,
+      y2: 210,
+      color: img.ColorRgb8(0, 0, 0),
+    );
+    final stored = await library.storeAsset(img.encodePng(source), 'png');
+    final now = DateTime.utc(2026, 7, 22);
+    final base = VisualChartDraft(
+      id: 'density',
+      title: 'Density',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      showHeader: false,
+      strips: [
+        VisualStrip(
+          id: 'strip',
+          assetHash: stored.hash,
+          assetExtension: stored.extension,
+          pixelWidth: 600,
+          pixelHeight: 240,
+        ),
+      ],
+    );
+
+    final original = latin1.decode(
+      await PdfExportService(library).exportBytes(base),
+      allowInvalid: true,
+    );
+    final stage = latin1.decode(
+      await PdfExportService(library).exportBytes(
+        base.copyWith(exportDensity: VisualExportDensity.stageReadable),
+      ),
+      allowInvalid: true,
+    );
+
+    expect(original, contains('/MediaBox[0 0 595.28 841.89]'));
+    expect(stage, contains('/MediaBox[0 0 841.89 595.28]'));
+  });
+
   test(
     'PDF pages round-trip through visual strips into deterministic A4',
     () async {
