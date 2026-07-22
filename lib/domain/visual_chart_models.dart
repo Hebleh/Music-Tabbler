@@ -8,6 +8,27 @@ enum VisualTreatment {
   invertedHighContrast,
 }
 
+enum VisualExportDensity { original, balanced, stageReadable }
+
+extension VisualExportDensityLabel on VisualExportDensity {
+  String get label => switch (this) {
+    VisualExportDensity.original => 'Original (v0.1.0)',
+    VisualExportDensity.balanced => 'Balanced',
+    VisualExportDensity.stageReadable => 'Stage readable',
+  };
+
+  String get description => switch (this) {
+    VisualExportDensity.original =>
+      'Original portrait A4 export with the v0.1.0 page planning rules.',
+    VisualExportDensity.balanced =>
+      'Portrait A4 with additional conservative blank-band compaction and '
+          'a readable row-height guard.',
+    VisualExportDensity.stageReadable =>
+      'Landscape A4 for wider, larger rows, with conservative blank-band '
+          'compaction and a larger row-height guard.',
+  };
+}
+
 extension VisualTreatmentLabel on VisualTreatment {
   String get label => switch (this) {
     VisualTreatment.original => 'Original',
@@ -184,6 +205,7 @@ class VisualChartDraft {
     required this.createdAt,
     required this.updatedAt,
     this.showHeader = true,
+    this.exportDensity = VisualExportDensity.original,
     this.globalTreatment,
     this.strips = const [],
   });
@@ -194,6 +216,7 @@ class VisualChartDraft {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool showHeader;
+  final VisualExportDensity exportDensity;
   final VisualTreatment? globalTreatment;
   final List<VisualStrip> strips;
 
@@ -201,6 +224,7 @@ class VisualChartDraft {
     String? title,
     String? artist,
     bool? showHeader,
+    VisualExportDensity? exportDensity,
     VisualTreatment? globalTreatment,
     bool clearGlobalTreatment = false,
     List<VisualStrip>? strips,
@@ -213,6 +237,7 @@ class VisualChartDraft {
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now().toUtc(),
       showHeader: showHeader ?? this.showHeader,
+      exportDensity: exportDensity ?? this.exportDensity,
       globalTreatment: clearGlobalTreatment
           ? null
           : globalTreatment ?? this.globalTreatment,
@@ -230,6 +255,7 @@ class VisualChartDraft {
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
     'showHeader': showHeader,
+    'exportDensity': exportDensity.name,
     'globalTreatment': globalTreatment?.name,
     'strips': strips.map((strip) => strip.toJson()).toList(),
   };
@@ -245,6 +271,7 @@ class VisualChartDraft {
       throw const FormatException('Unsupported visual chart schema.');
     }
     final treatment = json['globalTreatment'] as String?;
+    final densityName = json['exportDensity'] as String?;
     return VisualChartDraft(
       id: json['id']! as String,
       title: json['title']! as String,
@@ -252,6 +279,9 @@ class VisualChartDraft {
       createdAt: DateTime.parse(json['createdAt']! as String),
       updatedAt: DateTime.parse(json['updatedAt']! as String),
       showHeader: json['showHeader']! as bool,
+      exportDensity: densityName == null
+          ? VisualExportDensity.original
+          : VisualExportDensity.values.byName(densityName),
       globalTreatment: treatment == null
           ? null
           : VisualTreatment.values.byName(treatment),

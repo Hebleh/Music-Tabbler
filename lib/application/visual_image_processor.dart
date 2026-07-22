@@ -33,6 +33,7 @@ class VisualImageProcessor {
     Uint8List sourceBytes,
     List<VisualStrip> strips, {
     VisualTreatment? globalTreatment,
+    double splitDetectedRowsBelowAspectRatio = 2.2,
   }) {
     var decoded = img.decodeImage(sourceBytes);
     if (decoded == null) {
@@ -43,6 +44,7 @@ class VisualImageProcessor {
       for (final strip in strips)
         _compactImage(
           _processDecoded(decoded, strip, globalTreatment: globalTreatment),
+          splitDetectedRowsBelowAspectRatio: splitDetectedRowsBelowAspectRatio,
         ),
     ];
   }
@@ -104,24 +106,31 @@ class VisualImageProcessor {
     return image;
   }
 
-  List<Uint8List> compactForExport(Uint8List processedPng) {
+  List<Uint8List> compactForExport(
+    Uint8List processedPng, {
+    double splitDetectedRowsBelowAspectRatio = 2.2,
+  }) {
     final decoded = img.decodePng(processedPng);
     if (decoded == null) return [processedPng];
     final detected = const HorizontalRowDetector().detect(processedPng);
     if (detected.isEmpty) return [processedPng];
-    final rows = decoded.width / decoded.height < 2.2
+    final rows =
+        decoded.width / decoded.height < splitDetectedRowsBelowAspectRatio
         ? detected
         : [NormalizedRect(0, detected.first.top, 1, detected.last.bottom)];
     return [for (final row in rows) _encodeRect(decoded, row)];
   }
 
-  List<ProcessedExportImage> _compactImage(img.Image image) {
+  List<ProcessedExportImage> _compactImage(
+    img.Image image, {
+    required double splitDetectedRowsBelowAspectRatio,
+  }) {
     final rendered = Uint8List.fromList(img.encodePng(image, level: 3));
     final detected = const HorizontalRowDetector().detect(rendered);
     if (detected.isEmpty) {
       return [ProcessedExportImage(rendered, image.width / image.height)];
     }
-    final rows = image.width / image.height < 2.2
+    final rows = image.width / image.height < splitDetectedRowsBelowAspectRatio
         ? detected
         : [NormalizedRect(0, detected.first.top, 1, detected.last.bottom)];
     return [

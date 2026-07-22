@@ -38,11 +38,45 @@ void main() {
 
       expect(decoded.title, 'Stage Song');
       expect(decoded.globalTreatment, VisualTreatment.invert);
+      expect(decoded.exportDensity, VisualExportDensity.original);
       expect(decoded.strips.single.crop.left, 0.1);
       expect(decoded.strips.single.lyricContrast, 1.5);
       expect(decoded.strips.single.highlights.single.id, 'highlight_1');
     },
   );
+
+  test('visual chart JSON preserves a selected export density', () {
+    final now = DateTime.utc(2026, 7, 22);
+    final draft = VisualChartDraft(
+      id: 'chart',
+      title: 'Song',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      exportDensity: VisualExportDensity.stageReadable,
+    );
+
+    expect(
+      VisualChartDraft.decode(draft.encode()).exportDensity,
+      VisualExportDensity.stageReadable,
+    );
+  });
+
+  test('schema-v1 drafts without export density retain MVP behavior', () {
+    final now = DateTime.utc(2026, 7, 20);
+    final json = VisualChartDraft(
+      id: 'legacy',
+      title: 'Legacy',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+    ).toJson()..remove('exportDensity');
+
+    expect(
+      VisualChartDraft.fromJson(json).exportDensity,
+      VisualExportDensity.original,
+    );
+  });
 
   test(
     'whole-tab treatment can be cleared without changing strip treatment',

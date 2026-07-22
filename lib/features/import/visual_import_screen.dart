@@ -254,7 +254,35 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
+                                Tooltip(
+                                  message: _draft.exportDensity.description,
+                                  child: DropdownButton<VisualExportDensity>(
+                                    value: _draft.exportDensity,
+                                    onChanged: _busy
+                                        ? null
+                                        : (value) {
+                                            if (value != null) {
+                                              _commitDraft(
+                                                _draft.copyWith(
+                                                  exportDensity: value,
+                                                ),
+                                              );
+                                            }
+                                          },
+                                    items: [
+                                      for (final density
+                                          in VisualExportDensity.values)
+                                        DropdownMenuItem(
+                                          value: density,
+                                          child: Text(
+                                            'PDF density: ${density.label}',
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                                 FilledButton.tonalIcon(
                                   onPressed: _busy
                                       ? null

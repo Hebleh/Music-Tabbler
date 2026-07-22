@@ -46,4 +46,19 @@ void main() {
     expect(layout.gap, 0);
     expect(layout.margin, lessThanOrEqualTo(5));
   });
+
+  test('readability floor rejects rows instead of stretching or clipping', () {
+    const layout = A4StripLayout(minimumRowHeight: 60);
+
+    expect(
+      () => layout.plan([20]),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('below the 60 pt minimum'),
+        ),
+      ),
+    );
+  });
 }
