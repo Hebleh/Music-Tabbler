@@ -1,8 +1,11 @@
 # Music Tabbler handover
 
-Updated: 22 July 2026
+Updated: 23 July 2026
 
 This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset user work; inspect the current branch and working tree before starting a contract.
+
+Use `docs/ROADMAP.md` as the live checkbox tracker for contract status, sprint
+order, the user-testing gate, and the reusable implementation cycle.
 
 ## Immediate state
 

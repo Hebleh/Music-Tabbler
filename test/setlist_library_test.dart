@@ -324,6 +324,171 @@ void main() {
   });
 
   test(
+    'explicit referenced deletion atomically removes every occurrence only',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'music_tabbler_setlist_delete_references_',
+      );
+      final library = await LocalLibrary.forTesting(directory);
+      addTearDown(() {
+        library.close();
+        directory.deleteSync(recursive: true);
+      });
+      await library.saveDraft(_draft('variant-a'));
+      await library.saveDraft(_draft('variant-b'));
+      final originalTime = DateTime.utc(2026, 7, 23, 9);
+      final deletedAt = originalTime.add(const Duration(minutes: 10));
+      await library.saveSetlist(
+        LibrarySetlist(
+          id: 'setlist-a',
+          name: 'First',
+          createdAt: originalTime,
+          updatedAt: originalTime,
+          entries: const [
+            LibrarySetlistEntry(id: 'entry-a-1', chartVariantId: 'variant-a'),
+            LibrarySetlistEntry.placeholder(
+              id: 'entry-placeholder',
+              title: 'Singer song',
+            ),
+            LibrarySetlistEntry(id: 'entry-a-2', chartVariantId: 'variant-a'),
+            LibrarySetlistEntry(id: 'entry-b', chartVariantId: 'variant-b'),
+          ],
+        ),
+      );
+      await library.saveSetlist(
+        LibrarySetlist(
+          id: 'setlist-b',
+          name: 'Second',
+          createdAt: originalTime,
+          updatedAt: originalTime,
+          entries: const [
+            LibrarySetlistEntry(id: 'entry-a-3', chartVariantId: 'variant-a'),
+          ],
+        ),
+      );
+
+      await library.deleteDraftAndRemoveSetlistReferences(
+        'variant-a',
+        updatedAt: deletedAt,
+      );
+
+      expect(await library.loadDraft('variant-a'), isNull);
+      expect(await library.loadDraft('variant-b'), isNotNull);
+      final first = await library.loadSetlist('setlist-a');
+      expect(first?.updatedAt, deletedAt);
+      expect(first?.entries.map((entry) => entry.id), [
+        'entry-placeholder',
+        'entry-b',
+      ]);
+      expect(first?.entries.first.kind, SetlistEntryKind.placeholder);
+      final second = await library.loadSetlist('setlist-b');
+      expect(second?.updatedAt, deletedAt);
+      expect(second?.entries, isEmpty);
+    },
+  );
+
+  test('placeholder names and mixed ordering persist across reopen', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_setlist_placeholders_',
+    );
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final createdAt = DateTime.utc(2026, 7, 23, 9);
+    var library = await LocalLibrary.forTesting(directory, inMemory: false);
+    await library.saveDraft(_draft('variant-a'));
+    await library.saveSetlist(
+      LibrarySetlist(
+        id: 'setlist',
+        name: 'Whole band set',
+        createdAt: createdAt,
+        updatedAt: createdAt,
+        entries: const [
+          LibrarySetlistEntry.placeholder(
+            id: 'placeholder-1',
+            title: 'Singer feature',
+          ),
+          LibrarySetlistEntry(id: 'chart-1', chartVariantId: 'variant-a'),
+          LibrarySetlistEntry.placeholder(
+            id: 'placeholder-2',
+            title: 'Drum solo',
+          ),
+        ],
+      ),
+    );
+    library.close();
+
+    library = await LocalLibrary.forTesting(directory, inMemory: false);
+    final entries = (await library.loadSetlist('setlist'))!.entries;
+    expect(entries.map((entry) => entry.id), [
+      'placeholder-1',
+      'chart-1',
+      'placeholder-2',
+    ]);
+    expect(entries.first.kind, SetlistEntryKind.placeholder);
+    expect(entries.first.placeholderTitle, 'Singer feature');
+    expect(entries[1].kind, SetlistEntryKind.chart);
+    expect(entries[1].chartVariantId, 'variant-a');
+    expect(entries.last.placeholderTitle, 'Drum solo');
+    library.close();
+  });
+
+  test('blank placeholder rejects the whole setlist save', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_setlist_blank_placeholder_',
+    );
+    final library = await LocalLibrary.forTesting(directory);
+    addTearDown(() {
+      library.close();
+      directory.deleteSync(recursive: true);
+    });
+
+    await expectLater(
+      library.saveSetlist(
+        LibrarySetlist(
+          id: 'setlist',
+          name: 'Invalid',
+          createdAt: DateTime.utc(2026, 7, 23),
+          updatedAt: DateTime.utc(2026, 7, 23),
+          entries: const [
+            LibrarySetlistEntry.placeholder(id: 'blank', title: '   '),
+          ],
+        ),
+      ),
+      throwsArgumentError,
+    );
+    expect(await library.listSetlists(), isEmpty);
+  });
+
+  test('schema v3 migrates chart entries to the mixed-entry schema', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_setlist_v4_migration_',
+    );
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final draft = _draft('variant-a');
+    _createVersion3Library(directory, draft);
+
+    final library = await LocalLibrary.forTesting(directory, inMemory: false);
+    final setlist = (await library.listSetlists()).single;
+    expect(setlist.entries, hasLength(1));
+    expect(setlist.entries.single.kind, SetlistEntryKind.chart);
+    expect(setlist.entries.single.chartVariantId, 'variant-a');
+    expect(setlist.entries.single.placeholderTitle, isNull);
+    expect((await library.loadDraft(draft.id))?.encode(), draft.encode());
+    library.close();
+
+    final database = sqlite3.open(p.join(directory.path, 'library.sqlite'));
+    addTearDown(database.close);
+    expect(
+      database.select('PRAGMA user_version;').single['user_version'],
+      LocalLibrary.currentSchemaVersion,
+    );
+    final columns = database
+        .select('PRAGMA table_info(setlist_entries);')
+        .map((row) => row['name'])
+        .toSet();
+    expect(columns, containsAll(['entry_kind', 'placeholder_title']));
+  });
+
+  test(
     'schema v2 migrates to empty setlist storage without changing charts',
     () async {
       final directory = await Directory.systemTemp.createTemp(
@@ -495,5 +660,50 @@ void _createVersion2Library(Directory root, VisualChartDraft draft) {
     ],
   );
   database.execute('PRAGMA user_version = 2;');
+  database.close();
+}
+
+void _createVersion3Library(Directory root, VisualChartDraft draft) {
+  _createVersion2Library(root, draft);
+  final database = sqlite3.open(p.join(root.path, 'library.sqlite'));
+  database.execute('''
+    CREATE TABLE setlists (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      scheduled_at TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE setlist_entries (
+      id TEXT PRIMARY KEY NOT NULL,
+      setlist_id TEXT NOT NULL
+        REFERENCES setlists(id) ON DELETE CASCADE,
+      chart_variant_id TEXT NOT NULL
+        REFERENCES chart_variants(id) ON DELETE RESTRICT,
+      position INTEGER NOT NULL CHECK(position >= 0),
+      UNIQUE(setlist_id, position)
+    );
+    CREATE INDEX setlist_entries_setlist_id_index
+      ON setlist_entries(setlist_id, position);
+    CREATE INDEX setlist_entries_chart_variant_id_index
+      ON setlist_entries(chart_variant_id);
+  ''');
+  final timestamp = DateTime.utc(2026, 7, 23, 9).toIso8601String();
+  database.execute(
+    '''
+    INSERT INTO setlists (id, name, created_at, updated_at)
+    VALUES (?, ?, ?, ?);
+  ''',
+    ['setlist-v3', 'Legacy set', timestamp, timestamp],
+  );
+  database.execute(
+    '''
+    INSERT INTO setlist_entries (id, setlist_id, chart_variant_id, position)
+    VALUES (?, ?, ?, ?);
+  ''',
+    ['entry-v3', 'setlist-v3', draft.id, 0],
+  );
+  database.execute('PRAGMA user_version = 3;');
   database.close();
 }

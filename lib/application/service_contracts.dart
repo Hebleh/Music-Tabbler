@@ -7,6 +7,10 @@ abstract interface class ChartLibrary {
   String assetPath(String hash, String extension);
   Future<void> saveDraft(VisualChartDraft draft);
   Future<void> deleteDraft(String id);
+  Future<void> deleteDraftAndRemoveSetlistReferences(
+    String id, {
+    required DateTime updatedAt,
+  });
   Future<List<VisualChartDraft>> listDrafts();
   Future<VisualChartDraft?> loadDraft(String id);
 }

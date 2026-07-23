@@ -32,11 +32,55 @@ class ChartVariantIdentity {
   final DateTime updatedAt;
 }
 
-class LibrarySetlistEntry {
-  const LibrarySetlistEntry({required this.id, required this.chartVariantId});
+enum SetlistEntryKind { chart, placeholder }
+
+sealed class LibrarySetlistEntry {
+  const LibrarySetlistEntry._({required this.id});
+
+  const factory LibrarySetlistEntry({
+    required String id,
+    required String chartVariantId,
+  }) = ChartSetlistEntry;
+
+  const factory LibrarySetlistEntry.placeholder({
+    required String id,
+    required String title,
+  }) = PlaceholderSetlistEntry;
 
   final String id;
+  SetlistEntryKind get kind;
+  String? get chartVariantId;
+  String? get placeholderTitle;
+}
+
+final class ChartSetlistEntry extends LibrarySetlistEntry {
+  const ChartSetlistEntry({required super.id, required this.chartVariantId})
+    : super._();
+
+  @override
+  SetlistEntryKind get kind => SetlistEntryKind.chart;
+
+  @override
   final String chartVariantId;
+
+  @override
+  String? get placeholderTitle => null;
+}
+
+final class PlaceholderSetlistEntry extends LibrarySetlistEntry {
+  const PlaceholderSetlistEntry({required super.id, required this.title})
+    : super._();
+
+  @override
+  SetlistEntryKind get kind => SetlistEntryKind.placeholder;
+
+  final String title;
+
+  @override
+  String? get chartVariantId => null;
+
+  @override
+  String get placeholderTitle => title;
 }
 
 class LibrarySetlist {

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../application/app_services.dart';
+import '../../domain/library_models.dart';
 import '../../domain/visual_chart_models.dart';
 import '../chart/chart_editor_screen.dart';
 import '../import/visual_import_screen.dart';
+import '../setlists/setlist_sidebar.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -23,6 +25,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   var _selectedIndex = 0;
+  var _libraryRevision = 0;
   late Future<List<VisualChartDraft>> _drafts;
 
   @override
@@ -66,9 +69,42 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (confirmed != true) return;
-    await widget.services.library.deleteDraft(draft.id);
+    try {
+      await widget.services.library.deleteDraft(draft.id);
+    } on ChartVariantReferencedBySetlistsException catch (error) {
+      if (!mounted) return;
+      final removeAndDelete = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Chart is used in setlists'),
+          content: Text(
+            '"${draft.title}" is used by ${error.setlistIds.length} '
+            'setlist(s). Remove every occurrence from those setlists and '
+            'delete the chart?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep chart'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove and delete'),
+            ),
+          ],
+        ),
+      );
+      if (removeAndDelete != true) return;
+      await widget.services.library.deleteDraftAndRemoveSetlistReferences(
+        draft.id,
+        updatedAt: DateTime.now().toUtc(),
+      );
+    }
     if (!mounted) return;
-    setState(_reloadDrafts);
+    setState(() {
+      _reloadDrafts();
+      _libraryRevision += 1;
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Deleted "${draft.title}" from Song Pool.')),
     );
@@ -90,7 +126,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      const _GigsAndSetlists(),
+      _GigsAndSetlists(
+        key: ValueKey(_libraryRevision),
+        services: widget.services,
+      ),
       _ImportSource(onStartVisual: _openVisualEditor),
     ];
     return LayoutBuilder(
@@ -336,8 +375,143 @@ String _formatEditedDate(DateTime value) {
   return '${local.day} ${months[local.month - 1]} ${local.year}, $hour:$minute';
 }
 
-class _GigsAndSetlists extends StatelessWidget {
-  const _GigsAndSetlists();
+class _GigsAndSetlists extends StatefulWidget {
+  const _GigsAndSetlists({super.key, required this.services});
+
+  final AppServices services;
+
+  @override
+  State<_GigsAndSetlists> createState() => _GigsAndSetlistsState();
+}
+
+class _GigsAndSetlistsState extends State<_GigsAndSetlists> {
+  late Future<List<LibrarySetlist>> _setlists;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  void _reload() {
+    _setlists = widget.services.setlists.listSetlists();
+  }
+
+  Future<String?> _askName({String initial = ''}) async {
+    var name = initial;
+    var showEmptyError = false;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          void submit() {
+            final value = name.trim();
+            if (value.isEmpty) {
+              setDialogState(() => showEmptyError = true);
+              return;
+            }
+            Navigator.pop(context, value);
+          }
+
+          return AlertDialog(
+            title: Text(initial.isEmpty ? 'Create setlist' : 'Rename setlist'),
+            content: TextFormField(
+              initialValue: initial,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Setlist name',
+                errorText: showEmptyError ? 'Enter a setlist name.' : null,
+              ),
+              onChanged: (value) {
+                name = value;
+                if (showEmptyError) {
+                  setDialogState(() => showEmptyError = false);
+                }
+              },
+              onFieldSubmitted: (_) => submit(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(onPressed: submit, child: const Text('Save')),
+            ],
+          );
+        },
+      ),
+    );
+    return result?.trim();
+  }
+
+  Future<void> _create() async {
+    final name = await _askName();
+    if (name == null || name.isEmpty) return;
+    final now = DateTime.now().toUtc();
+    await widget.services.setlists.saveSetlist(
+      LibrarySetlist(
+        id: IdFactory.next('setlist'),
+        name: name,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    if (!mounted) return;
+    setState(_reload);
+  }
+
+  Future<void> _open(LibrarySetlist setlist) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _SetlistEditorScreen(
+          services: widget.services,
+          setlistId: setlist.id,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(_reload);
+  }
+
+  Future<void> _rename(LibrarySetlist setlist) async {
+    final name = await _askName(initial: setlist.name);
+    if (name == null || name.isEmpty || name == setlist.name) return;
+    await widget.services.setlists.saveSetlist(
+      LibrarySetlist(
+        id: setlist.id,
+        name: name,
+        createdAt: setlist.createdAt,
+        updatedAt: DateTime.now().toUtc(),
+        scheduledAt: setlist.scheduledAt,
+        notes: setlist.notes,
+        entries: setlist.entries,
+      ),
+    );
+    if (mounted) setState(_reload);
+  }
+
+  Future<void> _delete(LibrarySetlist setlist) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete setlist?'),
+        content: Text('Delete "${setlist.name}"? Songs remain in Song Pool.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await widget.services.setlists.deleteSetlist(setlist.id);
+    if (mounted) setState(_reload);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -353,16 +527,335 @@ class _GigsAndSetlists extends StatelessWidget {
           'Songs stay in the pool; setlists reference them in performance order.',
         ),
         const SizedBox(height: 24),
-        const Card(
-          child: ListTile(
-            leading: Icon(Icons.event),
-            title: Text('16 August 2026'),
-            subtitle: Text(
-              'Setlist persistence and gig mode are a later slice.',
-            ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: _create,
+            icon: const Icon(Icons.add),
+            label: const Text('Create setlist'),
           ),
         ),
+        const SizedBox(height: 16),
+        FutureBuilder<List<LibrarySetlist>>(
+          future: _setlists,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Card(
+                child: ListTile(
+                  title: const Text('Setlists could not be loaded'),
+                  subtitle: Text('${snapshot.error}'),
+                ),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.data!.isEmpty) {
+              return const Card(
+                child: ListTile(
+                  leading: Icon(Icons.queue_music_outlined),
+                  title: Text('No setlists yet'),
+                  subtitle: Text(
+                    'Create one, then add songs from your Song Pool.',
+                  ),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (final setlist in snapshot.data!)
+                  Card(
+                    child: ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.queue_music),
+                      ),
+                      title: Text(setlist.name),
+                      subtitle: Text('${setlist.entries.length} set item(s)'),
+                      onTap: () => _open(setlist),
+                      trailing: PopupMenuButton<String>(
+                        tooltip: 'Setlist actions',
+                        onSelected: (action) {
+                          if (action == 'rename') _rename(setlist);
+                          if (action == 'delete') _delete(setlist);
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(value: 'rename', child: Text('Rename')),
+                          PopupMenuItem(value: 'delete', child: Text('Delete')),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       ],
+    );
+  }
+}
+
+class _SetlistEditorScreen extends StatefulWidget {
+  const _SetlistEditorScreen({required this.services, required this.setlistId});
+  final AppServices services;
+  final String setlistId;
+
+  @override
+  State<_SetlistEditorScreen> createState() => _SetlistEditorScreenState();
+}
+
+class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
+  LibrarySetlist? _setlist;
+  Map<String, VisualChartDraft> _draftsByVariant = const {};
+  List<VisualChartDraft> _availableDrafts = const [];
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final setlist = await widget.services.setlists.loadSetlist(
+        widget.setlistId,
+      );
+      final drafts = await widget.services.library.listDrafts();
+      final byVariant = <String, VisualChartDraft>{};
+      for (final draft in drafts) {
+        final identity = await widget.services.songVariants.identityForDraft(
+          draft.id,
+        );
+        if (identity != null) {
+          byVariant[identity.id] = draft;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _setlist = setlist;
+        _availableDrafts = drafts;
+        _draftsByVariant = byVariant;
+        _error = null;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = error);
+    }
+  }
+
+  Future<void> _saveEntries(List<LibrarySetlistEntry> entries) async {
+    final current = _setlist!;
+    final updated = LibrarySetlist(
+      id: current.id,
+      name: current.name,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.now().toUtc(),
+      scheduledAt: current.scheduledAt,
+      notes: current.notes,
+      entries: entries,
+    );
+    await widget.services.setlists.saveSetlist(updated);
+    if (mounted) setState(() => _setlist = updated);
+  }
+
+  Future<void> _chooseSong() async {
+    final selected = await showDialog<VisualChartDraft>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Add song from Song Pool'),
+        children: _availableDrafts.isEmpty
+            ? [
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('No saved visual charts are available.'),
+                ),
+              ]
+            : [
+                for (final draft in _availableDrafts)
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, draft),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Text(_displayTitle(draft)),
+                    ),
+                  ),
+              ],
+      ),
+    );
+    if (selected == null) return;
+    final identity = await widget.services.songVariants.identityForDraft(
+      selected.id,
+    );
+    if (identity == null || !mounted) {
+      return;
+    }
+    await _saveEntries([
+      ..._setlist!.entries,
+      LibrarySetlistEntry(
+        id: IdFactory.next('entry'),
+        chartVariantId: identity.id,
+      ),
+    ]);
+  }
+
+  Future<String?> _askPlaceholderName({String initial = ''}) async {
+    var name = initial;
+    var showEmptyError = false;
+    return showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          void submit() {
+            final value = name.trim();
+            if (value.isEmpty) {
+              setDialogState(() => showEmptyError = true);
+              return;
+            }
+            Navigator.pop(context, value);
+          }
+
+          return AlertDialog(
+            title: Text(
+              initial.isEmpty ? 'Add setlist placeholder' : 'Edit placeholder',
+            ),
+            content: TextFormField(
+              initialValue: initial,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Song or set item name',
+                helperText: 'Use this for songs you are not playing.',
+                errorText: showEmptyError ? 'Enter a placeholder name.' : null,
+              ),
+              onChanged: (value) {
+                name = value;
+                if (showEmptyError) {
+                  setDialogState(() => showEmptyError = false);
+                }
+              },
+              onFieldSubmitted: (_) => submit(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(onPressed: submit, child: const Text('Save')),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _addPlaceholder() async {
+    final name = await _askPlaceholderName();
+    if (name == null || name.trim().isEmpty) return;
+    await _saveEntries([
+      ..._setlist!.entries,
+      LibrarySetlistEntry.placeholder(
+        id: IdFactory.next('entry'),
+        title: name.trim(),
+      ),
+    ]);
+  }
+
+  Future<void> _editPlaceholder(int index) async {
+    final current = _setlist!.entries[index];
+    if (current.kind != SetlistEntryKind.placeholder) return;
+    final name = await _askPlaceholderName(
+      initial: current.placeholderTitle ?? '',
+    );
+    if (name == null || name.trim().isEmpty) return;
+    final entries = List<LibrarySetlistEntry>.of(_setlist!.entries);
+    entries[index] = LibrarySetlistEntry.placeholder(
+      id: current.id,
+      title: name.trim(),
+    );
+    await _saveEntries(entries);
+  }
+
+  Future<void> _remove(int index) async {
+    final entries = List<LibrarySetlistEntry>.of(_setlist!.entries)
+      ..removeAt(index);
+    await _saveEntries(entries);
+  }
+
+  Future<void> _reorder(int oldIndex, int newIndex) async {
+    final entries = List<LibrarySetlistEntry>.of(_setlist!.entries);
+    final moved = entries.removeAt(oldIndex);
+    entries.insert(newIndex, moved);
+    final reorderedAt = DateTime.now().toUtc();
+    await widget.services.setlists.reorderSetlistEntries(
+      _setlist!.id,
+      entries.map((entry) => entry.id).toList(),
+      updatedAt: reorderedAt,
+    );
+    if (mounted) {
+      setState(
+        () => _setlist = LibrarySetlist(
+          id: _setlist!.id,
+          name: _setlist!.name,
+          createdAt: _setlist!.createdAt,
+          updatedAt: reorderedAt,
+          scheduledAt: _setlist!.scheduledAt,
+          notes: _setlist!.notes,
+          entries: entries,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Setlist')),
+        body: Center(child: Text('Setlist could not be loaded: $_error')),
+      );
+    }
+    final setlist = _setlist;
+    if (setlist == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return Scaffold(
+      appBar: AppBar(title: Text(setlist.name)),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  '${setlist.entries.length} set item(s)',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                FilledButton.icon(
+                  onPressed: _chooseSong,
+                  icon: const Icon(Icons.playlist_add),
+                  label: const Text('Add song'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _addPlaceholder,
+                  icon: const Icon(Icons.not_interested),
+                  label: const Text('Add placeholder'),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SetlistSidebar(
+              setlist: setlist,
+              draftsByVariant: _draftsByVariant,
+              onRemove: _remove,
+              onEditPlaceholder: _editPlaceholder,
+              onReorder: _reorder,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

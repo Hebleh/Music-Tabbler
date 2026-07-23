@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 22 July 2026
+Updated: 23 July 2026
 
 ## Repository state
 
@@ -8,6 +8,8 @@ Updated: 22 July 2026
 - A shared Flutter project targets Windows and Android from one codebase.
 - `dev.bat` is the normal Windows development entry point and wraps `dev.ps1`; release builds and packaging are reserved for explicit release or milestone checkpoints.
 - Accepted post-MVP limitations are tracked in `docs/TECHNICAL_DEBT.md`.
+- Contract progress and the implementation-to-user-testing cycle are tracked in
+  `docs/ROADMAP.md`.
 - A local Git repository exists on `master` with the private `Hebleh/Music-Tabbler` remote. Public licensing remains intentionally undecided.
 - The first product shell replaces the generated counter application.
 - The repository is private pending legal/source-adapter and public-license review.

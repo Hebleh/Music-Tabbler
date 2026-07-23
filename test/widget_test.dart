@@ -6,6 +6,7 @@ import 'package:music_tabbler/app.dart';
 import 'package:music_tabbler/application/app_services.dart';
 import 'package:music_tabbler/application/service_contracts.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
+import 'package:music_tabbler/domain/library_models.dart';
 
 void main() {
   testWidgets('opens the semantic sample chart from the song pool', (
@@ -176,14 +177,355 @@ void main() {
     expect(find.textContaining('Last edited'), findsOneWidget);
     expect(find.textContaining('Unknown artist'), findsNothing);
   });
+
+  testWidgets(
+    'setlist create validates, cancel preserves state, and CRUD works',
+    (tester) async {
+      final library = _FakeLibrary();
+      await _pumpHome(tester, library);
+      await _openGigs(tester);
+
+      expect(find.text('No setlists yet'), findsOneWidget);
+      await tester.tap(find.text('Create setlist'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      expect(find.text('Enter a setlist name.'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(library.setlists, isEmpty);
+
+      await tester.tap(find.text('Create setlist'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).last, 'August gig');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('August gig'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Setlist actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).last, 'Practice set');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Practice set'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Setlist actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Practice set'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Setlist actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      expect(find.text('No setlists yet'), findsOneWidget);
+    },
+  );
+
+  testWidgets('setlist supports duplicate songs and removing one occurrence', (
+    tester,
+  ) async {
+    final library = _FakeLibrary()
+      ..drafts.add(_draft('chart-a', 'Song A'))
+      ..setlists.add(_setlist('set-1', 'Gig'));
+    await _pumpHome(tester, library);
+    await _openGigs(tester);
+    await tester.tap(find.text('Gig'));
+    await tester.pumpAndSettle();
+
+    for (var index = 0; index < 2; index += 1) {
+      await tester.tap(find.text('Add song'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(SimpleDialog),
+          matching: find.text('Song A'),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('Song A'), findsNWidgets(2));
+    expect(library.setlists.single.entries, hasLength(2));
+    expect(
+      library.setlists.single.entries.map((entry) => entry.id).toSet(),
+      hasLength(2),
+    );
+
+    await tester.tap(find.byTooltip('Remove from setlist').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Song A'), findsOneWidget);
+    expect(library.setlists.single.entries, hasLength(1));
+  });
+
+  testWidgets('setlist drag handle reorders downward to the end', (
+    tester,
+  ) async {
+    final library = _FakeLibrary()
+      ..drafts.addAll([
+        _draft('chart-a', 'Song A'),
+        _draft('chart-b', 'Song B'),
+        _draft('chart-c', 'Song C'),
+      ])
+      ..setlists.add(
+        _setlist(
+          'set-1',
+          'Gig',
+          entries: [
+            const LibrarySetlistEntry(
+              id: 'entry-a',
+              chartVariantId: 'variant-chart-a',
+            ),
+            const LibrarySetlistEntry(
+              id: 'entry-b',
+              chartVariantId: 'variant-chart-b',
+            ),
+            const LibrarySetlistEntry(
+              id: 'entry-c',
+              chartVariantId: 'variant-chart-c',
+            ),
+          ],
+        ),
+      );
+    await _pumpHome(tester, library);
+    await _openGigs(tester);
+    await tester.tap(find.text('Gig'));
+    await tester.pumpAndSettle();
+
+    await tester.drag(
+      find.byTooltip('Drag to reorder').first,
+      const Offset(0, 500),
+    );
+    await tester.pumpAndSettle();
+
+    expect(library.setlists.single.entries.map((entry) => entry.id), [
+      'entry-b',
+      'entry-c',
+      'entry-a',
+    ]);
+  });
+
+  testWidgets(
+    'missing references stay visible and referenced chart deletion is explicit',
+    (tester) async {
+      final library = _FakeLibrary()
+        ..drafts.add(_draft('chart-a', 'Song A'))
+        ..setlists.add(
+          _setlist(
+            'set-1',
+            'Gig',
+            entries: const [
+              LibrarySetlistEntry(
+                id: 'entry-a',
+                chartVariantId: 'variant-chart-a',
+              ),
+              LibrarySetlistEntry(id: 'missing', chartVariantId: 'gone'),
+            ],
+          ),
+        );
+      await _pumpHome(tester, library);
+      await _openGigs(tester);
+      await tester.tap(find.text('Gig'));
+      await tester.pumpAndSettle();
+      expect(find.text('Missing chart'), findsOneWidget);
+      expect(
+        find.textContaining('Referenced chart is unavailable'),
+        findsOneWidget,
+      );
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Song Pool'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Delete saved chart'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      expect(find.text('Chart is used in setlists'), findsOneWidget);
+      await tester.tap(find.text('Keep chart'));
+      await tester.pumpAndSettle();
+      expect(library.drafts, hasLength(1));
+
+      await tester.tap(find.byTooltip('Delete saved chart'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove and delete'));
+      await tester.pumpAndSettle();
+      expect(library.drafts, isEmpty);
+      expect(library.setlists.single.entries, hasLength(1));
+      expect(library.setlists.single.entries.single.id, 'missing');
+
+      await tester.tap(find.text('Gigs'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Gig'));
+      await tester.pumpAndSettle();
+      expect(find.text('Missing chart'), findsOneWidget);
+      expect(find.text('Song A'), findsNothing);
+    },
+  );
+
+  testWidgets('placeholders are editable, red, removable, and reorderable', (
+    tester,
+  ) async {
+    final library = _FakeLibrary()
+      ..drafts.add(_draft('chart-a', 'Song A'))
+      ..setlists.add(
+        _setlist(
+          'set-1',
+          'Gig',
+          entries: const [
+            LibrarySetlistEntry(
+              id: 'entry-a',
+              chartVariantId: 'variant-chart-a',
+            ),
+          ],
+        ),
+      );
+    await _pumpHome(tester, library);
+    await _openGigs(tester);
+    await tester.tap(find.text('Gig'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add placeholder'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    expect(find.text('Enter a placeholder name.'), findsOneWidget);
+    await tester.enterText(
+      find.byType(TextFormField).last,
+      'Singer feature song',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Singer feature song'), findsOneWidget);
+    expect(find.text('Not playing'), findsOneWidget);
+    final placeholderCard = tester.widget<Card>(
+      find.ancestor(
+        of: find.text('Singer feature song'),
+        matching: find.byType(Card),
+      ),
+    );
+    expect(placeholderCard.color, Colors.red.shade100);
+
+    await tester.tap(find.byTooltip('Edit placeholder'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).last, 'Singer encore');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('Singer encore'), findsOneWidget);
+    expect(
+      library.setlists.single.entries.last.placeholderTitle,
+      'Singer encore',
+    );
+
+    await tester.drag(
+      find.byTooltip('Drag to reorder').last,
+      const Offset(0, -400),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      library.setlists.single.entries.first.kind,
+      SetlistEntryKind.placeholder,
+    );
+
+    await tester.tap(find.byTooltip('Remove from setlist').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Singer encore'), findsNothing);
+    expect(library.setlists.single.entries.single.id, 'entry-a');
+  });
+
+  testWidgets('setlist cards and actions fit a narrow tablet layout', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final library = _FakeLibrary()
+      ..setlists.add(
+        _setlist(
+          'set-1',
+          'Gig',
+          entries: const [
+            LibrarySetlistEntry.placeholder(
+              id: 'placeholder',
+              title: 'Singer feature',
+            ),
+          ],
+        ),
+      );
+    await tester.pumpWidget(
+      MusicTabblerApp(services: await _testServices(library: library)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Gigs'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Gig'), findsOneWidget);
+    expect(find.byTooltip('Setlist actions'), findsOneWidget);
+    await tester.tap(find.text('Gig'));
+    await tester.pumpAndSettle();
+    expect(find.text('Singer feature'), findsOneWidget);
+    expect(find.text('Add song'), findsOneWidget);
+    expect(find.text('Add placeholder'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
+
+Future<void> _pumpHome(WidgetTester tester, _FakeLibrary library) async {
+  tester.view.physicalSize = const Size(1200, 900);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    MusicTabblerApp(services: await _testServices(library: library)),
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openGigs(WidgetTester tester) async {
+  await tester.tap(find.text('Gigs'));
+  await tester.pumpAndSettle();
+}
+
+VisualChartDraft _draft(String id, String title) => VisualChartDraft(
+  id: id,
+  title: title,
+  artist: 'Artist',
+  createdAt: DateTime.utc(2026, 7, 1),
+  updatedAt: DateTime.utc(2026, 7, 1),
+);
+
+LibrarySetlist _setlist(
+  String id,
+  String name, {
+  List<LibrarySetlistEntry> entries = const [],
+}) => LibrarySetlist(
+  id: id,
+  name: name,
+  createdAt: DateTime.utc(2026, 7, 1),
+  updatedAt: DateTime.utc(2026, 7, 1),
+  entries: entries,
+);
 
 Future<AppServices> _testServices({
   VisualImporter? importer,
-  ChartLibrary? library,
+  _FakeLibrary? library,
 }) async {
+  final resolvedLibrary = library ?? _FakeLibrary();
   return AppServices(
-    library: library ?? _FakeLibrary(),
+    library: resolvedLibrary,
+    songVariants: resolvedLibrary,
+    setlists: resolvedLibrary,
     importer: importer ?? const _UnusedImporter(),
     exporter: const _UnusedExporter(),
     textRecognition: const _UnusedTextRecognition(),
@@ -221,14 +563,52 @@ class _RecordingImporter implements VisualImporter {
   Future<List<VisualStrip>> pickPdf() async => [];
 }
 
-class _FakeLibrary implements ChartLibrary {
+class _FakeLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
   final List<VisualChartDraft> drafts = [];
+  final List<LibrarySetlist> setlists = [];
 
   @override
   String assetPath(String hash, String extension) => '';
 
   @override
   Future<void> deleteDraft(String id) async {
+    final variantId = 'variant-$id';
+    final references = [
+      for (final setlist in setlists)
+        if (setlist.entries.any((entry) => entry.chartVariantId == variantId))
+          setlist.id,
+    ];
+    if (references.isNotEmpty) {
+      throw ChartVariantReferencedBySetlistsException(
+        chartVariantId: variantId,
+        setlistIds: references,
+      );
+    }
+    drafts.removeWhere((item) => item.id == id);
+  }
+
+  @override
+  Future<void> deleteDraftAndRemoveSetlistReferences(
+    String id, {
+    required DateTime updatedAt,
+  }) async {
+    final variantId = 'variant-$id';
+    for (var index = 0; index < setlists.length; index += 1) {
+      final setlist = setlists[index];
+      final retained = setlist.entries
+          .where((entry) => entry.chartVariantId != variantId)
+          .toList(growable: false);
+      if (retained.length == setlist.entries.length) continue;
+      setlists[index] = LibrarySetlist(
+        id: setlist.id,
+        name: setlist.name,
+        createdAt: setlist.createdAt,
+        updatedAt: updatedAt,
+        scheduledAt: setlist.scheduledAt,
+        notes: setlist.notes,
+        entries: retained,
+      );
+    }
     drafts.removeWhere((item) => item.id == id);
   }
 
@@ -247,6 +627,75 @@ class _FakeLibrary implements ChartLibrary {
   Future<void> saveDraft(VisualChartDraft draft) async {
     drafts.removeWhere((item) => item.id == draft.id);
     drafts.add(draft);
+  }
+
+  @override
+  Future<ChartVariantIdentity?> identityForDraft(String draftId) async {
+    final draft = await loadDraft(draftId);
+    if (draft == null) return null;
+    return ChartVariantIdentity(
+      id: 'variant-$draftId',
+      songId: 'song-$draftId',
+      kind: ChartVariantKind.visual,
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt,
+    );
+  }
+
+  @override
+  Future<List<LibrarySong>> listSongs() async => [];
+
+  @override
+  Future<List<ChartVariantIdentity>> listVariants(String songId) async => [];
+
+  @override
+  Future<void> saveDraftAsVariant(
+    VisualChartDraft draft, {
+    required String songId,
+  }) => saveDraft(draft);
+
+  @override
+  Future<void> saveSetlist(LibrarySetlist setlist) async {
+    setlists.removeWhere((item) => item.id == setlist.id);
+    setlists.add(setlist);
+  }
+
+  @override
+  Future<List<LibrarySetlist>> listSetlists() async => List.of(setlists);
+
+  @override
+  Future<LibrarySetlist?> loadSetlist(String id) async {
+    for (final setlist in setlists) {
+      if (setlist.id == id) return setlist;
+    }
+    return null;
+  }
+
+  @override
+  Future<void> reorderSetlistEntries(
+    String setlistId,
+    List<String> orderedEntryIds, {
+    required DateTime updatedAt,
+  }) async {
+    final current = await loadSetlist(setlistId);
+    if (current == null) return;
+    final byId = {for (final entry in current.entries) entry.id: entry};
+    await saveSetlist(
+      LibrarySetlist(
+        id: current.id,
+        name: current.name,
+        createdAt: current.createdAt,
+        updatedAt: updatedAt,
+        scheduledAt: current.scheduledAt,
+        notes: current.notes,
+        entries: [for (final id in orderedEntryIds) byId[id]!],
+      ),
+    );
+  }
+
+  @override
+  Future<void> deleteSetlist(String id) async {
+    setlists.removeWhere((item) => item.id == id);
   }
 }
 

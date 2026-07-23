@@ -15,6 +15,8 @@ Future<void> main() async {
       MusicTabblerApp(
         services: AppServices(
           library: library,
+          songVariants: library,
+          setlists: library,
           importer: VisualImportService(library),
           exporter: PdfExportService(library),
           textRecognition: NativeTextRecognitionService(library),

@@ -24,7 +24,7 @@ class StoredAsset {
 class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
   LocalLibrary._(this.root, this.assetsDirectory, this._database);
 
-  static const currentSchemaVersion = 3;
+  static const currentSchemaVersion = 4;
 
   final Directory root;
   final Directory assetsDirectory;
@@ -84,6 +84,9 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
             break;
           case 3:
             _migrateToVersion3(database);
+            break;
+          case 4:
+            _migrateToVersion4(database);
             break;
           default:
             throw StateError('Missing library migration $nextVersion.');
@@ -211,6 +214,67 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
     ''');
   }
 
+  static void _migrateToVersion4(Database database) {
+    database.execute('''
+      CREATE TABLE setlist_entries_v4 (
+        id TEXT PRIMARY KEY NOT NULL,
+        setlist_id TEXT NOT NULL
+          REFERENCES setlists(id) ON DELETE CASCADE,
+        entry_kind TEXT NOT NULL
+          CHECK(entry_kind IN ('chart', 'placeholder')),
+        chart_variant_id TEXT
+          REFERENCES chart_variants(id) ON DELETE RESTRICT,
+        placeholder_title TEXT,
+        position INTEGER NOT NULL CHECK(position >= 0),
+        UNIQUE(setlist_id, position),
+        CHECK(
+          (
+            entry_kind = 'chart'
+            AND chart_variant_id IS NOT NULL
+            AND placeholder_title IS NULL
+          )
+          OR
+          (
+            entry_kind = 'placeholder'
+            AND chart_variant_id IS NULL
+            AND placeholder_title IS NOT NULL
+            AND length(trim(placeholder_title)) > 0
+          )
+        )
+      );
+    ''');
+    database.execute('''
+      INSERT INTO setlist_entries_v4 (
+        id,
+        setlist_id,
+        entry_kind,
+        chart_variant_id,
+        placeholder_title,
+        position
+      )
+      SELECT
+        id,
+        setlist_id,
+        'chart',
+        chart_variant_id,
+        NULL,
+        position
+      FROM setlist_entries;
+    ''');
+    database.execute('DROP TABLE setlist_entries;');
+    database.execute(
+      'ALTER TABLE setlist_entries_v4 RENAME TO setlist_entries;',
+    );
+    database.execute('''
+      CREATE INDEX setlist_entries_setlist_id_index
+      ON setlist_entries(setlist_id, position);
+    ''');
+    database.execute('''
+      CREATE INDEX setlist_entries_chart_variant_id_index
+      ON setlist_entries(chart_variant_id);
+    ''');
+  }
+
   Future<StoredAsset> storeAsset(List<int> bytes, String extension) async {
     final normalizedExtension = extension.toLowerCase().replaceFirst('.', '');
     final hash = sha256.convert(bytes).toString();
@@ -321,6 +385,22 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
 
   @override
   Future<void> deleteDraft(String id) async {
+    _deleteDraft(id, removeSetlistReferences: false);
+  }
+
+  @override
+  Future<void> deleteDraftAndRemoveSetlistReferences(
+    String id, {
+    required DateTime updatedAt,
+  }) async {
+    _deleteDraft(id, removeSetlistReferences: true, updatedAt: updatedAt);
+  }
+
+  void _deleteDraft(
+    String id, {
+    required bool removeSetlistReferences,
+    DateTime? updatedAt,
+  }) {
     _inTransaction(() {
       final rows = _database.select(
         'SELECT song_id FROM chart_variants WHERE id = ? LIMIT 1;',
@@ -336,11 +416,33 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
         [id],
       );
       if (references.isNotEmpty) {
-        throw ChartVariantReferencedBySetlistsException(
-          chartVariantId: id,
-          setlistIds: references
-              .map((row) => row['setlist_id'] as String)
-              .toList(growable: false),
+        if (!removeSetlistReferences) {
+          throw ChartVariantReferencedBySetlistsException(
+            chartVariantId: id,
+            setlistIds: references
+                .map((row) => row['setlist_id'] as String)
+                .toList(growable: false),
+          );
+        }
+        final resolvedUpdatedAt = updatedAt;
+        if (resolvedUpdatedAt == null) {
+          throw ArgumentError.notNull('updatedAt');
+        }
+        _database.execute(
+          '''
+          UPDATE setlists
+          SET updated_at = ?
+          WHERE id IN (
+            SELECT DISTINCT setlist_id
+            FROM setlist_entries
+            WHERE chart_variant_id = ?
+          );
+        ''',
+          [resolvedUpdatedAt.toIso8601String(), id],
+        );
+        _database.execute(
+          'DELETE FROM setlist_entries WHERE chart_variant_id = ?;',
+          [id],
         );
       }
       _database.execute('DELETE FROM visual_charts WHERE id = ?;', [id]);
@@ -440,10 +542,12 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
 
   @override
   Future<void> saveSetlist(LibrarySetlist setlist) async {
-    _validateSetlistEntryIds(setlist.entries);
+    _validateSetlistEntries(setlist.entries);
     _inTransaction(() {
       _requireChartVariants(
-        setlist.entries.map((entry) => entry.chartVariantId),
+        setlist.entries
+            .where((entry) => entry.kind == SetlistEntryKind.chart)
+            .map((entry) => entry.chartVariantId!),
       );
       _requireEntryIdsAvailableForSetlist(setlist.id, setlist.entries);
       _database.execute(
@@ -471,8 +575,13 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
       ]);
       final statement = _database.prepare('''
         INSERT INTO setlist_entries (
-          id, setlist_id, chart_variant_id, position
-        ) VALUES (?, ?, ?, ?);
+          id,
+          setlist_id,
+          entry_kind,
+          chart_variant_id,
+          placeholder_title,
+          position
+        ) VALUES (?, ?, ?, ?, ?, ?);
       ''');
       try {
         for (var index = 0; index < setlist.entries.length; index++) {
@@ -480,7 +589,9 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
           statement.execute([
             entry.id,
             setlist.id,
+            entry.kind.name,
             entry.chartVariantId,
+            entry.placeholderTitle,
             index,
           ]);
         }
@@ -593,7 +704,7 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
     final id = row['id'] as String;
     final entryRows = _database.select(
       '''
-      SELECT id, chart_variant_id
+      SELECT id, entry_kind, chart_variant_id, placeholder_title
       FROM setlist_entries
       WHERE setlist_id = ?
       ORDER BY position ASC, id ASC;
@@ -608,12 +719,21 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
       createdAt: DateTime.parse(row['created_at'] as String),
       updatedAt: DateTime.parse(row['updated_at'] as String),
       entries: entryRows
-          .map(
-            (entry) => LibrarySetlistEntry(
-              id: entry['id'] as String,
-              chartVariantId: entry['chart_variant_id'] as String,
-            ),
-          )
+          .map((entry) {
+            final kind = SetlistEntryKind.values.byName(
+              entry['entry_kind'] as String,
+            );
+            return switch (kind) {
+              SetlistEntryKind.chart => LibrarySetlistEntry(
+                id: entry['id'] as String,
+                chartVariantId: entry['chart_variant_id'] as String,
+              ),
+              SetlistEntryKind.placeholder => LibrarySetlistEntry.placeholder(
+                id: entry['id'] as String,
+                title: entry['placeholder_title'] as String,
+              ),
+            };
+          })
           .toList(growable: false),
     );
   }
@@ -654,7 +774,7 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
     }
   }
 
-  static void _validateSetlistEntryIds(List<LibrarySetlistEntry> entries) {
+  static void _validateSetlistEntries(List<LibrarySetlistEntry> entries) {
     final ids = entries.map((entry) => entry.id).toList(growable: false);
     if (ids.toSet().length != ids.length) {
       throw ArgumentError.value(
@@ -662,6 +782,30 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
         'setlist.entries',
         'Entry IDs must be unique.',
       );
+    }
+    for (final entry in entries) {
+      switch (entry.kind) {
+        case SetlistEntryKind.chart:
+          if (entry.chartVariantId == null ||
+              entry.chartVariantId!.trim().isEmpty ||
+              entry.placeholderTitle != null) {
+            throw ArgumentError.value(
+              entry.id,
+              'setlist.entries',
+              'Chart entries require a non-empty chart variant ID.',
+            );
+          }
+        case SetlistEntryKind.placeholder:
+          if (entry.chartVariantId != null ||
+              entry.placeholderTitle == null ||
+              entry.placeholderTitle!.trim().isEmpty) {
+            throw ArgumentError.value(
+              entry.id,
+              'setlist.entries',
+              'Placeholder entries require a non-empty title.',
+            );
+          }
+      }
     }
   }
 
