@@ -13,7 +13,7 @@ This is the fastest restart document for a new Codex task. Read this file, then 
 - Release checkpoint: Windows MVP `v0.1.0`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Latest completed feature contract: MT-104 Versioned migrations and stable library identities; the next planned contract is MT-106 Ordered setlist repository
+- Latest completed feature contract: MT-106 Ordered setlist repository; the next planned contract is MT-107 Setlist editor UI
 - Near-term product target: dependable, stage-readable charts for the user's 16 August 2026 gig
 
 Before making changes, run:
@@ -116,7 +116,8 @@ The latest slice has the following verification evidence:
 - A real Songsterr screenshot was compacted and visually inspected. Detected rows retained lyrics/rhythm notation and used thin 2-point gaps.
 - MT-101 real-chart QA on 22 July 2026 generated Original, Balanced, and Stage-readable PDFs from the reference Songsterr screenshot. The approved Stage-readable profile produced one landscape page with larger content and no clipped notation, lyrics, or invented trailing page.
 - MT-104 adds transactional SQLite schema migrations, stable song/visual-variant identities, and a separate repository boundary without changing current visual-editor callers. A copied real MVP library migrated, edited, reopened, and retained identical asset hashes; the installed library was never modified.
-- `flutter test --no-pub` after MT-104: 50/50 passed; the six focused migration tests passed; `flutter analyze --no-pub` reported no issues.
+- MT-106 adds schema-v3 ordered setlists, duplicate chart references with distinct stable entry IDs, metadata persistence, transactional reorder/save, and typed reference blockers. A copied real library created, reopened, and deleted a duplicate-entry setlist without changing its chart or asset hashes.
+- `flutter test --no-pub` after MT-106: 58/58 passed; the combined focused persistence suite passed 14/14; `flutter analyze --no-pub` reported no issues.
 
 Release artifacts:
 
@@ -139,7 +140,7 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 - Imported visual charts do not yet have semantic note or lyric editing.
 - A combined full-chart performance/gig preview remains deferred by request. The chart-wide highlighter composes the current rows for editing only.
 - Direct URL intake is still a UI/workflow placeholder; Songsterr/Ultimate Guitar/YouTube adapters are not implemented.
-- Setlist persistence/export, safe portable state bundles, Android gig mode, S Pen annotations, full semantic OMR, transposition, and re-tabbing remain future work.
+- Setlist UI/export, safe portable state bundles, Android gig mode, S Pen annotations, full semantic OMR, transposition, and re-tabbing remain future work.
 - Theme preference and semantic sample-song data are not persisted yet; visual drafts are persisted.
 - The current notation painter is a semantic prototype, not production engraving.
 - Android parity has only been build-verified, not exercised end to end on the user's physical tablet.
@@ -148,8 +149,8 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 
 Keep the reliable visual fallback ahead of semantic research until the gig workflow is dependable.
 
-1. Add ordered setlist storage using stable references to Song Pool chart variants.
-2. Add the setlist editor and combined setlist PDF export.
+1. Add the setlist editor for creating, naming, deleting, populating, duplicating, and reordering entries.
+2. Add combined setlist PDF export.
 3. Exercise the current import, split, highlighter, save/reopen, delete, and export flow on the physical Samsung tablet. Record Android-specific failures before expanding scope.
 4. Add safe `.mtstate`/`.mtsong` export/import with checksum validation, staging, last-known-good preservation, and failure recovery.
 5. Persist theme/gig-display preference, then implement Android gig navigation, keep-awake behavior, and nondestructive S Pen vector overlays.

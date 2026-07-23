@@ -18,7 +18,7 @@ Updated: 22 July 2026
 - `flutter doctor -v` reports no issues for Windows or Android.
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
-- `flutter analyze` passes with no issues, and the current source suite passes 50/50 tests.
+- `flutter analyze` passes with no issues, and the current source suite passes 58/58 tests.
 - `flutter build windows --release --no-pub` produces the `v0.1.0+1` Windows runtime.
 - `tool/package_windows.ps1` produces a single-file user-level installer EXE, a portable ZIP, and SHA-256 sidecars for the Windows MVP.
 - `flutter build apk --debug` produces an installable debug APK.
@@ -55,6 +55,8 @@ Updated: 22 July 2026
 - Imports are normalized into immutable, SHA-256-addressed local assets and catalogued in SQLite.
 - SQLite now uses ordered, transactional `PRAGMA user_version` migrations. Schema v2 adds stable song and chart-variant identities while preserving the existing visual-chart payloads and immutable assets.
 - Existing MVP draft IDs remain stable visual-variant IDs. Legacy drafts receive deterministic song identities, and multiple visual variants can explicitly share one song identity through a separate repository boundary.
+- SQLite schema v3 adds persistent setlists with stable setlist and entry identities, optional scheduled date and notes, and explicit entry ordering. The same chart variant may appear repeatedly without copying its chart.
+- Setlist saves and reorders are transactional. Missing variants and cross-setlist entry-ID conflicts roll back cleanly; deleting a referenced chart is blocked with the referencing setlist IDs rather than cascading or leaving dangling entries.
 - A chart is arranged as full-width horizontal tab rows. Rows can be reordered, duplicated, cropped, or removed without changing the source asset.
 - Each row can use Original, Grayscale, Invert, or High contrast treatment, with a whole-tab dropdown to apply one treatment in one action.
 - Existing screenshot lyrics remain part of the source image. A lyric band can receive adjustable contrast and multiple translucent backing-vocal highlight regions.
@@ -90,7 +92,7 @@ Updated: 22 July 2026
 - Semantic sample-song data and theme preferences are not persisted yet; visual-chart drafts are persisted.
 - Direct URL import is still a workflow placeholder. Image/PDF and OCR intake work on Windows and Android; clipboard-image paste is currently Windows-only.
 - The notation painter is an early semantic rendering spike, not full engraving.
-- Setlist storage/export, full tab OMR/semantic conversion, safe state transfer, Android gig mode, source adapters, semantic lyric editing, and note editing for imported visual charts remain future slices.
+- Setlist UI/export, full tab OMR/semantic conversion, safe state transfer, Android gig mode, source adapters, semantic lyric editing, and note editing for imported visual charts remain future slices.
 - Title/artist and text-region OCR are assistive proposals and must remain user-correctable. OCR is now performed on each cropped chart row with stronger upscaling so small, faint, widely spaced lyric fragments have more pixels to work with, but isolated characters may still need freeform selection. The "corresponding tab below" option is currently a geometric same-column extension, not semantic note-to-lyric alignment.
 - Japanese OCR on Windows requires the optional Japanese Windows OCR language capability to be installed. If `ja-JP` is unavailable, the plugin falls back to the installed English/profile recognizers.
 - Export whitespace detection is intentionally conservative. Tiny isolated footer marks or source page numbers can preserve trailing whitespace rather than risk deleting notation or lyrics.
@@ -115,7 +117,8 @@ Updated: 22 July 2026
 - **Complete:** Add compact title/artist PDF visibility and per-row/whole-tab display treatments without committing to OCR.
 - **Complete:** Add deterministic Original, Balanced, and Stage-readable export profiles and approve the landscape Stage-readable result against a real Songsterr screenshot.
 - **Complete:** Add versioned migrations and stable song/chart-variant identities with fresh, legacy-upgrade, idempotence, rollback, future-schema, and asset-integrity coverage.
-- **Next:** Add ordered setlist storage, then the setlist editor and combined setlist PDF export.
+- **Complete:** Add ordered setlist storage with duplicate references, stable entry identities, transactional reordering, and safe chart-reference blocking.
+- **Next:** Add the setlist editor, followed by combined setlist PDF export.
 
 ### Slice 2 - semantic editor
 

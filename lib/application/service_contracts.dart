@@ -21,6 +21,18 @@ abstract interface class SongVariantLibrary {
   });
 }
 
+abstract interface class SetlistLibrary {
+  Future<void> saveSetlist(LibrarySetlist setlist);
+  Future<List<LibrarySetlist>> listSetlists();
+  Future<LibrarySetlist?> loadSetlist(String id);
+  Future<void> reorderSetlistEntries(
+    String setlistId,
+    List<String> orderedEntryIds, {
+    required DateTime updatedAt,
+  });
+  Future<void> deleteSetlist(String id);
+}
+
 abstract interface class VisualImporter {
   Future<List<VisualStrip>> pickImages();
   Future<List<VisualStrip>> pickPdf();
