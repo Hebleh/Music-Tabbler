@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../domain/library_models.dart';
 import '../domain/visual_chart_models.dart';
 import 'service_contracts.dart';
 import 'visual_image_processor.dart';
@@ -34,6 +35,7 @@ class A4StripLayout {
     this.headerHeight = 24,
     this.gap = 0,
     this.minimumRowHeight = 0,
+    this.minimumRowHeightTolerance = 0.9,
   });
 
   final double pageWidth;
@@ -42,6 +44,7 @@ class A4StripLayout {
   final double headerHeight;
   final double gap;
   final double minimumRowHeight;
+  final double minimumRowHeightTolerance;
 
   List<PlannedPage> plan(
     List<double> aspectRatios, {
@@ -66,7 +69,11 @@ class A4StripLayout {
         height = availableHeight;
         width = height * aspect;
       }
-      if (height < minimumRowHeight) {
+      if (!_meetsReadableRowFloor(
+        height,
+        minimumRowHeight,
+        minimumRowHeightTolerance,
+      )) {
         throw StateError(
           'Row ${index + 1} would render at ${height.toStringAsFixed(1)} pt, '
           'below the ${minimumRowHeight.toStringAsFixed(0)} pt minimum for '
@@ -93,7 +100,11 @@ class A4StripLayout {
           height = availableHeight;
           width = height * aspect;
         }
-        if (height < minimumRowHeight) {
+        if (!_meetsReadableRowFloor(
+          height,
+          minimumRowHeight,
+          minimumRowHeightTolerance,
+        )) {
           throw StateError(
             'Row ${index + 1} would render below the minimum height for this '
             'density profile.',
@@ -117,16 +128,275 @@ class A4StripLayout {
   }
 }
 
-class PdfExportService implements ChartPdfExporter {
+enum PlannedSetlistElementKind { header, boundary, strip, placeholder }
+
+class SetlistLayoutEntry {
+  const SetlistLayoutEntry.chart({
+    required this.entryIndex,
+    required this.aspectRatios,
+    required this.showHeader,
+  }) : isPlaceholder = false;
+
+  const SetlistLayoutEntry.placeholder({required this.entryIndex})
+    : aspectRatios = const [],
+      showHeader = false,
+      isPlaceholder = true;
+
+  final int entryIndex;
+  final List<double> aspectRatios;
+  final bool showHeader;
+  final bool isPlaceholder;
+}
+
+class PlannedSetlistElement {
+  const PlannedSetlistElement({
+    required this.kind,
+    required this.entryIndex,
+    required this.width,
+    required this.height,
+    this.rowIndex,
+  });
+
+  final PlannedSetlistElementKind kind;
+  final int entryIndex;
+  final int? rowIndex;
+  final double width;
+  final double height;
+}
+
+class PlannedSetlistPage {
+  const PlannedSetlistPage(this.elements);
+
+  final List<PlannedSetlistElement> elements;
+}
+
+class SetlistA4Layout {
+  const SetlistA4Layout({
+    required this.pageWidth,
+    required this.pageHeight,
+    required this.margin,
+    required this.songHeaderHeight,
+    required this.minimumRowHeight,
+    this.minimumRowHeightTolerance = 0.9,
+    this.hiddenHeaderBoundaryHeight = 2,
+    this.placeholderHeight = 22,
+    this.gap = 0,
+  });
+
+  factory SetlistA4Layout.fromStripLayout(A4StripLayout layout) {
+    return SetlistA4Layout(
+      pageWidth: layout.pageWidth,
+      pageHeight: layout.pageHeight,
+      margin: layout.margin,
+      songHeaderHeight: layout.headerHeight,
+      minimumRowHeight: layout.minimumRowHeight,
+      minimumRowHeightTolerance: layout.minimumRowHeightTolerance,
+      gap: layout.gap,
+    );
+  }
+
+  final double pageWidth;
+  final double pageHeight;
+  final double margin;
+  final double songHeaderHeight;
+  final double hiddenHeaderBoundaryHeight;
+  final double placeholderHeight;
+  final double minimumRowHeight;
+  final double minimumRowHeightTolerance;
+  final double gap;
+
+  List<PlannedSetlistPage> plan(List<SetlistLayoutEntry> entries) {
+    final availableWidth = pageWidth - margin * 2;
+    final availableHeight = pageHeight - margin * 2;
+    final pages = <PlannedSetlistPage>[];
+    var current = <PlannedSetlistElement>[];
+    var usedHeight = 0.0;
+
+    void finishPage() {
+      if (current.isEmpty) return;
+      pages.add(PlannedSetlistPage(List.unmodifiable(current)));
+      current = <PlannedSetlistElement>[];
+      usedHeight = 0;
+    }
+
+    void addElement(PlannedSetlistElement element) {
+      current.add(element);
+      usedHeight += (current.length == 1 ? 0 : gap) + element.height;
+    }
+
+    for (final entry in entries) {
+      if (entry.isPlaceholder) {
+        if (current.isNotEmpty &&
+            usedHeight + gap + placeholderHeight > availableHeight) {
+          finishPage();
+        }
+        addElement(
+          PlannedSetlistElement(
+            kind: PlannedSetlistElementKind.placeholder,
+            entryIndex: entry.entryIndex,
+            width: availableWidth,
+            height: placeholderHeight,
+          ),
+        );
+        continue;
+      }
+      if (entry.aspectRatios.isEmpty) {
+        throw StateError(
+          'Set item ${entry.entryIndex + 1} has no tab rows to export.',
+        );
+      }
+      final boundaryHeight = entry.showHeader
+          ? songHeaderHeight
+          : hiddenHeaderBoundaryHeight;
+      final firstAspect = entry.aspectRatios.first;
+      var firstHeight = availableWidth / firstAspect;
+      var firstWidth = availableWidth;
+      final maximumFirstHeight = availableHeight - boundaryHeight;
+      if (firstHeight > maximumFirstHeight) {
+        firstHeight = maximumFirstHeight;
+        firstWidth = firstHeight * firstAspect;
+      }
+      _requireReadableRow(
+        firstHeight,
+        entryIndex: entry.entryIndex,
+        rowIndex: 0,
+      );
+      final firstGroupHeight = boundaryHeight + gap + firstHeight;
+      if (current.isNotEmpty &&
+          usedHeight + gap + firstGroupHeight > availableHeight) {
+        finishPage();
+      }
+      addElement(
+        PlannedSetlistElement(
+          kind: entry.showHeader
+              ? PlannedSetlistElementKind.header
+              : PlannedSetlistElementKind.boundary,
+          entryIndex: entry.entryIndex,
+          width: availableWidth,
+          height: boundaryHeight,
+        ),
+      );
+      addElement(
+        PlannedSetlistElement(
+          kind: PlannedSetlistElementKind.strip,
+          entryIndex: entry.entryIndex,
+          rowIndex: 0,
+          width: firstWidth,
+          height: firstHeight,
+        ),
+      );
+
+      for (
+        var rowIndex = 1;
+        rowIndex < entry.aspectRatios.length;
+        rowIndex += 1
+      ) {
+        final aspect = entry.aspectRatios[rowIndex];
+        var height = availableWidth / aspect;
+        var width = availableWidth;
+        if (height > availableHeight) {
+          height = availableHeight;
+          width = height * aspect;
+        }
+        _requireReadableRow(
+          height,
+          entryIndex: entry.entryIndex,
+          rowIndex: rowIndex,
+        );
+        if (usedHeight + gap + height > availableHeight) {
+          finishPage();
+        }
+        addElement(
+          PlannedSetlistElement(
+            kind: PlannedSetlistElementKind.strip,
+            entryIndex: entry.entryIndex,
+            rowIndex: rowIndex,
+            width: width,
+            height: height,
+          ),
+        );
+      }
+    }
+    finishPage();
+    return pages;
+  }
+
+  void _requireReadableRow(
+    double height, {
+    required int entryIndex,
+    required int rowIndex,
+  }) {
+    if (!_meetsReadableRowFloor(
+      height,
+      minimumRowHeight,
+      minimumRowHeightTolerance,
+    )) {
+      throw StateError(
+        'Set item ${entryIndex + 1}, row ${rowIndex + 1} would render at '
+        '${height.toStringAsFixed(1)} pt, below the '
+        '${minimumRowHeight.toStringAsFixed(0)} pt minimum for this density '
+        'profile.',
+      );
+    }
+  }
+}
+
+bool _meetsReadableRowFloor(
+  double height,
+  double minimumRowHeight,
+  double tolerance,
+) {
+  if (minimumRowHeight <= 0) return true;
+  return height >= minimumRowHeight * tolerance;
+}
+
+class StagedPdfFileWriter {
+  const StagedPdfFileWriter();
+
+  Future<void> write(String path, Uint8List bytes) async {
+    final destination = File(path);
+    final token = DateTime.now().microsecondsSinceEpoch;
+    final temporary = File('$path.music-tabbler-$token.partial');
+    final previous = File('$path.music-tabbler-$token.previous');
+    var movedPrevious = false;
+    try {
+      await temporary.writeAsBytes(bytes, flush: true);
+      if (await destination.exists()) {
+        await destination.rename(previous.path);
+        movedPrevious = true;
+      }
+      await temporary.rename(path);
+      if (movedPrevious && await previous.exists()) {
+        await previous.delete();
+      }
+    } catch (_) {
+      if (!await destination.exists() &&
+          movedPrevious &&
+          await previous.exists()) {
+        await previous.rename(path);
+      }
+      rethrow;
+    } finally {
+      if (await temporary.exists()) await temporary.delete();
+      if (await previous.exists() && await destination.exists()) {
+        await previous.delete();
+      }
+    }
+  }
+}
+
+class PdfExportService implements ChartPdfExporter, SetlistPdfExporter {
   PdfExportService(
     this.library, {
     this.processor = const VisualImageProcessor(),
     this.layout = const A4StripLayout(),
+    this.fileWriter = const StagedPdfFileWriter(),
   });
 
   final ChartLibrary library;
   final VisualImageProcessor processor;
   final A4StripLayout layout;
+  final StagedPdfFileWriter fileWriter;
 
   @override
   Future<Uint8List> exportBytes(VisualChartDraft draft) async {
@@ -180,6 +450,8 @@ class PdfExportService implements ChartPdfExporter {
       'headerHeight': exportLayout.headerHeight,
       'gap': exportLayout.gap,
       'minimumRowHeight': exportLayout.minimumRowHeight,
+      'minimumRowHeightTolerance':
+          exportLayout.minimumRowHeightTolerance,
     });
   }
 
@@ -201,6 +473,104 @@ class PdfExportService implements ChartPdfExporter {
     await File(path).writeAsBytes(await exportBytes(draft), flush: true);
     return path;
   }
+
+  @override
+  Future<Uint8List> exportSetlistBytes(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) async {
+    if (setlist.entries.isEmpty) {
+      throw const SetlistPdfExportException(
+        'Add at least one song or placeholder before exporting this setlist.',
+      );
+    }
+    final items = <Map<String, Object?>>[];
+    for (var index = 0; index < setlist.entries.length; index += 1) {
+      final entry = setlist.entries[index];
+      if (entry.kind == SetlistEntryKind.placeholder) {
+        items.add({
+          'kind': SetlistEntryKind.placeholder.name,
+          'title': entry.placeholderTitle,
+        });
+        continue;
+      }
+      final draft = await library.loadDraft(entry.chartVariantId!);
+      if (draft == null) {
+        throw SetlistPdfExportException(
+          'Set item ${index + 1} references a chart that is no longer '
+          'available (${entry.chartVariantId}).',
+        );
+      }
+      if (draft.strips.isEmpty) {
+        throw SetlistPdfExportException(
+          'Set item ${index + 1}, "${_displayDraftTitle(draft)}", has no tab '
+          'rows to export.',
+        );
+      }
+      final assetPaths = <String, String>{};
+      for (final strip in draft.strips) {
+        final key = '${strip.assetHash}.${strip.assetExtension}';
+        assetPaths[key] = library.assetPath(
+          strip.assetHash,
+          strip.assetExtension,
+        );
+      }
+      items.add({
+        'kind': SetlistEntryKind.chart.name,
+        'draft': draft.toJson(),
+        'assetPaths': assetPaths,
+      });
+    }
+    try {
+      return await compute(_buildSetlistPdfInBackground, {
+        'setlistName': setlist.name,
+        'density': density.name,
+        'items': items,
+      });
+    } on SetlistPdfExportException {
+      rethrow;
+    } catch (error) {
+      throw SetlistPdfExportException(
+        'The setlist PDF could not be created: $error',
+      );
+    }
+  }
+
+  @override
+  Future<String?> exportSetlistWithPicker(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) async {
+    final safeName = _safePdfName(setlist.name, fallback: 'music-tabbler-set');
+    final destination = await FilePicker.platform.saveFile(
+      dialogTitle: 'Export setlist as A4 PDF',
+      fileName: '$safeName.pdf',
+      type: FileType.custom,
+      allowedExtensions: const ['pdf'],
+    );
+    if (destination == null) return null;
+    final path = destination.toLowerCase().endsWith('.pdf')
+        ? destination
+        : '$destination.pdf';
+    final bytes = await exportSetlistBytes(setlist, density: density);
+    await fileWriter.write(path, bytes);
+    return path;
+  }
+}
+
+String _displayDraftTitle(VisualChartDraft draft) {
+  final title = draft.title.trim();
+  if (title.isNotEmpty && title != 'Untitled chart') return title;
+  final artist = draft.artist.trim();
+  return artist.isEmpty ? 'Untitled chart' : artist;
+}
+
+String _safePdfName(String value, {required String fallback}) {
+  final trimmed = value.trim();
+  return (trimmed.isEmpty ? fallback : trimmed).replaceAll(
+    RegExp(r'[<>:"/\\|?*]'),
+    '_',
+  );
 }
 
 List<Map<String, Object>> _processAssetForExport(Map<String, Object?> request) {
@@ -248,6 +618,8 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
     headerHeight: request['headerHeight']! as double,
     gap: request['gap']! as double,
     minimumRowHeight: request['minimumRowHeight']! as double,
+    minimumRowHeightTolerance:
+        request['minimumRowHeightTolerance']! as double,
   );
   final pages = layout.plan([
     for (final item in processed) item['aspectRatio']! as double,
@@ -318,6 +690,237 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
     );
   }
   return Uint8List.fromList(await document.save());
+}
+
+Future<Uint8List> _buildSetlistPdfInBackground(
+  Map<String, Object?> request,
+) async {
+  final density = VisualExportDensity.values.byName(
+    request['density']! as String,
+  );
+  final settings = _ExportDensitySettings.forDensity(density);
+  final layout = SetlistA4Layout.fromStripLayout(settings.layout);
+  final rawItems = (request['items']! as List)
+      .map((value) => (value as Map).cast<String, Object?>())
+      .toList(growable: false);
+  final draftsByEntry = <int, VisualChartDraft>{};
+  final placeholdersByEntry = <int, String>{};
+  final processedByEntry = <int, List<Map<String, Object>>>{};
+  final processedByDraft = <String, List<Map<String, Object>>>{};
+  final layoutEntries = <SetlistLayoutEntry>[];
+
+  for (var entryIndex = 0; entryIndex < rawItems.length; entryIndex += 1) {
+    final item = rawItems[entryIndex];
+    final kind = SetlistEntryKind.values.byName(item['kind']! as String);
+    if (kind == SetlistEntryKind.placeholder) {
+      placeholdersByEntry[entryIndex] = item['title']! as String;
+      layoutEntries.add(SetlistLayoutEntry.placeholder(entryIndex: entryIndex));
+      continue;
+    }
+    final draft = VisualChartDraft.fromJson(
+      (item['draft']! as Map).cast<String, Object?>(),
+    );
+    draftsByEntry[entryIndex] = draft;
+    final cached = processedByDraft[draft.id];
+    late final List<Map<String, Object>> processed;
+    if (cached != null) {
+      processed = cached;
+    } else {
+      try {
+        processed = _processDraftForSetlist(
+          draft,
+          (item['assetPaths']! as Map).cast<String, String>(),
+          splitDetectedRowsBelowAspectRatio:
+              settings.splitDetectedRowsBelowAspectRatio,
+        );
+      } catch (error) {
+        throw SetlistPdfExportException(
+          'Set item ${entryIndex + 1}, "${_displayDraftTitle(draft)}", could '
+          'not be prepared: $error',
+        );
+      }
+    }
+    processedByDraft[draft.id] = processed;
+    processedByEntry[entryIndex] = processed;
+    layoutEntries.add(
+      SetlistLayoutEntry.chart(
+        entryIndex: entryIndex,
+        aspectRatios: [
+          for (final row in processed) row['aspectRatio']! as double,
+        ],
+        showHeader: draft.showHeader,
+      ),
+    );
+  }
+
+  final pages = layout.plan(layoutEntries);
+  final setlistName = request['setlistName']! as String;
+  final document = pw.Document(title: setlistName, creator: 'Music Tabbler');
+  for (final page in pages) {
+    document.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat(layout.pageWidth, layout.pageHeight),
+        margin: pw.EdgeInsets.all(layout.margin),
+        build: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            for (
+              var elementIndex = 0;
+              elementIndex < page.elements.length;
+              elementIndex += 1
+            ) ...[
+              if (elementIndex > 0) pw.SizedBox(height: layout.gap),
+              _buildSetlistElement(
+                page.elements[elementIndex],
+                draftsByEntry: draftsByEntry,
+                placeholdersByEntry: placeholdersByEntry,
+                processedByEntry: processedByEntry,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+  return Uint8List.fromList(await document.save());
+}
+
+List<Map<String, Object>> _processDraftForSetlist(
+  VisualChartDraft draft,
+  Map<String, String> assetPaths, {
+  required double splitDetectedRowsBelowAspectRatio,
+}) {
+  final grouped = <String, List<(int, VisualStrip)>>{};
+  for (var index = 0; index < draft.strips.length; index += 1) {
+    final strip = draft.strips[index];
+    final key = '${strip.assetHash}.${strip.assetExtension}';
+    grouped.putIfAbsent(key, () => []).add((index, strip));
+  }
+  final processed = <Map<String, Object>>[];
+  for (final entry in grouped.entries) {
+    final path = assetPaths[entry.key];
+    if (path == null) {
+      throw StateError('The source asset for ${entry.key} is unavailable.');
+    }
+    final batches = const VisualImageProcessor().processForExportBatch(
+      File(path).readAsBytesSync(),
+      [for (final item in entry.value) item.$2],
+      globalTreatment: draft.globalTreatment,
+      splitDetectedRowsBelowAspectRatio: splitDetectedRowsBelowAspectRatio,
+    );
+    for (var stripIndex = 0; stripIndex < batches.length; stripIndex += 1) {
+      for (
+        var rowIndex = 0;
+        rowIndex < batches[stripIndex].length;
+        rowIndex += 1
+      ) {
+        processed.add({
+          'stripIndex': entry.value[stripIndex].$1,
+          'rowIndex': rowIndex,
+          'bytes': batches[stripIndex][rowIndex].bytes,
+          'aspectRatio': batches[stripIndex][rowIndex].aspectRatio,
+        });
+      }
+    }
+  }
+  processed.sort((left, right) {
+    final stripOrder = (left['stripIndex']! as int).compareTo(
+      right['stripIndex']! as int,
+    );
+    return stripOrder != 0
+        ? stripOrder
+        : (left['rowIndex']! as int).compareTo(right['rowIndex']! as int);
+  });
+  return List.unmodifiable(processed);
+}
+
+pw.Widget _buildSetlistElement(
+  PlannedSetlistElement element, {
+  required Map<int, VisualChartDraft> draftsByEntry,
+  required Map<int, String> placeholdersByEntry,
+  required Map<int, List<Map<String, Object>>> processedByEntry,
+}) {
+  return switch (element.kind) {
+    PlannedSetlistElementKind.header => _buildSetlistSongHeader(
+      draftsByEntry[element.entryIndex]!,
+      element,
+    ),
+    PlannedSetlistElementKind.boundary => pw.SizedBox(
+      width: element.width,
+      height: element.height,
+      child: pw.Container(
+        decoration: const pw.BoxDecoration(
+          border: pw.Border(
+            top: pw.BorderSide(width: 0.5, color: PdfColors.grey700),
+          ),
+        ),
+      ),
+    ),
+    PlannedSetlistElementKind.placeholder => pw.SizedBox(
+      width: element.width,
+      height: element.height,
+      child: pw.Container(
+        color: const PdfColor(1, 0.8, 0.82),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        alignment: pw.Alignment.centerLeft,
+        child: pw.Text(
+          'Not playing - ${placeholdersByEntry[element.entryIndex]}',
+          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+        ),
+      ),
+    ),
+    PlannedSetlistElementKind.strip => pw.Align(
+      alignment: pw.Alignment.centerLeft,
+      child: pw.SizedBox(
+        width: element.width,
+        height: element.height,
+        child: pw.Image(
+          pw.MemoryImage(
+            processedByEntry[element.entryIndex]![element.rowIndex!]['bytes']!
+                as Uint8List,
+          ),
+          fit: pw.BoxFit.fill,
+        ),
+      ),
+    ),
+  };
+}
+
+pw.Widget _buildSetlistSongHeader(
+  VisualChartDraft draft,
+  PlannedSetlistElement element,
+) {
+  return pw.SizedBox(
+    width: element.width,
+    height: element.height,
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Expanded(
+          child: pw.FittedBox(
+            alignment: pw.Alignment.centerLeft,
+            fit: pw.BoxFit.scaleDown,
+            child: pw.Text(
+              _displayDraftTitle(draft),
+              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
+        ),
+        if (draft.artist.trim().isNotEmpty)
+          pw.SizedBox(
+            height: 9,
+            child: pw.FittedBox(
+              alignment: pw.Alignment.centerLeft,
+              fit: pw.BoxFit.scaleDown,
+              child: pw.Text(
+                draft.artist.trim(),
+                style: const pw.TextStyle(fontSize: 8),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
 }
 
 class _ExportDensitySettings {

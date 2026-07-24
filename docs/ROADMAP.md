@@ -59,8 +59,19 @@ Only a verified sprint merges into `master`.
   - [~] Add named, light-red non-playing placeholders.
   - [~] Extract the ordered list into a reusable setlist sidebar/panel for
     later gig-mode composition.
-  - [ ] User verification and merge gate.
-- [ ] MT-108 Combined setlist A4 export.
+  - [~] User verification deferred into the combined MT-107/MT-108 test cycle.
+- [~] MT-108 Combined setlist A4 export.
+  - [x] Choose one Original, Balanced, or Stage-readable profile for the set.
+  - [x] Preserve exact song, duplicate, and placeholder order.
+  - [x] Pack song boundaries and rows into remaining page space.
+  - [x] Render one title/artist header per setlist occurrence, or a thin
+    boundary when that chart hides its header.
+  - [x] Render compact light-red `Not playing` placeholder markers.
+  - [x] Permit a narrow ten-percent readability-floor tolerance so minor
+    real-chart aspect variation does not abort an otherwise safe export.
+  - [x] Fail by set item for missing, empty, or unreadable charts.
+  - [x] Stage completed bytes before replacing the chosen destination.
+  - [~] Real-setlist visual verification and merge gate.
 - [ ] MT-105 Persistent per-device preferences, if it does not endanger the
   gig-critical PDF path.
 
@@ -87,7 +98,7 @@ documented debt unless they materially block gig preparation.
     deletion policy.
 - [~] **MT-107 — Setlist editor UI**
   - Usable setlist management plus reusable ordered sidebar data/presentation.
-- [ ] **MT-108 — Combined setlist A4 export**
+- [~] **MT-108 — Combined setlist A4 export**
   - One deterministic ordered PDF, retaining duplicates and song boundaries.
 
 ### Sprint 2 — Performance surfaces

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../application/app_services.dart';
+import '../../application/service_contracts.dart';
 import '../../domain/library_models.dart';
 import '../../domain/visual_chart_models.dart';
 import '../chart/chart_editor_screen.dart';
@@ -608,6 +609,7 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
   Map<String, VisualChartDraft> _draftsByVariant = const {};
   List<VisualChartDraft> _availableDrafts = const [];
   Object? _error;
+  var _exporting = false;
 
   @override
   void initState() {
@@ -804,6 +806,62 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
     }
   }
 
+  Future<VisualExportDensity?> _chooseExportDensity() {
+    return showDialog<VisualExportDensity>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Setlist PDF density'),
+        children: [
+          for (final density in VisualExportDensity.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, density),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  density == VisualExportDensity.stageReadable
+                      ? Icons.visibility
+                      : Icons.picture_as_pdf_outlined,
+                ),
+                title: Text(density.label),
+                subtitle: Text(switch (density) {
+                  VisualExportDensity.original =>
+                    'Portrait A4 using the MVP row sizing.',
+                  VisualExportDensity.balanced =>
+                    'Portrait A4 with a readability floor.',
+                  VisualExportDensity.stageReadable =>
+                    'Landscape A4 with the largest stage-readable rows.',
+                }),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportSetlist() async {
+    final density = await _chooseExportDensity();
+    if (density == null || !mounted) return;
+    setState(() => _exporting = true);
+    try {
+      final path = await widget.services.setlistExporter
+          .exportSetlistWithPicker(_setlist!, density: density);
+      if (!mounted || path == null) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Exported setlist PDF to $path')));
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is SetlistPdfExportException
+          ? error.message
+          : 'The setlist PDF could not be exported: $error';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
@@ -817,7 +875,27 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return Scaffold(
-      appBar: AppBar(title: Text(setlist.name)),
+      appBar: AppBar(
+        title: Text(setlist.name),
+        actions: [
+          if (_exporting)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 18),
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              tooltip: 'Export setlist A4 PDF',
+              onPressed: _exportSetlist,
+              icon: const Icon(Icons.picture_as_pdf),
+            ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(

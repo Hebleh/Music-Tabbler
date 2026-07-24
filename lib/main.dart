@@ -11,6 +11,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
     final library = await LocalLibrary.open();
+    final pdfExporter = PdfExportService(library);
     runApp(
       MusicTabblerApp(
         services: AppServices(
@@ -18,7 +19,8 @@ Future<void> main() async {
           songVariants: library,
           setlists: library,
           importer: VisualImportService(library),
-          exporter: PdfExportService(library),
+          exporter: pdfExporter,
+          setlistExporter: pdfExporter,
           textRecognition: NativeTextRecognitionService(library),
         ),
       ),

@@ -443,6 +443,38 @@ void main() {
     expect(library.setlists.single.entries.single.id, 'entry-a');
   });
 
+  testWidgets('setlist export sends the selected density and reports success', (
+    tester,
+  ) async {
+    final library = _FakeLibrary()..setlists.add(_setlist('set-1', 'Gig'));
+    final exporter = _RecordingSetlistExporter();
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MusicTabblerApp(
+        services: await _testServices(
+          library: library,
+          setlistExporter: exporter,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openGigs(tester);
+    await tester.tap(find.text('Gig'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Export setlist A4 PDF'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stage readable'));
+    await tester.pumpAndSettle();
+
+    expect(exporter.exportedSetlist?.id, 'set-1');
+    expect(exporter.density, VisualExportDensity.stageReadable);
+    expect(find.textContaining('Exported setlist PDF'), findsOneWidget);
+  });
+
   testWidgets('setlist cards and actions fit a narrow tablet layout', (
     tester,
   ) async {
@@ -520,14 +552,17 @@ LibrarySetlist _setlist(
 Future<AppServices> _testServices({
   VisualImporter? importer,
   _FakeLibrary? library,
+  SetlistPdfExporter? setlistExporter,
 }) async {
   final resolvedLibrary = library ?? _FakeLibrary();
+  const unusedExporter = _UnusedExporter();
   return AppServices(
     library: resolvedLibrary,
     songVariants: resolvedLibrary,
     setlists: resolvedLibrary,
     importer: importer ?? const _UnusedImporter(),
-    exporter: const _UnusedExporter(),
+    exporter: unusedExporter,
+    setlistExporter: setlistExporter ?? unusedExporter,
     textRecognition: const _UnusedTextRecognition(),
   );
 }
@@ -720,7 +755,7 @@ class _UnusedTextRecognition implements TextRecognitionService {
       const MetadataSuggestion();
 }
 
-class _UnusedExporter implements ChartPdfExporter {
+class _UnusedExporter implements ChartPdfExporter, SetlistPdfExporter {
   const _UnusedExporter();
   @override
   Future<Uint8List> exportBytes(VisualChartDraft draft) =>
@@ -728,4 +763,41 @@ class _UnusedExporter implements ChartPdfExporter {
   @override
   Future<String?> exportWithPicker(VisualChartDraft draft) =>
       throw UnimplementedError();
+
+  @override
+  Future<Uint8List> exportSetlistBytes(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<String?> exportSetlistWithPicker(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) => throw UnimplementedError();
+}
+
+class _RecordingSetlistExporter implements SetlistPdfExporter {
+  LibrarySetlist? exportedSetlist;
+  VisualExportDensity? density;
+
+  @override
+  Future<Uint8List> exportSetlistBytes(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) async {
+    exportedSetlist = setlist;
+    this.density = density;
+    return Uint8List.fromList([1]);
+  }
+
+  @override
+  Future<String?> exportSetlistWithPicker(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) async {
+    exportedSetlist = setlist;
+    this.density = density;
+    return r'C:\exports\Gig.pdf';
+  }
 }

@@ -68,6 +68,26 @@ abstract interface class ChartPdfExporter {
   Future<String?> exportWithPicker(VisualChartDraft draft);
 }
 
+abstract interface class SetlistPdfExporter {
+  Future<Uint8List> exportSetlistBytes(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  });
+  Future<String?> exportSetlistWithPicker(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  });
+}
+
+class SetlistPdfExportException implements Exception {
+  const SetlistPdfExportException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class ImportCancelled implements Exception {
   const ImportCancelled();
 }
