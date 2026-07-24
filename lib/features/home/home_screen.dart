@@ -1007,10 +1007,47 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
   }
 }
 
-class _ImportSource extends StatelessWidget {
+class _ImportSource extends StatefulWidget {
   const _ImportSource({required this.onStartVisual});
 
   final ValueChanged<VisualChartDraft?> onStartVisual;
+
+  @override
+  State<_ImportSource> createState() => _ImportSourceState();
+}
+
+class _ImportSourceState extends State<_ImportSource> {
+  final _urlController = TextEditingController();
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  void _startFromUrl() {
+    try {
+      final url = normalizeSourceUrl(_urlController.text);
+      final now = DateTime.now().toUtc();
+      widget.onStartVisual(
+        VisualChartDraft(
+          id: IdFactory.next('chart'),
+          title: 'Untitled chart',
+          artist: '',
+          createdAt: now,
+          updatedAt: now,
+          provenance: SourceProvenance(
+            url: url,
+            provider: inferSourceProvider(url),
+          ),
+        ),
+      );
+    } on FormatException catch (error) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1020,17 +1057,21 @@ class _ImportSource extends StatelessWidget {
         Text('New / Import', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 6),
         const Text(
-          'Local screenshot and PDF import is available now. Source links remain future adapters.',
+          'Store a source link locally, then attach screenshots or PDFs. '
+          'Music Tabbler never fetches the link.',
         ),
         const SizedBox(height: 24),
         TextField(
+          controller: _urlController,
+          keyboardType: TextInputType.url,
+          onSubmitted: (_) => _startFromUrl(),
           decoration: InputDecoration(
             labelText: 'Paste a specific tab or video URL',
-            hintText: 'Songsterr, Ultimate Guitar, YouTube, or a future source',
+            hintText: 'https://www.songsterr.com/...',
             prefixIcon: const Icon(Icons.link),
             suffixIcon: IconButton(
-              tooltip: 'Source adapters are not implemented yet',
-              onPressed: null,
+              tooltip: 'Create local source record',
+              onPressed: _startFromUrl,
               icon: const Icon(Icons.arrow_forward),
             ),
           ),
@@ -1046,7 +1087,7 @@ class _ImportSource extends StatelessWidget {
               detail:
                   'Import images, clipboard screenshots, or PDF pages; crop and arrange rows.',
               buttonLabel: 'Start',
-              onPressed: () => onStartVisual(null),
+              onPressed: () => widget.onStartVisual(null),
             ),
             const _ImportCard(
               icon: Icons.auto_fix_high_outlined,

@@ -10,6 +10,65 @@ enum VisualTreatment {
 
 enum VisualExportDensity { original, balanced, stageReadable }
 
+enum ProvenanceImportMethod { screenshot, pdf, other }
+
+class SourceProvenance {
+  const SourceProvenance({
+    required this.url,
+    required this.provider,
+    this.versionName = '',
+    this.importMethod = ProvenanceImportMethod.screenshot,
+    this.notes = '',
+  });
+
+  final String url;
+  final String provider;
+  final String versionName;
+  final ProvenanceImportMethod importMethod;
+  final String notes;
+
+  Map<String, Object> toJson() => {
+    'url': url,
+    'provider': provider,
+    'versionName': versionName,
+    'importMethod': importMethod.name,
+    'notes': notes,
+  };
+
+  factory SourceProvenance.fromJson(Map<String, Object?> json) {
+    return SourceProvenance(
+      url: json['url']! as String,
+      provider: json['provider'] as String? ?? '',
+      versionName: json['versionName'] as String? ?? '',
+      importMethod: ProvenanceImportMethod.values.byName(
+        json['importMethod'] as String? ?? ProvenanceImportMethod.other.name,
+      ),
+      notes: json['notes'] as String? ?? '',
+    );
+  }
+}
+
+String normalizeSourceUrl(String input) {
+  final uri = Uri.tryParse(input.trim());
+  if (uri == null ||
+      !uri.hasAuthority ||
+      (uri.scheme.toLowerCase() != 'https' &&
+          uri.scheme.toLowerCase() != 'http')) {
+    throw const FormatException('Enter a complete http:// or https:// URL.');
+  }
+  return uri
+      .replace(scheme: uri.scheme.toLowerCase(), host: uri.host.toLowerCase())
+      .toString();
+}
+
+String inferSourceProvider(String normalizedUrl) {
+  final host = Uri.parse(normalizedUrl).host.toLowerCase();
+  if (host.endsWith('songsterr.com')) return 'Songsterr';
+  if (host.endsWith('ultimate-guitar.com')) return 'Ultimate Guitar';
+  if (host.endsWith('youtube.com') || host == 'youtu.be') return 'YouTube';
+  return host;
+}
+
 extension VisualExportDensityLabel on VisualExportDensity {
   String get label => switch (this) {
     VisualExportDensity.original => 'Original (v0.1.0)',
@@ -292,6 +351,7 @@ class VisualChartDraft {
     this.showHeader = true,
     this.exportDensity = VisualExportDensity.original,
     this.globalTreatment,
+    this.provenance,
     this.strips = const [],
   });
 
@@ -303,6 +363,7 @@ class VisualChartDraft {
   final bool showHeader;
   final VisualExportDensity exportDensity;
   final VisualTreatment? globalTreatment;
+  final SourceProvenance? provenance;
   final List<VisualStrip> strips;
 
   VisualChartDraft copyWith({
@@ -312,6 +373,8 @@ class VisualChartDraft {
     VisualExportDensity? exportDensity,
     VisualTreatment? globalTreatment,
     bool clearGlobalTreatment = false,
+    SourceProvenance? provenance,
+    bool clearProvenance = false,
     List<VisualStrip>? strips,
     DateTime? updatedAt,
   }) {
@@ -326,6 +389,7 @@ class VisualChartDraft {
       globalTreatment: clearGlobalTreatment
           ? null
           : globalTreatment ?? this.globalTreatment,
+      provenance: clearProvenance ? null : provenance ?? this.provenance,
       strips: strips ?? this.strips,
     );
   }
@@ -342,6 +406,7 @@ class VisualChartDraft {
     'showHeader': showHeader,
     'exportDensity': exportDensity.name,
     'globalTreatment': globalTreatment?.name,
+    'provenance': provenance?.toJson(),
     'strips': strips.map((strip) => strip.toJson()).toList(),
   };
 
@@ -357,6 +422,7 @@ class VisualChartDraft {
     }
     final treatment = json['globalTreatment'] as String?;
     final densityName = json['exportDensity'] as String?;
+    final provenance = json['provenance'];
     return VisualChartDraft(
       id: json['id']! as String,
       title: json['title']! as String,
@@ -370,6 +436,11 @@ class VisualChartDraft {
       globalTreatment: treatment == null
           ? null
           : VisualTreatment.values.byName(treatment),
+      provenance: provenance == null
+          ? null
+          : SourceProvenance.fromJson(
+              (provenance as Map).cast<String, Object?>(),
+            ),
       strips: (json['strips']! as List)
           .map(
             (item) =>

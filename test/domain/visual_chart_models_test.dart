@@ -134,6 +134,38 @@ void main() {
     },
   );
 
+  test('local provenance persists and URL intake is normalized offline', () {
+    final now = DateTime.utc(2026, 7, 24);
+    final url = normalizeSourceUrl(
+      ' HTTPS://WWW.SONGSTERR.COM/a/wsa/test-tab-s123 ',
+    );
+    final draft = VisualChartDraft(
+      id: 'source',
+      title: 'Song',
+      artist: 'Artist',
+      createdAt: now,
+      updatedAt: now,
+      provenance: SourceProvenance(
+        url: url,
+        provider: inferSourceProvider(url),
+        versionName: 'Bass tab',
+        importMethod: ProvenanceImportMethod.screenshot,
+        notes: 'Manually captured',
+      ),
+    );
+
+    final restored = VisualChartDraft.decode(draft.encode()).provenance!;
+
+    expect(url, 'https://www.songsterr.com/a/wsa/test-tab-s123');
+    expect(restored.provider, 'Songsterr');
+    expect(restored.versionName, 'Bass tab');
+    expect(restored.notes, 'Manually captured');
+    expect(
+      () => normalizeSourceUrl('file:///private/chart.pdf'),
+      throwsFormatException,
+    );
+  });
+
   test(
     'whole-tab treatment can be cleared without changing strip treatment',
     () {

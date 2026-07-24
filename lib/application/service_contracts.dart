@@ -14,6 +14,10 @@ abstract interface class PerformanceModeController {
   Future<void> setActive(bool active);
 }
 
+abstract interface class ExternalUrlOpener {
+  Future<void> open(String url);
+}
+
 abstract interface class ChartLibrary {
   String assetPath(String hash, String extension);
   Future<void> saveDraft(VisualChartDraft draft);

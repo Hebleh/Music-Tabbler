@@ -135,6 +135,17 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                   title: const Text('Visual chart editor'),
                   actions: [
                     IconButton(
+                      tooltip: _draft.provenance == null
+                          ? 'Add source details'
+                          : 'Source details',
+                      onPressed: _busy ? null : _editProvenance,
+                      icon: Icon(
+                        _draft.provenance == null
+                            ? Icons.link_outlined
+                            : Icons.link,
+                      ),
+                    ),
+                    IconButton(
                       tooltip: 'Undo last edit (Ctrl+Z)',
                       onPressed: _undoHistory.canUndo ? _undo : null,
                       icon: const Icon(Icons.undo),
@@ -705,6 +716,9 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       lyricBand: strip.lyricBand,
       lyricContrast: strip.lyricContrast,
       highlights: strip.highlights,
+      annotations: strip.annotations,
+      annotationsVisible: strip.annotationsVisible,
+      includeAnnotationsInPdf: strip.includeAnnotationsInPdf,
     );
     final strips = [..._draft.strips]..insert(index + 1, duplicate);
     _commitDraft(_draft.copyWith(strips: strips));
@@ -754,6 +768,159 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     }
   }
 
+  Future<void> _editProvenance() async {
+    final current = _draft.provenance;
+    final url = TextEditingController(text: current?.url ?? '');
+    final provider = TextEditingController(text: current?.provider ?? '');
+    final version = TextEditingController(text: current?.versionName ?? '');
+    final notes = TextEditingController(text: current?.notes ?? '');
+    var method = current?.importMethod ?? ProvenanceImportMethod.screenshot;
+    String? validation;
+    final result = await showDialog<_ProvenanceDialogResult>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Source details'),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: url,
+                    keyboardType: TextInputType.url,
+                    decoration: InputDecoration(
+                      labelText: 'Source URL',
+                      errorText: validation,
+                    ),
+                  ),
+                  TextField(
+                    controller: provider,
+                    decoration: const InputDecoration(
+                      labelText: 'Provider / site',
+                    ),
+                  ),
+                  TextField(
+                    controller: version,
+                    decoration: const InputDecoration(
+                      labelText: 'Version or source name',
+                    ),
+                  ),
+                  DropdownButtonFormField<ProvenanceImportMethod>(
+                    initialValue: method,
+                    decoration: const InputDecoration(labelText: 'Imported as'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: ProvenanceImportMethod.screenshot,
+                        child: Text('Screenshots / images'),
+                      ),
+                      DropdownMenuItem(
+                        value: ProvenanceImportMethod.pdf,
+                        child: Text('PDF'),
+                      ),
+                      DropdownMenuItem(
+                        value: ProvenanceImportMethod.other,
+                        child: Text('Other manual import'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => method = value);
+                      }
+                    },
+                  ),
+                  TextField(
+                    controller: notes,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(labelText: 'Notes'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            if (current != null)
+              TextButton(
+                onPressed: () => Navigator.pop(
+                  context,
+                  const _ProvenanceDialogResult(remove: true),
+                ),
+                child: const Text('Remove'),
+              ),
+            if (current != null) ...[
+              TextButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: current.url));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Source URL copied.')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.copy_outlined),
+                label: const Text('Copy URL'),
+              ),
+              if (widget.services.externalUrlOpener != null)
+                TextButton.icon(
+                  onPressed: () async {
+                    try {
+                      await widget.services.externalUrlOpener!.open(
+                        current.url,
+                      );
+                    } catch (error) {
+                      if (context.mounted) _showError(error);
+                    }
+                  },
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Open'),
+                ),
+            ],
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                try {
+                  final normalized = normalizeSourceUrl(url.text);
+                  Navigator.pop(
+                    context,
+                    _ProvenanceDialogResult(
+                      value: SourceProvenance(
+                        url: normalized,
+                        provider: provider.text.trim().isEmpty
+                            ? inferSourceProvider(normalized)
+                            : provider.text.trim(),
+                        versionName: version.text.trim(),
+                        importMethod: method,
+                        notes: notes.text.trim(),
+                      ),
+                    ),
+                  );
+                } on FormatException catch (error) {
+                  setDialogState(() => validation = error.message);
+                }
+              },
+              child: const Text('Save source'),
+            ),
+          ],
+        ),
+      ),
+    );
+    url.dispose();
+    provider.dispose();
+    version.dispose();
+    notes.dispose();
+    if (result == null) return;
+    _commitDraft(
+      result.remove
+          ? _draft.copyWith(clearProvenance: true)
+          : _draft.copyWith(provenance: result.value),
+    );
+  }
+
   Future<void> _export() async {
     setState(() => _busy = true);
     try {
@@ -785,23 +952,33 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
 
 enum _ImportKind { images, pdf, clipboard }
 
+class _ProvenanceDialogResult {
+  const _ProvenanceDialogResult({this.value, this.remove = false});
+
+  final SourceProvenance? value;
+  final bool remove;
+}
+
 class _EmptyImportState extends StatelessWidget {
   const _EmptyImportState();
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.view_stream_outlined, size: 64),
-          SizedBox(height: 12),
-          Text('Add screenshots or a PDF to create horizontal tab rows.'),
-          SizedBox(height: 4),
-          Text(
-            'Original files remain untouched. Crop and display edits are reversible.',
-          ),
-        ],
+    return const SingleChildScrollView(
+      padding: EdgeInsets.all(12),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.view_stream_outlined, size: 48),
+            SizedBox(height: 8),
+            Text('Add screenshots or a PDF to create horizontal tab rows.'),
+            SizedBox(height: 4),
+            Text(
+              'Original files remain untouched. Crop and display edits are reversible.',
+            ),
+          ],
+        ),
       ),
     );
   }

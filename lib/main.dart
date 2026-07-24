@@ -11,6 +11,7 @@ import 'application/text_recognition_service.dart';
 import 'application/visual_import_service.dart';
 import 'infrastructure/local_library.dart';
 import 'infrastructure/device_preferences_store.dart';
+import 'infrastructure/external_url_opener.dart';
 import 'infrastructure/performance_mode_controller.dart';
 
 Future<void> main() async {
@@ -37,6 +38,7 @@ Future<void> main() async {
           textRecognition: NativeTextRecognitionService(library),
           preferences: preferences,
           performanceMode: const MethodChannelPerformanceModeController(),
+          externalUrlOpener: const MethodChannelExternalUrlOpener(),
         ),
       ),
     );

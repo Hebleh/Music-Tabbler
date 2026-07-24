@@ -12,6 +12,7 @@ class AppServices {
     required this.textRecognition,
     required this.preferences,
     required this.performanceMode,
+    this.externalUrlOpener,
   });
 
   final ChartLibrary library;
@@ -24,4 +25,5 @@ class AppServices {
   final TextRecognitionService textRecognition;
   final DevicePreferencesStore preferences;
   final PerformanceModeController performanceMode;
+  final ExternalUrlOpener? externalUrlOpener;
 }

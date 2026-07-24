@@ -1,6 +1,11 @@
 #include "flutter_window.h"
 
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
+#include <shellapi.h>
+
 #include <optional>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -25,6 +30,37 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  auto external_url_channel =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "music_tabbler/external_url",
+          &flutter::StandardMethodCodec::GetInstance());
+  external_url_channel->SetMethodCallHandler(
+      [](const flutter::MethodCall<flutter::EncodableValue>& call,
+         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+             result) {
+        if (call.method_name() != "open") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* url = std::get_if<std::string>(call.arguments());
+        if (url == nullptr ||
+            !(url->rfind("https://", 0) == 0 || url->rfind("http://", 0) == 0)) {
+          result->Error("invalid_url",
+                        "Only http and https URLs can be opened.");
+          return;
+        }
+        const auto launch_result =
+            reinterpret_cast<intptr_t>(ShellExecuteA(
+                nullptr, "open", url->c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+        if (launch_result <= 32) {
+          result->Error("open_failed",
+                        "Windows could not open the default browser.");
+          return;
+        }
+        result->Success();
+      });
+  external_url_channel.release();
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {

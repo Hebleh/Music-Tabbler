@@ -1,5 +1,7 @@
 package com.gerri.music_tabbler
 
+import android.content.Intent
+import android.net.Uri
 import android.view.View
 import android.view.WindowManager
 import io.flutter.embedding.engine.FlutterEngine
@@ -8,6 +10,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val channelName = "music_tabbler/performance_mode"
+    private val externalUrlChannelName = "music_tabbler/external_url"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -41,6 +44,27 @@ class MainActivity : FlutterActivity() {
                     window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
                 }
                 result.success(null)
+            }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            externalUrlChannelName,
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "open") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            val url = call.arguments as? String
+            val uri = url?.let(Uri::parse)
+            if (uri == null || (uri.scheme != "https" && uri.scheme != "http")) {
+                result.error("invalid_url", "Only http and https URLs can be opened.", null)
+                return@setMethodCallHandler
+            }
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, uri))
+                result.success(null)
+            } catch (error: Exception) {
+                result.error("open_failed", error.message, null)
             }
         }
     }

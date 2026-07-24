@@ -122,6 +122,32 @@ void main() {
     },
   );
 
+  testWidgets('direct URL creates an editable local provenance record', (
+    tester,
+  ) async {
+    await tester.pumpWidget(MusicTabblerApp(services: await _testServices()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New / Import'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField).first,
+      'https://www.songsterr.com/a/wsa/local-only-tab-s123',
+    );
+    await tester.tap(find.byTooltip('Create local source record'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Visual chart editor'), findsOneWidget);
+    await tester.tap(find.byTooltip('Source details'));
+    await tester.pumpAndSettle();
+    expect(find.text('Songsterr'), findsOneWidget);
+    expect(
+      find.text('https://www.songsterr.com/a/wsa/local-only-tab-s123'),
+      findsOneWidget,
+    );
+    expect(find.text('Music Tabbler never fetches the link.'), findsNothing);
+  });
+
   testWidgets('mouse wheel can return upward after loading a long row list', (
     tester,
   ) async {

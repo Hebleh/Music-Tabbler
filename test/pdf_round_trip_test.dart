@@ -74,6 +74,49 @@ void main() {
     expect(stage, contains('/MediaBox[0 0 841.89 595.28]'));
   });
 
+  test('source provenance never enters individual PDF output', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_provenance_pdf_',
+    );
+    final library = await LocalLibrary.forTesting(directory);
+    addTearDown(() {
+      library.close();
+      directory.deleteSync(recursive: true);
+    });
+    final source = img.Image(width: 300, height: 80);
+    img.fill(source, color: img.ColorRgb8(255, 255, 255));
+    final stored = await library.storeAsset(img.encodePng(source), 'png');
+    final now = DateTime.utc(2026, 7, 24);
+    final output = await PdfExportService(library).exportBytes(
+      VisualChartDraft(
+        id: 'private-source',
+        title: 'Song',
+        artist: '',
+        createdAt: now,
+        updatedAt: now,
+        provenance: const SourceProvenance(
+          url: 'https://example.invalid/private-version-token',
+          provider: 'Private source label',
+          notes: 'Never print this note',
+        ),
+        strips: [
+          VisualStrip(
+            id: 'strip',
+            assetHash: stored.hash,
+            assetExtension: stored.extension,
+            pixelWidth: 300,
+            pixelHeight: 80,
+          ),
+        ],
+      ),
+    );
+    final pdfText = latin1.decode(output, allowInvalid: true);
+
+    expect(pdfText, isNot(contains('private-version-token')));
+    expect(pdfText, isNot(contains('Private source label')));
+    expect(pdfText, isNot(contains('Never print this note')));
+  });
+
   test(
     'PDF pages round-trip through visual strips into deterministic A4',
     () async {

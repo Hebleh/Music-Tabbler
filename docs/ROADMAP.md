@@ -119,7 +119,7 @@ documented debt unless they materially block gig preparation.
 
 ### Sprint 3 — Local provenance and safe portability
 
-- [ ] **MT-115 — Local provenance and pasted-link records**
+- [~] **MT-115 — Local provenance and pasted-link records**
   - Store and open a user-entered source URL without fetching it or printing it.
 - [ ] **MT-201 — Secure portable-container core**
   - Versioned manifest, checksums, staging, limits, and path validation.
