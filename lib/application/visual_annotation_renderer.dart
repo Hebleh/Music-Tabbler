@@ -20,10 +20,14 @@ Uint8List flattenVisualAnnotations(
       stroke.colorArgb & 0xFF,
       (stroke.colorArgb >> 24) & 0xFF,
     );
-    final thickness = (stroke.width * image.width).round().clamp(1, 24);
     for (var index = 1; index < stroke.points.length; index += 1) {
       final from = stroke.points[index - 1];
       final to = stroke.points[index];
+      final pressure = (from.pressure + to.pressure) / 2;
+      final thickness = (stroke.width * image.width * pressure).round().clamp(
+        1,
+        24,
+      );
       img.drawLine(
         image,
         x1: (from.x * (image.width - 1)).round(),

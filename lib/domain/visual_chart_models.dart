@@ -97,20 +97,25 @@ class VisualHighlight {
 }
 
 class NormalizedPoint {
-  const NormalizedPoint(this.x, this.y);
+  const NormalizedPoint(this.x, this.y, {this.pressure = 1});
 
   final double x;
   final double y;
+  final double pressure;
 
-  NormalizedPoint clamp() =>
-      NormalizedPoint(x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
+  NormalizedPoint clamp() => NormalizedPoint(
+    x.clamp(0.0, 1.0),
+    y.clamp(0.0, 1.0),
+    pressure: pressure.clamp(0.2, 1.0),
+  );
 
-  Map<String, Object> toJson() => {'x': x, 'y': y};
+  Map<String, Object> toJson() => {'x': x, 'y': y, 'pressure': pressure};
 
   factory NormalizedPoint.fromJson(Map<String, Object?> json) {
     return NormalizedPoint(
       (json['x']! as num).toDouble(),
       (json['y']! as num).toDouble(),
+      pressure: (json['pressure'] as num?)?.toDouble() ?? 1,
     ).clamp();
   }
 }

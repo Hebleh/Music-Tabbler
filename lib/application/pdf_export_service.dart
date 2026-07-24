@@ -1062,7 +1062,11 @@ List<VisualAnnotationStroke> _annotationsForRow(
     for (final point in stroke.points) {
       if (point.y < row.top || point.y > row.bottom) continue;
       points.add(
-        NormalizedPoint(point.x, (point.y - row.top) / row.height).clamp(),
+        NormalizedPoint(
+          point.x,
+          (point.y - row.top) / row.height,
+          pressure: point.pressure,
+        ).clamp(),
       );
     }
     if (points.length < 2) continue;

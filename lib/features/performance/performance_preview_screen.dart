@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
 import '../../application/app_services.dart';
@@ -232,41 +233,80 @@ class _PerformanceElementView extends StatefulWidget {
 
 class _PerformanceElementViewState extends State<_PerformanceElementView> {
   final _currentPoints = <NormalizedPoint>[];
+  int? _activePointer;
+  PointerDeviceKind? _activeKind;
 
-  NormalizedPoint _point(Offset local, Size size) =>
-      NormalizedPoint(local.dx / size.width, local.dy / size.height).clamp();
-
-  void _drawStart(DragStartDetails details) {
-    if (widget.annotationTool != AnnotationTool.draw) return;
-    final box = context.findRenderObject()! as RenderBox;
-    setState(() {
-      _currentPoints
-        ..clear()
-        ..add(_point(details.localPosition, box.size));
-    });
+  NormalizedPoint _point(PointerEvent event, Size size) {
+    final range = event.pressureMax - event.pressureMin;
+    final pressure = range <= 0
+        ? 1.0
+        : ((event.pressure - event.pressureMin) / range).clamp(0.2, 1.0);
+    return NormalizedPoint(
+      event.localPosition.dx / size.width,
+      event.localPosition.dy / size.height,
+      pressure: pressure,
+    ).clamp();
   }
 
-  void _drawUpdate(DragUpdateDetails details) {
+  bool _isStylus(PointerDeviceKind kind) =>
+      kind == PointerDeviceKind.stylus ||
+      kind == PointerDeviceKind.invertedStylus;
+
+  AnnotationTool _toolFor(PointerEvent event) =>
+      event.kind == PointerDeviceKind.invertedStylus
+      ? AnnotationTool.erase
+      : widget.annotationTool;
+
+  void _pointerDown(PointerDownEvent event) {
+    final tool = _toolFor(event);
+    if (tool == AnnotationTool.none) return;
+    if (_activePointer != null) {
+      final stylusSupersedesTouch =
+          _isStylus(event.kind) &&
+          _activeKind != null &&
+          !_isStylus(_activeKind!);
+      if (!stylusSupersedesTouch) return;
+      _currentPoints.clear();
+    }
+    _activePointer = event.pointer;
+    _activeKind = event.kind;
     final box = context.findRenderObject()! as RenderBox;
-    final point = _point(details.localPosition, box.size);
-    if (widget.annotationTool == AnnotationTool.erase) {
+    final point = _point(event, box.size);
+    if (tool == AnnotationTool.erase) {
       widget.onEraseAt?.call(widget.element, point);
       return;
     }
-    if (widget.annotationTool == AnnotationTool.draw) {
+    setState(() => _currentPoints.add(point));
+  }
+
+  void _pointerMove(PointerMoveEvent event) {
+    if (event.pointer != _activePointer) return;
+    final box = context.findRenderObject()! as RenderBox;
+    final point = _point(event, box.size);
+    if (_toolFor(event) == AnnotationTool.erase) {
+      widget.onEraseAt?.call(widget.element, point);
+      return;
+    }
+    if (_toolFor(event) == AnnotationTool.draw) {
       setState(() => _currentPoints.add(point));
     }
   }
 
-  void _drawEnd(DragEndDetails details) {
-    if (widget.annotationTool != AnnotationTool.draw) return;
-    if (_currentPoints.length >= 2) {
+  void _pointerUp(PointerEvent event) {
+    if (event.pointer != _activePointer) return;
+    if (_toolFor(event) == AnnotationTool.draw && _currentPoints.length >= 2) {
       widget.onStrokeCompleted?.call(
         widget.element,
         List.unmodifiable(_currentPoints),
       );
     }
-    setState(_currentPoints.clear);
+    _clearPointer();
+  }
+
+  void _clearPointer() {
+    _activePointer = null;
+    _activeKind = null;
+    if (mounted) setState(_currentPoints.clear);
   }
 
   @override
@@ -342,20 +382,12 @@ class _PerformanceElementViewState extends State<_PerformanceElementView> {
               ),
             ),
           if (widget.annotationTool != AnnotationTool.none)
-            GestureDetector(
+            Listener(
               behavior: HitTestBehavior.opaque,
-              onPanStart: _drawStart,
-              onPanUpdate: _drawUpdate,
-              onPanEnd: _drawEnd,
-              onTapDown: widget.annotationTool == AnnotationTool.erase
-                  ? (details) {
-                      final box = context.findRenderObject()! as RenderBox;
-                      widget.onEraseAt?.call(
-                        element,
-                        _point(details.localPosition, box.size),
-                      );
-                    }
-                  : null,
+              onPointerDown: _pointerDown,
+              onPointerMove: _pointerMove,
+              onPointerUp: _pointerUp,
+              onPointerCancel: _pointerUp,
             ),
         ],
       ),
@@ -399,20 +431,21 @@ class _AnnotationPainter extends CustomPainter {
     double normalizedWidth,
   ) {
     if (points.length < 2) return;
-    final path = Path()
-      ..moveTo(points.first.x * size.width, points.first.y * size.height);
-    for (final point in points.skip(1)) {
-      path.lineTo(point.x * size.width, point.y * size.height);
+    for (var index = 1; index < points.length; index += 1) {
+      final from = points[index - 1];
+      final to = points[index];
+      final pressure = (from.pressure + to.pressure) / 2;
+      canvas.drawLine(
+        Offset(from.x * size.width, from.y * size.height),
+        Offset(to.x * size.width, to.y * size.height),
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (normalizedWidth * size.width * pressure).clamp(1, 24)
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
     }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = (normalizedWidth * size.width).clamp(1, 24)
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
   }
 
   @override

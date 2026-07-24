@@ -265,7 +265,11 @@ class _GigModeScreenState extends State<GigModeScreen>
       id: IdFactory.next('stroke'),
       points: List.unmodifiable([
         for (final point in rowLocalPoints)
-          NormalizedPoint(point.x, row.top + point.y * row.height).clamp(),
+          NormalizedPoint(
+            point.x,
+            row.top + point.y * row.height,
+            pressure: point.pressure,
+          ).clamp(),
       ]),
     );
     _lastAnnotation = _AnnotationUndo(

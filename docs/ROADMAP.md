@@ -114,7 +114,7 @@ documented debt unless they materially block gig preparation.
     the reusable editable setlist sidebar.
 - [~] **MT-113 — Vector annotation core**
   - Reversible normalized strokes that never alter source pixels.
-- [ ] **MT-114 — S Pen and tablet annotation hardening**
+- [~] **MT-114 — S Pen and tablet annotation hardening**
   - Stylus detection, palm behavior, pressure, orientation, and lifecycle QA.
 
 ### Sprint 3 — Local provenance and safe portability

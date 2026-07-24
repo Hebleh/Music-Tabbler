@@ -57,6 +57,7 @@ void main() {
       expect(decoded.strips.single.highlights.single.id, 'highlight_1');
       expect(decoded.strips.single.annotations.single.id, 'stroke_1');
       expect(decoded.strips.single.annotations.single.points.last.x, 0.75);
+      expect(decoded.strips.single.annotations.single.points.last.pressure, 1);
       expect(decoded.strips.single.annotations.single.colorArgb, 0xFF00FF00);
       expect(decoded.strips.single.annotations.single.width, 0.006);
       expect(decoded.strips.single.annotationsVisible, isFalse);
@@ -116,6 +117,22 @@ void main() {
     expect(restored.annotationsVisible, isTrue);
     expect(restored.includeAnnotationsInPdf, isFalse);
   });
+
+  test(
+    'legacy annotation points default pressure and new pressure persists',
+    () {
+      final legacy = NormalizedPoint.fromJson({'x': 0.25, 'y': 0.75});
+      final pressured = NormalizedPoint.fromJson({
+        'x': 0.5,
+        'y': 0.5,
+        'pressure': 0.4,
+      });
+
+      expect(legacy.pressure, 1);
+      expect(pressured.pressure, 0.4);
+      expect(pressured.toJson()['pressure'], 0.4);
+    },
+  );
 
   test(
     'whole-tab treatment can be cleared without changing strip treatment',
