@@ -477,6 +477,45 @@ void main() {
     expect(find.textContaining('Exported setlist PDF'), findsOneWidget);
   });
 
+  testWidgets('performance preview navigates and exits explicitly', (
+    tester,
+  ) async {
+    final library = _FakeLibrary()..setlists.add(_setlist('set-1', 'Gig'));
+    final deckBuilder = _RecordingPerformanceDeckBuilder();
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MusicTabblerApp(
+        services: await _testServices(
+          library: library,
+          performanceDeckBuilder: deckBuilder,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openGigs(tester);
+    await tester.tap(find.text('Gig'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Open performance preview'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stage readable'));
+    await tester.pumpAndSettle();
+
+    expect(deckBuilder.density, VisualExportDensity.stageReadable);
+    expect(find.text('Page 1 of 2'), findsOneWidget);
+    expect(find.text('Not playing - First break'), findsOneWidget);
+    await tester.tap(find.byTooltip('Next page'));
+    await tester.pumpAndSettle();
+    expect(find.text('Page 2 of 2'), findsOneWidget);
+    expect(find.text('Not playing - Second break'), findsOneWidget);
+    await tester.tap(find.byTooltip('Exit performance preview'));
+    await tester.pumpAndSettle();
+    expect(find.text('Gig'), findsWidgets);
+  });
+
   testWidgets('setlist cards and actions fit a narrow tablet layout', (
     tester,
   ) async {
@@ -555,6 +594,7 @@ Future<AppServices> _testServices({
   VisualImporter? importer,
   _FakeLibrary? library,
   SetlistPdfExporter? setlistExporter,
+  PerformanceDeckBuilder? performanceDeckBuilder,
 }) async {
   final resolvedLibrary = library ?? _FakeLibrary();
   const unusedExporter = _UnusedExporter();
@@ -565,7 +605,7 @@ Future<AppServices> _testServices({
     importer: importer ?? const _UnusedImporter(),
     exporter: unusedExporter,
     setlistExporter: setlistExporter ?? unusedExporter,
-    performanceDeckBuilder: unusedExporter,
+    performanceDeckBuilder: performanceDeckBuilder ?? unusedExporter,
     textRecognition: const _UnusedTextRecognition(),
     preferences: _MemoryPreferencesStore(),
   );
@@ -822,5 +862,41 @@ class _RecordingSetlistExporter implements SetlistPdfExporter {
     exportedSetlist = setlist;
     this.density = density;
     return r'C:\exports\Gig.pdf';
+  }
+}
+
+class _RecordingPerformanceDeckBuilder implements PerformanceDeckBuilder {
+  VisualExportDensity? density;
+
+  @override
+  Future<PerformanceDeck> buildPerformanceDeck(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) async {
+    this.density = density;
+    PerformanceDeckPage page(int index, String title) => PerformanceDeckPage(
+      id: '${setlist.id}:${density.name}:$index',
+      index: index,
+      elements: [
+        PerformanceDeckElement(
+          kind: PerformanceElementKind.placeholder,
+          entryIndex: index,
+          entryId: 'entry-$index',
+          title: title,
+          width: 831.89,
+          height: 22,
+        ),
+      ],
+    );
+    return PerformanceDeck(
+      setlistId: setlist.id,
+      setlistName: setlist.name,
+      density: density,
+      pageWidth: 841.89,
+      pageHeight: 595.28,
+      margin: 5,
+      gap: 0,
+      pages: [page(0, 'First break'), page(1, 'Second break')],
+    );
   }
 }

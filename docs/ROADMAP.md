@@ -105,7 +105,7 @@ documented debt unless they materially block gig preparation.
 
 - [~] **MT-109 — Shared performance-page deck**
   - One page/song sequence shared by preview, gig mode, and PDF planning.
-- [ ] **MT-110 — Desktop performance preview**
+- [~] **MT-110 — Desktop performance preview**
   - Full-screen Windows rehearsal of one chart or an entire set.
 - [ ] **MT-111 — Android visual-workflow parity**
   - Physical-tablet import, edit, save, reopen, and export.

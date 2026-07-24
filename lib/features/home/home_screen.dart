@@ -7,6 +7,7 @@ import '../../domain/device_preferences.dart';
 import '../../domain/visual_chart_models.dart';
 import '../chart/chart_editor_screen.dart';
 import '../import/visual_import_screen.dart';
+import '../performance/performance_preview_screen.dart';
 import '../setlists/setlist_sidebar.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -131,6 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _GigsAndSetlists(
         key: ValueKey(_libraryRevision),
         services: widget.services,
+        preferences: widget.preferences,
       ),
       _ImportSource(onStartVisual: _openVisualEditor),
     ];
@@ -391,9 +393,14 @@ String _formatEditedDate(DateTime value) {
 }
 
 class _GigsAndSetlists extends StatefulWidget {
-  const _GigsAndSetlists({super.key, required this.services});
+  const _GigsAndSetlists({
+    super.key,
+    required this.services,
+    required this.preferences,
+  });
 
   final AppServices services;
+  final DevicePreferences preferences;
 
   @override
   State<_GigsAndSetlists> createState() => _GigsAndSetlistsState();
@@ -481,6 +488,7 @@ class _GigsAndSetlistsState extends State<_GigsAndSetlists> {
         builder: (_) => _SetlistEditorScreen(
           services: widget.services,
           setlistId: setlist.id,
+          preferences: widget.preferences,
         ),
       ),
     );
@@ -610,9 +618,14 @@ class _GigsAndSetlistsState extends State<_GigsAndSetlists> {
 }
 
 class _SetlistEditorScreen extends StatefulWidget {
-  const _SetlistEditorScreen({required this.services, required this.setlistId});
+  const _SetlistEditorScreen({
+    required this.services,
+    required this.setlistId,
+    required this.preferences,
+  });
   final AppServices services;
   final String setlistId;
+  final DevicePreferences preferences;
 
   @override
   State<_SetlistEditorScreen> createState() => _SetlistEditorScreenState();
@@ -876,6 +889,21 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
     }
   }
 
+  Future<void> _openPerformancePreview() async {
+    final density = await _chooseExportDensity();
+    if (density == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PerformancePreviewScreen(
+          services: widget.services,
+          setlist: _setlist!,
+          density: density,
+          preferences: widget.preferences,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
@@ -892,6 +920,11 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
       appBar: AppBar(
         title: Text(setlist.name),
         actions: [
+          IconButton(
+            tooltip: 'Open performance preview',
+            onPressed: _exporting ? null : _openPerformancePreview,
+            icon: const Icon(Icons.present_to_all),
+          ),
           if (_exporting)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
