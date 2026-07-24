@@ -555,15 +555,43 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
   @override
   Future<void> saveSetlist(LibrarySetlist setlist) async {
     _validateSetlistEntries(setlist.entries);
+    _inTransaction(() => _saveSetlist(setlist));
+  }
+
+  Future<void> installLibraryStateAtomically({
+    required List<({VisualChartDraft draft, String songId})> variants,
+    required List<LibrarySetlist> setlists,
+    required bool replace,
+  }) async {
+    for (final setlist in setlists) {
+      _validateSetlistEntries(setlist.entries);
+    }
     _inTransaction(() {
-      _requireChartVariants(
-        setlist.entries
-            .where((entry) => entry.kind == SetlistEntryKind.chart)
-            .map((entry) => entry.chartVariantId!),
-      );
-      _requireEntryIdsAvailableForSetlist(setlist.id, setlist.entries);
-      _database.execute(
-        '''
+      if (replace) {
+        _database.execute('DELETE FROM setlist_entries;');
+        _database.execute('DELETE FROM setlists;');
+        _database.execute('DELETE FROM visual_charts;');
+        _database.execute('DELETE FROM chart_variants;');
+        _database.execute('DELETE FROM songs;');
+      }
+      for (final variant in variants) {
+        _saveDraftAsVariant(variant.draft, variant.songId);
+      }
+      for (final setlist in setlists) {
+        _saveSetlist(setlist);
+      }
+    });
+  }
+
+  void _saveSetlist(LibrarySetlist setlist) {
+    _requireChartVariants(
+      setlist.entries
+          .where((entry) => entry.kind == SetlistEntryKind.chart)
+          .map((entry) => entry.chartVariantId!),
+    );
+    _requireEntryIdsAvailableForSetlist(setlist.id, setlist.entries);
+    _database.execute(
+      '''
         INSERT INTO setlists (
           id, name, scheduled_at, notes, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?)
@@ -573,19 +601,19 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
           notes = excluded.notes,
           updated_at = excluded.updated_at;
       ''',
-        [
-          setlist.id,
-          setlist.name,
-          setlist.scheduledAt?.toIso8601String(),
-          setlist.notes,
-          setlist.createdAt.toIso8601String(),
-          setlist.updatedAt.toIso8601String(),
-        ],
-      );
-      _database.execute('DELETE FROM setlist_entries WHERE setlist_id = ?;', [
+      [
         setlist.id,
-      ]);
-      final statement = _database.prepare('''
+        setlist.name,
+        setlist.scheduledAt?.toIso8601String(),
+        setlist.notes,
+        setlist.createdAt.toIso8601String(),
+        setlist.updatedAt.toIso8601String(),
+      ],
+    );
+    _database.execute('DELETE FROM setlist_entries WHERE setlist_id = ?;', [
+      setlist.id,
+    ]);
+    final statement = _database.prepare('''
         INSERT INTO setlist_entries (
           id,
           setlist_id,
@@ -595,22 +623,21 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
           position
         ) VALUES (?, ?, ?, ?, ?, ?);
       ''');
-      try {
-        for (var index = 0; index < setlist.entries.length; index++) {
-          final entry = setlist.entries[index];
-          statement.execute([
-            entry.id,
-            setlist.id,
-            entry.kind.name,
-            entry.chartVariantId,
-            entry.placeholderTitle,
-            index,
-          ]);
-        }
-      } finally {
-        statement.close();
+    try {
+      for (var index = 0; index < setlist.entries.length; index++) {
+        final entry = setlist.entries[index];
+        statement.execute([
+          entry.id,
+          setlist.id,
+          entry.kind.name,
+          entry.chartVariantId,
+          entry.placeholderTitle,
+          index,
+        ]);
       }
-    });
+    } finally {
+      statement.close();
+    }
   }
 
   @override

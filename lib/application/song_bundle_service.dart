@@ -154,6 +154,9 @@ class SongBundleService implements SongBundleTransfer {
         assetFiles[name] = file;
       }
     }
+    final consumedPaths = <String>{
+      for (final file in assetFiles.values) file.path,
+    };
     for (final rawVariant in variantsJson) {
       final variant = _map(rawVariant, 'variant');
       final originalId = _string(variant['id'], 'variant.id');
@@ -163,6 +166,7 @@ class SongBundleService implements SongBundleTransfer {
         );
       }
       final draftPath = _string(variant['draftPath'], 'variant.draftPath');
+      consumedPaths.add(draftPath);
       late final VisualChartDraft imported;
       try {
         imported = VisualChartDraft.decode(
@@ -198,6 +202,11 @@ class SongBundleService implements SongBundleTransfer {
             : imported.copyWith(id: targetId),
         songId: targetSongId,
       ));
+    }
+    if (container.files.any((file) => !consumedPaths.contains(file.path))) {
+      throw const PortableContainerException(
+        'Song bundle contains an unexpected file.',
+      );
     }
     for (final entry in assetFiles.entries) {
       final extension = p.extension(entry.key).substring(1);

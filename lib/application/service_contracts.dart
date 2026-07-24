@@ -35,6 +35,35 @@ abstract interface class SongBundleTransfer {
   Future<SongBundleImportResult?> importSongWithPicker();
 }
 
+enum StateImportMode { merge, replace }
+
+class LibraryStateImportResult {
+  const LibraryStateImportResult({
+    required this.importedVariants,
+    required this.skippedVariants,
+    required this.importedSetlists,
+    this.backupPath,
+  });
+
+  final int importedVariants;
+  final int skippedVariants;
+  final int importedSetlists;
+  final String? backupPath;
+}
+
+abstract interface class LibraryStateTransfer {
+  Future<Uint8List> exportStateBytes();
+  Future<LibraryStateImportResult> importStateBytes(
+    Uint8List bytes, {
+    required StateImportMode mode,
+    bool Function()? isCancelled,
+  });
+  Future<String?> exportStateWithPicker();
+  Future<LibraryStateImportResult?> importStateWithPicker(StateImportMode mode);
+  Future<List<String>> listBackups();
+  Future<LibraryStateImportResult> restoreBackup(String path);
+}
+
 abstract interface class ChartLibrary {
   String assetPath(String hash, String extension);
   Future<void> saveDraft(VisualChartDraft draft);

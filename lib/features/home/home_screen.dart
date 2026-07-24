@@ -160,6 +160,171 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _showLibraryTransfer() async {
+    final transfer = widget.services.libraryState;
+    if (transfer == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Library transfer and recovery'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _exportLibraryState();
+            },
+            child: const ListTile(
+              leading: Icon(Icons.upload_file_outlined),
+              title: Text('Export .mtstate'),
+              subtitle: Text('Songs, setlists, assets, and annotations'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _importLibraryState(StateImportMode.merge);
+            },
+            child: const ListTile(
+              leading: Icon(Icons.merge),
+              title: Text('Import and keep local library'),
+              subtitle: Text('Conflicts become separate songs or variants'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _confirmReplaceLibrary();
+            },
+            child: const ListTile(
+              leading: Icon(Icons.swap_horiz),
+              title: Text('Replace from .mtstate'),
+              subtitle: Text('A recoverable backup is created first'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _restoreLibraryBackup();
+            },
+            child: const ListTile(
+              leading: Icon(Icons.restore),
+              title: Text('Restore a backup'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportLibraryState() async {
+    try {
+      final destination = await widget.services.libraryState!
+          .exportStateWithPicker();
+      if (destination != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Library state exported to $destination')),
+        );
+      }
+    } catch (error) {
+      _showTransferError(error);
+    }
+  }
+
+  Future<void> _confirmReplaceLibrary() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Replace the local library?'),
+        content: const Text(
+          'The selected state is fully validated and a recoverable backup of '
+          'the current library is created before replacement.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Choose state and replace'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _importLibraryState(StateImportMode.replace);
+    }
+  }
+
+  Future<void> _importLibraryState(StateImportMode mode) async {
+    try {
+      final result = await widget.services.libraryState!.importStateWithPicker(
+        mode,
+      );
+      if (result == null || !mounted) return;
+      _refreshAfterStateChange();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Imported ${result.importedVariants} variant(s) and '
+            '${result.importedSetlists} setlist(s).',
+          ),
+        ),
+      );
+    } catch (error) {
+      _showTransferError(error);
+    }
+  }
+
+  Future<void> _restoreLibraryBackup() async {
+    try {
+      final backups = await widget.services.libraryState!.listBackups();
+      if (!mounted) return;
+      if (backups.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No recoverable backups exist yet.')),
+        );
+        return;
+      }
+      final selected = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Restore backup'),
+          children: [
+            for (final path in backups)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, path),
+                child: Text(path.split(RegExp(r'[/\\]')).last),
+              ),
+          ],
+        ),
+      );
+      if (selected == null) return;
+      await widget.services.libraryState!.restoreBackup(selected);
+      if (!mounted) return;
+      _refreshAfterStateChange();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Library backup restored.')));
+    } catch (error) {
+      _showTransferError(error);
+    }
+  }
+
+  void _refreshAfterStateChange() {
+    setState(() {
+      _reloadDrafts();
+      _libraryRevision += 1;
+    });
+  }
+
+  void _showTransferError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(error.toString())));
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -196,6 +361,12 @@ class _HomeScreenState extends State<HomeScreen> {
           appBar: AppBar(
             title: const Text('Music Tabbler'),
             actions: [
+              if (widget.services.libraryState != null)
+                IconButton(
+                  tooltip: 'Library transfer and recovery',
+                  onPressed: _showLibraryTransfer,
+                  icon: const Icon(Icons.move_to_inbox_outlined),
+                ),
               IconButton(
                 tooltip: widget.preferences.appTheme == AppThemePreference.dark
                     ? 'Use light theme'

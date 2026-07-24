@@ -125,7 +125,7 @@ documented debt unless they materially block gig preparation.
   - Versioned manifest, checksums, staging, limits, and path validation.
 - [~] **MT-202 — `.mtsong` bundles**
   - Round-trip one song and its variants, assets, provenance, and annotations.
-- [ ] **MT-203 — `.mtstate`, backups, conflicts, and restore**
+- [~] **MT-203 — `.mtstate`, backups, conflicts, and restore**
   - Transactional whole-library transfer with recoverable snapshots.
 
 ### Sprint 4 — Semantic foundation

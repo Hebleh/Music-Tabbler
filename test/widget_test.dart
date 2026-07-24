@@ -148,6 +148,27 @@ void main() {
     expect(find.text('Music Tabbler never fetches the link.'), findsNothing);
   });
 
+  testWidgets('library transfer exposes export merge replace and restore', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MusicTabblerApp(
+        services: await _testServices(
+          libraryState: _RecordingLibraryStateTransfer(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Library transfer and recovery'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Export .mtstate'), findsOneWidget);
+    expect(find.text('Import and keep local library'), findsOneWidget);
+    expect(find.text('Replace from .mtstate'), findsOneWidget);
+    expect(find.text('Restore a backup'), findsOneWidget);
+  });
+
   testWidgets('mouse wheel can return upward after loading a long row list', (
     tester,
   ) async {
@@ -698,6 +719,7 @@ Future<AppServices> _testServices({
   SetlistPdfExporter? setlistExporter,
   PerformanceDeckBuilder? performanceDeckBuilder,
   PerformanceModeController? performanceMode,
+  LibraryStateTransfer? libraryState,
 }) async {
   final resolvedLibrary = library ?? _FakeLibrary();
   const unusedExporter = _UnusedExporter();
@@ -712,7 +734,43 @@ Future<AppServices> _testServices({
     textRecognition: const _UnusedTextRecognition(),
     preferences: _MemoryPreferencesStore(),
     performanceMode: performanceMode ?? _RecordingPerformanceModeController(),
+    libraryState: libraryState,
   );
+}
+
+class _RecordingLibraryStateTransfer implements LibraryStateTransfer {
+  @override
+  Future<Uint8List> exportStateBytes() async => Uint8List(0);
+
+  @override
+  Future<String?> exportStateWithPicker() async => null;
+
+  @override
+  Future<LibraryStateImportResult> importStateBytes(
+    Uint8List bytes, {
+    required StateImportMode mode,
+    bool Function()? isCancelled,
+  }) async => const LibraryStateImportResult(
+    importedVariants: 0,
+    skippedVariants: 0,
+    importedSetlists: 0,
+  );
+
+  @override
+  Future<LibraryStateImportResult?> importStateWithPicker(
+    StateImportMode mode,
+  ) async => null;
+
+  @override
+  Future<List<String>> listBackups() async => const [];
+
+  @override
+  Future<LibraryStateImportResult> restoreBackup(String path) async =>
+      const LibraryStateImportResult(
+        importedVariants: 0,
+        skippedVariants: 0,
+        importedSetlists: 0,
+      );
 }
 
 class _MemoryPreferencesStore implements DevicePreferencesStore {

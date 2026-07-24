@@ -14,6 +14,7 @@ class AppServices {
     required this.performanceMode,
     this.externalUrlOpener,
     this.songBundles,
+    this.libraryState,
   });
 
   final ChartLibrary library;
@@ -28,4 +29,5 @@ class AppServices {
   final PerformanceModeController performanceMode;
   final ExternalUrlOpener? externalUrlOpener;
   final SongBundleTransfer? songBundles;
+  final LibraryStateTransfer? libraryState;
 }
