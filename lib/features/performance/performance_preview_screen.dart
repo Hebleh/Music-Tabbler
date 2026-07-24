@@ -142,15 +142,34 @@ class _PerformancePreviewScreenState extends State<PerformancePreviewScreen> {
   }
 }
 
+enum AnnotationTool { none, draw, erase }
+
+typedef PerformanceStrokeCallback =
+    void Function(
+      PerformanceDeckElement element,
+      List<NormalizedPoint> rowLocalPoints,
+    );
+typedef PerformanceEraseCallback =
+    void Function(
+      PerformanceDeckElement element,
+      NormalizedPoint rowLocalPoint,
+    );
+
 class PerformanceDeckPageView extends StatelessWidget {
   const PerformanceDeckPageView({
     super.key,
     required this.deck,
     required this.page,
+    this.annotationTool = AnnotationTool.none,
+    this.onStrokeCompleted,
+    this.onEraseAt,
   });
 
   final PerformanceDeck deck;
   final PerformanceDeckPage page;
+  final AnnotationTool annotationTool;
+  final PerformanceStrokeCallback? onStrokeCompleted;
+  final PerformanceEraseCallback? onEraseAt;
 
   @override
   Widget build(BuildContext context) {
@@ -176,7 +195,12 @@ class PerformanceDeckPageView extends StatelessWidget {
                     index += 1
                   ) ...[
                     if (index > 0) SizedBox(height: deck.gap),
-                    _PerformanceElementView(element: page.elements[index]),
+                    _PerformanceElementView(
+                      element: page.elements[index],
+                      annotationTool: annotationTool,
+                      onStrokeCompleted: onStrokeCompleted,
+                      onEraseAt: onEraseAt,
+                    ),
                   ],
                 ],
               ),
@@ -188,78 +212,211 @@ class PerformanceDeckPageView extends StatelessWidget {
   }
 }
 
-class _PerformanceElementView extends StatelessWidget {
-  const _PerformanceElementView({required this.element});
+class _PerformanceElementView extends StatefulWidget {
+  const _PerformanceElementView({
+    required this.element,
+    required this.annotationTool,
+    this.onStrokeCompleted,
+    this.onEraseAt,
+  });
 
   final PerformanceDeckElement element;
+  final AnnotationTool annotationTool;
+  final PerformanceStrokeCallback? onStrokeCompleted;
+  final PerformanceEraseCallback? onEraseAt;
+
+  @override
+  State<_PerformanceElementView> createState() =>
+      _PerformanceElementViewState();
+}
+
+class _PerformanceElementViewState extends State<_PerformanceElementView> {
+  final _currentPoints = <NormalizedPoint>[];
+
+  NormalizedPoint _point(Offset local, Size size) =>
+      NormalizedPoint(local.dx / size.width, local.dy / size.height).clamp();
+
+  void _drawStart(DragStartDetails details) {
+    if (widget.annotationTool != AnnotationTool.draw) return;
+    final box = context.findRenderObject()! as RenderBox;
+    setState(() {
+      _currentPoints
+        ..clear()
+        ..add(_point(details.localPosition, box.size));
+    });
+  }
+
+  void _drawUpdate(DragUpdateDetails details) {
+    final box = context.findRenderObject()! as RenderBox;
+    final point = _point(details.localPosition, box.size);
+    if (widget.annotationTool == AnnotationTool.erase) {
+      widget.onEraseAt?.call(widget.element, point);
+      return;
+    }
+    if (widget.annotationTool == AnnotationTool.draw) {
+      setState(() => _currentPoints.add(point));
+    }
+  }
+
+  void _drawEnd(DragEndDetails details) {
+    if (widget.annotationTool != AnnotationTool.draw) return;
+    if (_currentPoints.length >= 2) {
+      widget.onStrokeCompleted?.call(
+        widget.element,
+        List.unmodifiable(_currentPoints),
+      );
+    }
+    setState(_currentPoints.clear);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: element.width,
-      height: element.height,
-      child: switch (element.kind) {
-        PerformanceElementKind.header => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: FittedBox(
-                alignment: Alignment.centerLeft,
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  element.title ?? 'Untitled chart',
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            if ((element.artist ?? '').isNotEmpty)
-              SizedBox(
-                height: 9,
-                child: FittedBox(
-                  alignment: Alignment.centerLeft,
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    element.artist!,
-                    style: const TextStyle(color: Colors.black, fontSize: 8),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        PerformanceElementKind.boundary => const DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: Colors.black54, width: 0.5)),
-          ),
-        ),
-        PerformanceElementKind.placeholder => ColoredBox(
-          color: const Color(0xFFFFCCD1),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Align(
+    final element = widget.element;
+    final visual = switch (element.kind) {
+      PerformanceElementKind.header => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: FittedBox(
               alignment: Alignment.centerLeft,
+              fit: BoxFit.scaleDown,
               child: Text(
-                'Not playing - ${element.title}',
+                element.title ?? 'Untitled chart',
                 style: const TextStyle(
                   color: Colors.black,
-                  fontSize: 9,
+                  fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ),
           ),
+          if ((element.artist ?? '').isNotEmpty)
+            SizedBox(
+              height: 9,
+              child: FittedBox(
+                alignment: Alignment.centerLeft,
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  element.artist!,
+                  style: const TextStyle(color: Colors.black, fontSize: 8),
+                ),
+              ),
+            ),
+        ],
+      ),
+      PerformanceElementKind.boundary => const DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: Colors.black54, width: 0.5)),
         ),
-        PerformanceElementKind.strip => Image.memory(
-          element.imageBytes!,
-          fit: BoxFit.fill,
-          gaplessPlayback: true,
+      ),
+      PerformanceElementKind.placeholder => ColoredBox(
+        color: const Color(0xFFFFCCD1),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Not playing - ${element.title}',
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ),
-      },
+      ),
+      PerformanceElementKind.strip => Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.memory(
+            element.imageBytes!,
+            fit: BoxFit.fill,
+            gaplessPlayback: true,
+          ),
+          if (element.annotationsVisible)
+            CustomPaint(
+              painter: _AnnotationPainter(
+                strokes: element.annotations,
+                currentPoints: _currentPoints,
+              ),
+            ),
+          if (widget.annotationTool != AnnotationTool.none)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: _drawStart,
+              onPanUpdate: _drawUpdate,
+              onPanEnd: _drawEnd,
+              onTapDown: widget.annotationTool == AnnotationTool.erase
+                  ? (details) {
+                      final box = context.findRenderObject()! as RenderBox;
+                      widget.onEraseAt?.call(
+                        element,
+                        _point(details.localPosition, box.size),
+                      );
+                    }
+                  : null,
+            ),
+        ],
+      ),
+    };
+    return SizedBox(
+      width: element.width,
+      height: element.height,
+      child: visual,
     );
   }
+}
+
+class _AnnotationPainter extends CustomPainter {
+  const _AnnotationPainter({
+    required this.strokes,
+    required this.currentPoints,
+  });
+
+  final List<VisualAnnotationStroke> strokes;
+  final List<NormalizedPoint> currentPoints;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final stroke in strokes) {
+      _paintStroke(
+        canvas,
+        size,
+        stroke.points,
+        Color(stroke.colorArgb),
+        stroke.width,
+      );
+    }
+    _paintStroke(canvas, size, currentPoints, const Color(0xFFFFD740), 0.004);
+  }
+
+  void _paintStroke(
+    Canvas canvas,
+    Size size,
+    List<NormalizedPoint> points,
+    Color color,
+    double normalizedWidth,
+  ) {
+    if (points.length < 2) return;
+    final path = Path()
+      ..moveTo(points.first.x * size.width, points.first.y * size.height);
+    for (final point in points.skip(1)) {
+      path.lineTo(point.x * size.width, point.y * size.height);
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (normalizedWidth * size.width).clamp(1, 24)
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_AnnotationPainter oldDelegate) => true;
 }
 
 class _PreviewControls extends StatelessWidget {

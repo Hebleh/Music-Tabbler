@@ -12,34 +12,49 @@ class PerformanceDeckElement {
     required this.width,
     required this.height,
     this.chartVariantId,
+    this.sourceStripId,
+    this.sourceRowRect,
     this.title,
     this.artist,
     this.rowIndex,
     this.imageBytes,
+    this.annotations = const [],
+    this.annotationsVisible = true,
+    this.includeAnnotationsInPdf = false,
   });
 
   final PerformanceElementKind kind;
   final int entryIndex;
   final String entryId;
   final String? chartVariantId;
+  final String? sourceStripId;
+  final NormalizedRect? sourceRowRect;
   final String? title;
   final String? artist;
   final int? rowIndex;
   final double width;
   final double height;
   final Uint8List? imageBytes;
+  final List<VisualAnnotationStroke> annotations;
+  final bool annotationsVisible;
+  final bool includeAnnotationsInPdf;
 
   Map<String, Object?> toMessage() => {
     'kind': kind.name,
     'entryIndex': entryIndex,
     'entryId': entryId,
     'chartVariantId': chartVariantId,
+    'sourceStripId': sourceStripId,
+    'sourceRowRect': sourceRowRect?.toJson(),
     'title': title,
     'artist': artist,
     'rowIndex': rowIndex,
     'width': width,
     'height': height,
     'imageBytes': imageBytes,
+    'annotations': [for (final stroke in annotations) stroke.toJson()],
+    'annotationsVisible': annotationsVisible,
+    'includeAnnotationsInPdf': includeAnnotationsInPdf,
   };
 
   factory PerformanceDeckElement.fromMessage(Map<String, Object?> message) {
@@ -48,12 +63,28 @@ class PerformanceDeckElement {
       entryIndex: message['entryIndex']! as int,
       entryId: message['entryId']! as String,
       chartVariantId: message['chartVariantId'] as String?,
+      sourceStripId: message['sourceStripId'] as String?,
+      sourceRowRect: message['sourceRowRect'] == null
+          ? null
+          : NormalizedRect.fromJson(
+              (message['sourceRowRect'] as Map).cast<String, Object?>(),
+            ),
       title: message['title'] as String?,
       artist: message['artist'] as String?,
       rowIndex: message['rowIndex'] as int?,
       width: (message['width']! as num).toDouble(),
       height: (message['height']! as num).toDouble(),
       imageBytes: message['imageBytes'] as Uint8List?,
+      annotations: List.unmodifiable(
+        ((message['annotations'] as List?) ?? const []).map(
+          (value) => VisualAnnotationStroke.fromJson(
+            (value as Map).cast<String, Object?>(),
+          ),
+        ),
+      ),
+      annotationsVisible: message['annotationsVisible'] as bool? ?? true,
+      includeAnnotationsInPdf:
+          message['includeAnnotationsInPdf'] as bool? ?? false,
     );
   }
 }

@@ -130,6 +130,9 @@ void main() {
     expect(batches, hasLength(2));
     expect(batches[0].single.aspectRatio, closeTo(1, 0.001));
     expect(batches[1].single.aspectRatio, closeTo(2, 0.001));
+    expect(batches[0].single.sourceRect, isNotNull);
+    expect(batches[0].single.sourceRect.left, 0);
+    expect(batches[0].single.sourceRect.right, 1);
   });
 
   test('export compaction splits a tall image only across a blank band', () {
@@ -161,6 +164,44 @@ void main() {
       segments.map((bytes) => img.decodePng(bytes)!.height),
       everyElement(lessThan(250)),
     );
+  });
+
+  test('export batches retain source row coordinates for annotations', () {
+    final source = img.Image(width: 400, height: 500);
+    img.fill(source, color: img.ColorRgb8(255, 255, 255));
+    img.fillRect(
+      source,
+      x1: 20,
+      y1: 40,
+      x2: 380,
+      y2: 110,
+      color: img.ColorRgb8(0, 0, 0),
+    );
+    img.fillRect(
+      source,
+      x1: 20,
+      y1: 270,
+      x2: 380,
+      y2: 340,
+      color: img.ColorRgb8(0, 0, 0),
+    );
+
+    final batches = const VisualImageProcessor()
+        .processForExportBatch(Uint8List.fromList(img.encodePng(source)), [
+          VisualStrip(
+            id: 'strip',
+            assetHash: 'hash',
+            assetExtension: 'png',
+            pixelWidth: 400,
+            pixelHeight: 500,
+          ),
+        ]);
+
+    expect(batches.single, hasLength(2));
+    expect(batches.single.first.sourceRect.top, lessThan(0.1));
+    expect(batches.single.first.sourceRect.bottom, lessThan(0.5));
+    expect(batches.single.last.sourceRect.top, greaterThan(0.4));
+    expect(batches.single.last.sourceRect.bottom, lessThan(0.8));
   });
 
   test('density threshold changes only safe detected blank-band splits', () {

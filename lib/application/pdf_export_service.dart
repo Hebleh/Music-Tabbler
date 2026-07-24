@@ -10,6 +10,7 @@ import '../domain/visual_chart_models.dart';
 import 'performance_deck.dart';
 import 'service_contracts.dart';
 import 'visual_image_processor.dart';
+import 'visual_annotation_renderer.dart';
 
 class PlannedStrip {
   const PlannedStrip({
@@ -637,6 +638,17 @@ List<Map<String, Object>> _processAssetForExport(Map<String, Object?> request) {
           'rowIndex': rowIndex,
           'bytes': batches[stripIndex][rowIndex].bytes,
           'aspectRatio': batches[stripIndex][rowIndex].aspectRatio,
+          'annotations': [
+            for (final stroke in _annotationsForRow(
+              strips[stripIndex].annotations,
+              batches[stripIndex][rowIndex].sourceRect,
+            ))
+              stroke.toJson(),
+          ],
+          'includeAnnotationsInPdf': strips[stripIndex].includeAnnotationsInPdf,
+          'annotationsVisible': strips[stripIndex].annotationsVisible,
+          'sourceStripId': strips[stripIndex].id,
+          'sourceRowRect': batches[stripIndex][rowIndex].sourceRect.toJson(),
         },
   ];
 }
@@ -710,8 +722,9 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
                   height: page.strips[itemIndex].height,
                   child: pw.Image(
                     pw.MemoryImage(
-                      processed[page.strips[itemIndex].index]['bytes']!
-                          as Uint8List,
+                      _imageBytesForPdf(
+                        processed[page.strips[itemIndex].index],
+                      ),
                     ),
                     fit: pw.BoxFit.fill,
                   ),
@@ -817,6 +830,19 @@ Map<String, Object?> _buildPerformanceDeckMessage(
                 entryId: rawItems[element.entryIndex]['entryId']! as String,
                 chartVariantId:
                     rawItems[element.entryIndex]['chartVariantId'] as String?,
+                sourceStripId: element.kind == PlannedSetlistElementKind.strip
+                    ? processedByEntry[element.entryIndex]![element
+                              .rowIndex!]['sourceStripId']!
+                          as String
+                    : null,
+                sourceRowRect: element.kind == PlannedSetlistElementKind.strip
+                    ? NormalizedRect.fromJson(
+                        (processedByEntry[element.entryIndex]![element
+                                    .rowIndex!]['sourceRowRect']!
+                                as Map)
+                            .cast<String, Object?>(),
+                      )
+                    : null,
                 title: element.kind == PlannedSetlistElementKind.placeholder
                     ? placeholdersByEntry[element.entryIndex]
                     : draftsByEntry[element.entryIndex] == null
@@ -831,6 +857,28 @@ Map<String, Object?> _buildPerformanceDeckMessage(
                               .rowIndex!]['bytes']!
                           as Uint8List
                     : null,
+                annotations: element.kind == PlannedSetlistElementKind.strip
+                    ? List.unmodifiable(
+                        (processedByEntry[element.entryIndex]![element
+                                    .rowIndex!]['annotations']!
+                                as List)
+                            .map(
+                              (value) => VisualAnnotationStroke.fromJson(
+                                (value as Map).cast<String, Object?>(),
+                              ),
+                            ),
+                      )
+                    : const [],
+                annotationsVisible:
+                    element.kind != PlannedSetlistElementKind.strip ||
+                    (processedByEntry[element.entryIndex]![element
+                            .rowIndex!]['annotationsVisible']!
+                        as bool),
+                includeAnnotationsInPdf:
+                    element.kind == PlannedSetlistElementKind.strip &&
+                    (processedByEntry[element.entryIndex]![element
+                            .rowIndex!]['includeAnnotationsInPdf']!
+                        as bool),
               ),
           ]),
         ),
@@ -933,7 +981,9 @@ pw.Widget _buildPerformanceDeckPdfElement(PerformanceDeckElement element) {
         width: element.width,
         height: element.height,
         child: pw.Image(
-          pw.MemoryImage(element.imageBytes!),
+          pw.MemoryImage(_imageBytesForPerformancePdf(element)),
+          // Source pixels remain immutable; PDF inclusion is flattened only
+          // into this generated output image.
           fit: pw.BoxFit.fill,
         ),
       ),
@@ -975,6 +1025,18 @@ List<Map<String, Object>> _processDraftForSetlist(
           'rowIndex': rowIndex,
           'bytes': batches[stripIndex][rowIndex].bytes,
           'aspectRatio': batches[stripIndex][rowIndex].aspectRatio,
+          'annotations': [
+            for (final stroke in _annotationsForRow(
+              entry.value[stripIndex].$2.annotations,
+              batches[stripIndex][rowIndex].sourceRect,
+            ))
+              stroke.toJson(),
+          ],
+          'includeAnnotationsInPdf':
+              entry.value[stripIndex].$2.includeAnnotationsInPdf,
+          'annotationsVisible': entry.value[stripIndex].$2.annotationsVisible,
+          'sourceStripId': entry.value[stripIndex].$2.id,
+          'sourceRowRect': batches[stripIndex][rowIndex].sourceRect.toJson(),
         });
       }
     }
@@ -988,6 +1050,55 @@ List<Map<String, Object>> _processDraftForSetlist(
         : (left['rowIndex']! as int).compareTo(right['rowIndex']! as int);
   });
   return List.unmodifiable(processed);
+}
+
+List<VisualAnnotationStroke> _annotationsForRow(
+  List<VisualAnnotationStroke> annotations,
+  NormalizedRect row,
+) {
+  final mapped = <VisualAnnotationStroke>[];
+  for (final stroke in annotations) {
+    final points = <NormalizedPoint>[];
+    for (final point in stroke.points) {
+      if (point.y < row.top || point.y > row.bottom) continue;
+      points.add(
+        NormalizedPoint(point.x, (point.y - row.top) / row.height).clamp(),
+      );
+    }
+    if (points.length < 2) continue;
+    mapped.add(
+      VisualAnnotationStroke(
+        id: stroke.id,
+        points: List.unmodifiable(points),
+        colorArgb: stroke.colorArgb,
+        width: stroke.width,
+      ),
+    );
+  }
+  return List.unmodifiable(mapped);
+}
+
+Uint8List _imageBytesForPdf(Map<String, Object> processed) {
+  final annotations = ((processed['annotations'] as List?) ?? const [])
+      .map(
+        (value) => VisualAnnotationStroke.fromJson(
+          (value as Map).cast<String, Object?>(),
+        ),
+      )
+      .toList(growable: false);
+  return flattenVisualAnnotations(
+    processed['bytes']! as Uint8List,
+    annotations,
+    include: processed['includeAnnotationsInPdf'] as bool? ?? false,
+  );
+}
+
+Uint8List _imageBytesForPerformancePdf(PerformanceDeckElement element) {
+  return flattenVisualAnnotations(
+    element.imageBytes!,
+    element.annotations,
+    include: element.includeAnnotationsInPdf,
+  );
 }
 
 class _ExportDensitySettings {

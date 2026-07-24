@@ -37,6 +37,8 @@ class _GigModeScreenState extends State<GigModeScreen>
   Map<String, VisualChartDraft> _draftsByVariant = const {};
   var _pageIndex = 0;
   var _allowExit = false;
+  var _annotationTool = AnnotationTool.none;
+  _AnnotationUndo? _lastAnnotation;
 
   @override
   void initState() {
@@ -226,6 +228,127 @@ class _GigModeScreenState extends State<GigModeScreen>
     await _saveEntries(entries, keepEntryId: moved.id);
   }
 
+  Future<void> _saveAnnotatedDraft(
+    PerformanceDeckElement element,
+    VisualStrip Function(VisualStrip strip) update,
+  ) async {
+    final variantId = element.chartVariantId;
+    final stripId = element.sourceStripId;
+    if (variantId == null || stripId == null) return;
+    final draft =
+        _draftsByVariant[variantId] ??
+        await widget.services.library.loadDraft(variantId);
+    if (draft == null) return;
+    final strips = [
+      for (final strip in draft.strips)
+        if (strip.id == stripId) update(strip) else strip,
+    ];
+    final updated = draft.copyWith(
+      strips: strips,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    await widget.services.library.saveDraft(updated);
+    if (!mounted) return;
+    setState(() {
+      _draftsByVariant = {..._draftsByVariant, variantId: updated};
+      _deck = _buildDeck();
+    });
+  }
+
+  Future<void> _addStroke(
+    PerformanceDeckElement element,
+    List<NormalizedPoint> rowLocalPoints,
+  ) async {
+    final row = element.sourceRowRect;
+    if (row == null || rowLocalPoints.length < 2) return;
+    final stroke = VisualAnnotationStroke(
+      id: IdFactory.next('stroke'),
+      points: List.unmodifiable([
+        for (final point in rowLocalPoints)
+          NormalizedPoint(point.x, row.top + point.y * row.height).clamp(),
+      ]),
+    );
+    _lastAnnotation = _AnnotationUndo(
+      chartVariantId: element.chartVariantId!,
+      stripId: element.sourceStripId!,
+      stroke: stroke,
+    );
+    await _saveAnnotatedDraft(
+      element,
+      (strip) => strip.copyWith(annotations: [...strip.annotations, stroke]),
+    );
+  }
+
+  Future<void> _eraseAt(
+    PerformanceDeckElement element,
+    NormalizedPoint rowLocalPoint,
+  ) async {
+    final row = element.sourceRowRect;
+    if (row == null) return;
+    final sourcePoint = NormalizedPoint(
+      rowLocalPoint.x,
+      row.top + rowLocalPoint.y * row.height,
+    );
+    await _saveAnnotatedDraft(element, (strip) {
+      VisualAnnotationStroke? nearest;
+      var nearestDistance = double.infinity;
+      for (final stroke in strip.annotations) {
+        for (final point in stroke.points) {
+          final dx = point.x - sourcePoint.x;
+          final dy = point.y - sourcePoint.y;
+          final distance = dx * dx + dy * dy;
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearest = stroke;
+          }
+        }
+      }
+      if (nearest == null || nearestDistance > 0.0025) return strip;
+      _lastAnnotation = null;
+      return strip.copyWith(
+        annotations: strip.annotations
+            .where((stroke) => stroke.id != nearest!.id)
+            .toList(growable: false),
+      );
+    });
+  }
+
+  Future<void> _undoAnnotation(PerformanceDeckElement element) async {
+    final undo = _lastAnnotation;
+    if (undo == null ||
+        undo.chartVariantId != element.chartVariantId ||
+        undo.stripId != element.sourceStripId) {
+      return;
+    }
+    await _saveAnnotatedDraft(
+      element,
+      (strip) => strip.copyWith(
+        annotations: strip.annotations
+            .where((stroke) => stroke.id != undo.stroke.id)
+            .toList(growable: false),
+      ),
+    );
+    if (mounted) setState(() => _lastAnnotation = null);
+  }
+
+  Future<void> _toggleAnnotationVisibility(
+    PerformanceDeckElement element,
+  ) async {
+    await _saveAnnotatedDraft(
+      element,
+      (strip) => strip.copyWith(annotationsVisible: !strip.annotationsVisible),
+    );
+  }
+
+  Future<void> _toggleAnnotationPdf(PerformanceDeckElement element) async {
+    await _saveAnnotatedDraft(
+      element,
+      (strip) => strip.copyWith(
+        includeAnnotationsInPdf: !strip.includeAnnotationsInPdf,
+      ),
+    );
+  }
+
   void _jumpToEntry(PerformanceDeck deck, int entryIndex) {
     final entryId = _setlist.entries[entryIndex].id;
     final target = deck.pages.indexWhere(
@@ -284,6 +407,12 @@ class _GigModeScreenState extends State<GigModeScreen>
           }
           final page = deck.pages[_pageIndex.clamp(0, deck.pages.length - 1)];
           final selectedEntryId = page.elements.first.entryId;
+          final annotationElements = page.elements
+              .where((element) => element.kind == PerformanceElementKind.strip)
+              .toList(growable: false);
+          final annotationElement = annotationElements.isEmpty
+              ? null
+              : annotationElements.first;
           return Scaffold(
             key: _scaffoldKey,
             backgroundColor: background,
@@ -344,17 +473,23 @@ class _GigModeScreenState extends State<GigModeScreen>
                   Positioned.fill(
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onHorizontalDragEnd: (details) {
-                        final velocity = details.primaryVelocity ?? 0;
-                        if (velocity < -250) _move(1, deck.pages.length);
-                        if (velocity > 250) _move(-1, deck.pages.length);
-                      },
+                      onHorizontalDragEnd:
+                          _annotationTool == AnnotationTool.none
+                          ? (details) {
+                              final velocity = details.primaryVelocity ?? 0;
+                              if (velocity < -250) _move(1, deck.pages.length);
+                              if (velocity > 250) _move(-1, deck.pages.length);
+                            }
+                          : null,
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(8, 8, 8, 66),
                         child: Center(
                           child: PerformanceDeckPageView(
                             deck: deck,
                             page: page,
+                            annotationTool: _annotationTool,
+                            onStrokeCompleted: _addStroke,
+                            onEraseAt: _eraseAt,
                           ),
                         ),
                       ),
@@ -379,6 +514,79 @@ class _GigModeScreenState extends State<GigModeScreen>
                           TextButton(
                             onPressed: _exit,
                             child: const Text('Exit'),
+                          ),
+                          IconButton(
+                            tooltip: 'Draw annotations',
+                            onPressed: annotationElement == null
+                                ? null
+                                : () => setState(
+                                    () => _annotationTool =
+                                        _annotationTool == AnnotationTool.draw
+                                        ? AnnotationTool.none
+                                        : AnnotationTool.draw,
+                                  ),
+                            color: _annotationTool == AnnotationTool.draw
+                                ? Colors.amber
+                                : Colors.white,
+                            icon: const Icon(Icons.draw),
+                          ),
+                          IconButton(
+                            tooltip: 'Erase annotations',
+                            onPressed: annotationElement == null
+                                ? null
+                                : () => setState(
+                                    () => _annotationTool =
+                                        _annotationTool == AnnotationTool.erase
+                                        ? AnnotationTool.none
+                                        : AnnotationTool.erase,
+                                  ),
+                            color: _annotationTool == AnnotationTool.erase
+                                ? Colors.amber
+                                : Colors.white,
+                            icon: const Icon(Icons.auto_fix_normal),
+                          ),
+                          IconButton(
+                            tooltip: 'Undo annotation',
+                            onPressed:
+                                annotationElement == null ||
+                                    _lastAnnotation == null
+                                ? null
+                                : () => _undoAnnotation(annotationElement),
+                            color: Colors.white,
+                            icon: const Icon(Icons.undo),
+                          ),
+                          IconButton(
+                            tooltip:
+                                annotationElement?.annotationsVisible == true
+                                ? 'Hide annotations'
+                                : 'Show annotations',
+                            onPressed: annotationElement == null
+                                ? null
+                                : () => _toggleAnnotationVisibility(
+                                    annotationElement,
+                                  ),
+                            color: Colors.white,
+                            icon: Icon(
+                              annotationElement?.annotationsVisible == true
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip:
+                                annotationElement?.includeAnnotationsInPdf ==
+                                    true
+                                ? 'Exclude annotations from PDF'
+                                : 'Include annotations in PDF',
+                            onPressed: annotationElement == null
+                                ? null
+                                : () => _toggleAnnotationPdf(annotationElement),
+                            color:
+                                annotationElement?.includeAnnotationsInPdf ==
+                                    true
+                                ? Colors.amber
+                                : Colors.white,
+                            icon: const Icon(Icons.picture_as_pdf_outlined),
                           ),
                           const Spacer(),
                           IconButton(
@@ -415,6 +623,18 @@ class _GigModeScreenState extends State<GigModeScreen>
       ),
     );
   }
+}
+
+class _AnnotationUndo {
+  const _AnnotationUndo({
+    required this.chartVariantId,
+    required this.stripId,
+    required this.stroke,
+  });
+
+  final String chartVariantId;
+  final String stripId;
+  final VisualAnnotationStroke stroke;
 }
 
 String _displayTitle(VisualChartDraft draft) {

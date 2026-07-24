@@ -96,6 +96,60 @@ class VisualHighlight {
   }
 }
 
+class NormalizedPoint {
+  const NormalizedPoint(this.x, this.y);
+
+  final double x;
+  final double y;
+
+  NormalizedPoint clamp() =>
+      NormalizedPoint(x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
+
+  Map<String, Object> toJson() => {'x': x, 'y': y};
+
+  factory NormalizedPoint.fromJson(Map<String, Object?> json) {
+    return NormalizedPoint(
+      (json['x']! as num).toDouble(),
+      (json['y']! as num).toDouble(),
+    ).clamp();
+  }
+}
+
+class VisualAnnotationStroke {
+  const VisualAnnotationStroke({
+    required this.id,
+    required this.points,
+    this.colorArgb = 0xFFFFD740,
+    this.width = 0.004,
+  });
+
+  final String id;
+  final List<NormalizedPoint> points;
+  final int colorArgb;
+  final double width;
+
+  Map<String, Object> toJson() => {
+    'id': id,
+    'points': [for (final point in points) point.toJson()],
+    'colorArgb': colorArgb,
+    'width': width,
+  };
+
+  factory VisualAnnotationStroke.fromJson(Map<String, Object?> json) {
+    return VisualAnnotationStroke(
+      id: json['id']! as String,
+      points: List.unmodifiable(
+        (json['points']! as List).map(
+          (value) =>
+              NormalizedPoint.fromJson((value as Map).cast<String, Object?>()),
+        ),
+      ),
+      colorArgb: json['colorArgb'] as int? ?? 0xFFFFD740,
+      width: (json['width'] as num?)?.toDouble() ?? 0.004,
+    );
+  }
+}
+
 class VisualStrip {
   const VisualStrip({
     required this.id,
@@ -110,6 +164,9 @@ class VisualStrip {
     this.lyricBand,
     this.lyricContrast = 1,
     this.highlights = const [],
+    this.annotations = const [],
+    this.annotationsVisible = true,
+    this.includeAnnotationsInPdf = false,
   });
 
   final String id;
@@ -124,6 +181,9 @@ class VisualStrip {
   final NormalizedRect? lyricBand;
   final double lyricContrast;
   final List<VisualHighlight> highlights;
+  final List<VisualAnnotationStroke> annotations;
+  final bool annotationsVisible;
+  final bool includeAnnotationsInPdf;
 
   double get croppedAspectRatio =>
       (pixelWidth * crop.width) / (pixelHeight * crop.height);
@@ -135,6 +195,9 @@ class VisualStrip {
     bool clearLyricBand = false,
     double? lyricContrast,
     List<VisualHighlight>? highlights,
+    List<VisualAnnotationStroke>? annotations,
+    bool? annotationsVisible,
+    bool? includeAnnotationsInPdf,
   }) {
     return VisualStrip(
       id: id,
@@ -149,6 +212,10 @@ class VisualStrip {
       lyricBand: clearLyricBand ? null : lyricBand ?? this.lyricBand,
       lyricContrast: lyricContrast ?? this.lyricContrast,
       highlights: highlights ?? this.highlights,
+      annotations: annotations ?? this.annotations,
+      annotationsVisible: annotationsVisible ?? this.annotationsVisible,
+      includeAnnotationsInPdf:
+          includeAnnotationsInPdf ?? this.includeAnnotationsInPdf,
     );
   }
 
@@ -165,6 +232,9 @@ class VisualStrip {
     'lyricBand': lyricBand?.toJson(),
     'lyricContrast': lyricContrast,
     'highlights': highlights.map((item) => item.toJson()).toList(),
+    'annotations': annotations.map((item) => item.toJson()).toList(),
+    'annotationsVisible': annotationsVisible,
+    'includeAnnotationsInPdf': includeAnnotationsInPdf,
   };
 
   factory VisualStrip.fromJson(Map<String, Object?> json) {
@@ -193,6 +263,16 @@ class VisualStrip {
                 VisualHighlight.fromJson((item as Map).cast<String, Object?>()),
           )
           .toList(growable: false),
+      annotations: ((json['annotations'] as List?) ?? const [])
+          .map(
+            (item) => VisualAnnotationStroke.fromJson(
+              (item as Map).cast<String, Object?>(),
+            ),
+          )
+          .toList(growable: false),
+      annotationsVisible: json['annotationsVisible'] as bool? ?? true,
+      includeAnnotationsInPdf:
+          json['includeAnnotationsInPdf'] as bool? ?? false,
     );
   }
 }

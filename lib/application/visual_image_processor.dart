@@ -128,7 +128,13 @@ class VisualImageProcessor {
     final rendered = Uint8List.fromList(img.encodePng(image, level: 3));
     final detected = const HorizontalRowDetector().detect(rendered);
     if (detected.isEmpty) {
-      return [ProcessedExportImage(rendered, image.width / image.height)];
+      return [
+        ProcessedExportImage(
+          rendered,
+          image.width / image.height,
+          sourceRect: const NormalizedRect.full(),
+        ),
+      ];
     }
     final rows = image.width / image.height < splitDetectedRowsBelowAspectRatio
         ? detected
@@ -145,7 +151,11 @@ class VisualImageProcessor {
             image.height,
           );
           final bytes = _encodeRect(image, row);
-          return ProcessedExportImage(bytes, image.width / (bottom - top));
+          return ProcessedExportImage(
+            bytes,
+            image.width / (bottom - top),
+            sourceRect: row,
+          );
         }(),
     ];
   }
@@ -214,10 +224,15 @@ class VisualImageProcessor {
 }
 
 class ProcessedExportImage {
-  const ProcessedExportImage(this.bytes, this.aspectRatio);
+  const ProcessedExportImage(
+    this.bytes,
+    this.aspectRatio, {
+    required this.sourceRect,
+  });
 
   final Uint8List bytes;
   final double aspectRatio;
+  final NormalizedRect sourceRect;
 }
 
 class _PixelRect {

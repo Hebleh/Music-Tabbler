@@ -30,6 +30,19 @@ void main() {
                 rect: NormalizedRect(0.2, 0.62, 0.4, 0.76),
               ),
             ],
+            annotations: [
+              VisualAnnotationStroke(
+                id: 'stroke_1',
+                points: [
+                  NormalizedPoint(0.25, 0.3),
+                  NormalizedPoint(0.75, 0.7),
+                ],
+                colorArgb: 0xFF00FF00,
+                width: 0.006,
+              ),
+            ],
+            annotationsVisible: false,
+            includeAnnotationsInPdf: true,
           ),
         ],
       );
@@ -42,6 +55,12 @@ void main() {
       expect(decoded.strips.single.crop.left, 0.1);
       expect(decoded.strips.single.lyricContrast, 1.5);
       expect(decoded.strips.single.highlights.single.id, 'highlight_1');
+      expect(decoded.strips.single.annotations.single.id, 'stroke_1');
+      expect(decoded.strips.single.annotations.single.points.last.x, 0.75);
+      expect(decoded.strips.single.annotations.single.colorArgb, 0xFF00FF00);
+      expect(decoded.strips.single.annotations.single.width, 0.006);
+      expect(decoded.strips.single.annotationsVisible, isFalse);
+      expect(decoded.strips.single.includeAnnotationsInPdf, isTrue);
     },
   );
 
@@ -76,6 +95,26 @@ void main() {
       VisualChartDraft.fromJson(json).exportDensity,
       VisualExportDensity.original,
     );
+  });
+
+  test('schema-v1 strips without annotations retain safe defaults', () {
+    final strip =
+        const VisualStrip(
+            id: 'legacy-strip',
+            assetHash: 'hash',
+            assetExtension: 'png',
+            pixelWidth: 100,
+            pixelHeight: 50,
+          ).toJson()
+          ..remove('annotations')
+          ..remove('annotationsVisible')
+          ..remove('includeAnnotationsInPdf');
+
+    final restored = VisualStrip.fromJson(strip);
+
+    expect(restored.annotations, isEmpty);
+    expect(restored.annotationsVisible, isTrue);
+    expect(restored.includeAnnotationsInPdf, isFalse);
   });
 
   test(

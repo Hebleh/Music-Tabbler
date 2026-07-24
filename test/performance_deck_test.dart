@@ -30,6 +30,19 @@ void main() {
                 width: 800,
                 height: 60,
                 imageBytes: Uint8List.fromList([1, 2, 3]),
+                sourceStripId: 'strip-one',
+                sourceRowRect: const NormalizedRect(0, 0.25, 1, 0.5),
+                annotations: const [
+                  VisualAnnotationStroke(
+                    id: 'stroke',
+                    points: [
+                      NormalizedPoint(0.1, 0.2),
+                      NormalizedPoint(0.9, 0.8),
+                    ],
+                  ),
+                ],
+                annotationsVisible: false,
+                includeAnnotationsInPdf: true,
               ),
             ],
           ),
@@ -43,6 +56,12 @@ void main() {
       expect(restored.pages.single.id, 'gig:stageReadable:0');
       expect(restored.pages.single.elements.single.entryId, 'repeat-entry');
       expect(restored.pages.single.elements.single.imageBytes, [1, 2, 3]);
+      final element = restored.pages.single.elements.single;
+      expect(element.sourceStripId, 'strip-one');
+      expect(element.sourceRowRect!.top, 0.25);
+      expect(element.annotations.single.id, 'stroke');
+      expect(element.annotationsVisible, isFalse);
+      expect(element.includeAnnotationsInPdf, isTrue);
     },
   );
 

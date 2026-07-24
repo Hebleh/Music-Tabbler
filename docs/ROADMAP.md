@@ -112,7 +112,7 @@ documented debt unless they materially block gig preparation.
 - [~] **MT-112 — Gig navigation, fullscreen, and keep-awake**
   - Swipe navigation, safe previous/exit behavior, active-only keep-awake, and
     the reusable editable setlist sidebar.
-- [ ] **MT-113 — Vector annotation core**
+- [~] **MT-113 — Vector annotation core**
   - Reversible normalized strokes that never alter source pixels.
 - [ ] **MT-114 — S Pen and tablet annotation hardening**
   - Stylus detection, palm behavior, pressure, orientation, and lifecycle QA.
