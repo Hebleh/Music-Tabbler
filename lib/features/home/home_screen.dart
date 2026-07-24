@@ -114,6 +114,52 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _exportPortableSong(VisualChartDraft draft) async {
+    final transfer = widget.services.songBundles;
+    if (transfer == null) return;
+    try {
+      final destination = await transfer.exportSongWithPicker(draft.id);
+      if (destination != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Portable song exported to $destination')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  Future<void> _importPortableSong() async {
+    final transfer = widget.services.songBundles;
+    if (transfer == null) return;
+    try {
+      final result = await transfer.importSongWithPicker();
+      if (result == null || !mounted) return;
+      setState(() {
+        _reloadDrafts();
+        _libraryRevision += 1;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Imported ${result.importedVariantIds.length} chart variant(s); '
+            'skipped ${result.skippedVariantIds.length} identical variant(s).',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -121,6 +167,12 @@ class _HomeScreenState extends State<HomeScreen> {
         drafts: _drafts,
         onOpenVisual: _openVisualEditor,
         onDeleteVisual: _deleteVisualDraft,
+        onExportPortable: widget.services.songBundles == null
+            ? null
+            : _exportPortableSong,
+        onImportPortable: widget.services.songBundles == null
+            ? null
+            : _importPortableSong,
         onOpenSemantic: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ChartEditorScreen(
@@ -233,12 +285,16 @@ class _SongPool extends StatelessWidget {
     required this.drafts,
     required this.onOpenVisual,
     required this.onDeleteVisual,
+    required this.onExportPortable,
+    required this.onImportPortable,
     required this.onOpenSemantic,
   });
 
   final Future<List<VisualChartDraft>> drafts;
   final ValueChanged<VisualChartDraft?> onOpenVisual;
   final ValueChanged<VisualChartDraft> onDeleteVisual;
+  final ValueChanged<VisualChartDraft>? onExportPortable;
+  final VoidCallback? onImportPortable;
   final VoidCallback onOpenSemantic;
 
   @override
@@ -264,10 +320,21 @@ class _SongPool extends StatelessWidget {
                 ],
               ),
             ),
-            FilledButton.icon(
-              onPressed: () => onOpenVisual(null),
-              icon: const Icon(Icons.add),
-              label: const Text('New visual chart'),
+            Wrap(
+              spacing: 8,
+              children: [
+                if (onImportPortable != null)
+                  OutlinedButton.icon(
+                    onPressed: onImportPortable,
+                    icon: const Icon(Icons.file_open_outlined),
+                    label: const Text('Import .mtsong'),
+                  ),
+                FilledButton.icon(
+                  onPressed: () => onOpenVisual(null),
+                  icon: const Icon(Icons.add),
+                  label: const Text('New visual chart'),
+                ),
+              ],
             ),
           ],
         ),
@@ -319,6 +386,12 @@ class _SongPool extends StatelessWidget {
                       trailing: Wrap(
                         spacing: 8,
                         children: [
+                          if (onExportPortable != null)
+                            IconButton(
+                              tooltip: 'Export portable song',
+                              onPressed: () => onExportPortable!(draft),
+                              icon: const Icon(Icons.archive_outlined),
+                            ),
                           IconButton(
                             tooltip: 'Delete saved chart',
                             onPressed: () => onDeleteVisual(draft),

@@ -18,6 +18,23 @@ abstract interface class ExternalUrlOpener {
   Future<void> open(String url);
 }
 
+class SongBundleImportResult {
+  const SongBundleImportResult({
+    required this.importedVariantIds,
+    required this.skippedVariantIds,
+  });
+
+  final List<String> importedVariantIds;
+  final List<String> skippedVariantIds;
+}
+
+abstract interface class SongBundleTransfer {
+  Future<Uint8List> exportSongBytes(String chartVariantId);
+  Future<SongBundleImportResult> importSongBytes(Uint8List bytes);
+  Future<String?> exportSongWithPicker(String chartVariantId);
+  Future<SongBundleImportResult?> importSongWithPicker();
+}
+
 abstract interface class ChartLibrary {
   String assetPath(String hash, String extension);
   Future<void> saveDraft(VisualChartDraft draft);

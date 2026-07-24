@@ -315,19 +315,32 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
     VisualChartDraft draft, {
     required String songId,
   }) async {
-    _inTransaction(() {
-      final existing = _database.select(
-        'SELECT song_id FROM chart_variants WHERE id = ? LIMIT 1;',
-        [draft.id],
-      );
-      if (existing.isNotEmpty && existing.single['song_id'] != songId) {
-        throw StateError(
-          'Chart variant ${draft.id} already belongs to another song.',
-        );
-      }
+    _inTransaction(() => _saveDraftAsVariant(draft, songId));
+  }
 
-      _database.execute(
-        '''
+  Future<void> saveDraftVariantsAtomically(
+    List<({VisualChartDraft draft, String songId})> variants,
+  ) async {
+    _inTransaction(() {
+      for (final variant in variants) {
+        _saveDraftAsVariant(variant.draft, variant.songId);
+      }
+    });
+  }
+
+  void _saveDraftAsVariant(VisualChartDraft draft, String songId) {
+    final existing = _database.select(
+      'SELECT song_id FROM chart_variants WHERE id = ? LIMIT 1;',
+      [draft.id],
+    );
+    if (existing.isNotEmpty && existing.single['song_id'] != songId) {
+      throw StateError(
+        'Chart variant ${draft.id} already belongs to another song.',
+      );
+    }
+
+    _database.execute(
+      '''
         INSERT INTO songs (id, title, artist, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
@@ -335,32 +348,32 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
           artist = excluded.artist,
           updated_at = excluded.updated_at;
       ''',
-        [
-          songId,
-          draft.title,
-          draft.artist,
-          draft.createdAt.toIso8601String(),
-          draft.updatedAt.toIso8601String(),
-        ],
-      );
-      _database.execute(
-        '''
+      [
+        songId,
+        draft.title,
+        draft.artist,
+        draft.createdAt.toIso8601String(),
+        draft.updatedAt.toIso8601String(),
+      ],
+    );
+    _database.execute(
+      '''
         INSERT INTO chart_variants (
           id, song_id, kind, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           updated_at = excluded.updated_at;
       ''',
-        [
-          draft.id,
-          songId,
-          ChartVariantKind.visual.name,
-          draft.createdAt.toIso8601String(),
-          draft.updatedAt.toIso8601String(),
-        ],
-      );
+      [
+        draft.id,
+        songId,
+        ChartVariantKind.visual.name,
+        draft.createdAt.toIso8601String(),
+        draft.updatedAt.toIso8601String(),
+      ],
+    );
 
-      final statement = _database.prepare('''
+    final statement = _database.prepare('''
       INSERT INTO visual_charts (id, title, artist, updated_at, payload_json)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
@@ -369,18 +382,17 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
         updated_at = excluded.updated_at,
         payload_json = excluded.payload_json;
     ''');
-      try {
-        statement.execute([
-          draft.id,
-          draft.title,
-          draft.artist,
-          draft.updatedAt.toIso8601String(),
-          draft.encode(),
-        ]);
-      } finally {
-        statement.close();
-      }
-    });
+    try {
+      statement.execute([
+        draft.id,
+        draft.title,
+        draft.artist,
+        draft.updatedAt.toIso8601String(),
+        draft.encode(),
+      ]);
+    } finally {
+      statement.close();
+    }
   }
 
   @override

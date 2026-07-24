@@ -367,6 +367,7 @@ class VisualChartDraft {
   final List<VisualStrip> strips;
 
   VisualChartDraft copyWith({
+    String? id,
     String? title,
     String? artist,
     bool? showHeader,
@@ -379,7 +380,7 @@ class VisualChartDraft {
     DateTime? updatedAt,
   }) {
     return VisualChartDraft(
-      id: id,
+      id: id ?? this.id,
       title: title ?? this.title,
       artist: artist ?? this.artist,
       createdAt: createdAt,

@@ -123,7 +123,7 @@ documented debt unless they materially block gig preparation.
   - Store and open a user-entered source URL without fetching it or printing it.
 - [~] **MT-201 — Secure portable-container core**
   - Versioned manifest, checksums, staging, limits, and path validation.
-- [ ] **MT-202 — `.mtsong` bundles**
+- [~] **MT-202 — `.mtsong` bundles**
   - Round-trip one song and its variants, assets, provenance, and annotations.
 - [ ] **MT-203 — `.mtstate`, backups, conflicts, and restore**
   - Transactional whole-library transfer with recoverable snapshots.

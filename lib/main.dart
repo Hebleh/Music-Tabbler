@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'app.dart';
 import 'application/app_services.dart';
 import 'application/pdf_export_service.dart';
+import 'application/song_bundle_service.dart';
 import 'application/text_recognition_service.dart';
 import 'application/visual_import_service.dart';
 import 'infrastructure/local_library.dart';
@@ -24,6 +25,7 @@ Future<void> main() async {
     );
     final initialPreferences = await preferences.load();
     final pdfExporter = PdfExportService(library);
+    final songBundles = SongBundleService(library);
     runApp(
       MusicTabblerApp(
         initialPreferences: initialPreferences,
@@ -39,6 +41,7 @@ Future<void> main() async {
           preferences: preferences,
           performanceMode: const MethodChannelPerformanceModeController(),
           externalUrlOpener: const MethodChannelExternalUrlOpener(),
+          songBundles: songBundles,
         ),
       ),
     );

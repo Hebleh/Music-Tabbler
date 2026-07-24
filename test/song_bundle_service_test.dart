@@ -1,0 +1,155 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
+import 'package:music_tabbler/application/song_bundle_service.dart';
+import 'package:music_tabbler/domain/visual_chart_models.dart';
+import 'package:music_tabbler/infrastructure/local_library.dart';
+
+void main() {
+  test(
+    'mtsong round-trip preserves variants, assets, provenance, annotations',
+    () async {
+      final sourceDirectory = await Directory.systemTemp.createTemp(
+        'music_tabbler_mtsong_source_',
+      );
+      final targetDirectory = await Directory.systemTemp.createTemp(
+        'music_tabbler_mtsong_target_',
+      );
+      final source = await LocalLibrary.forTesting(sourceDirectory);
+      final target = await LocalLibrary.forTesting(targetDirectory);
+      addTearDown(() {
+        source.close();
+        target.close();
+        sourceDirectory.deleteSync(recursive: true);
+        targetDirectory.deleteSync(recursive: true);
+      });
+      final image = img.Image(width: 100, height: 50)
+        ..clear(img.ColorRgb8(255, 255, 255));
+      final asset = await source.storeAsset(img.encodePng(image), 'png');
+      final now = DateTime.utc(2026, 7, 24);
+      VisualChartDraft draft(String id, String version) => VisualChartDraft(
+        id: id,
+        title: 'Portable Song',
+        artist: 'Band',
+        createdAt: now,
+        updatedAt: now,
+        provenance: SourceProvenance(
+          url: 'https://example.com/$version',
+          provider: 'Example',
+          versionName: version,
+        ),
+        strips: [
+          VisualStrip(
+            id: 'strip-$id',
+            assetHash: asset.hash,
+            assetExtension: asset.extension,
+            pixelWidth: 100,
+            pixelHeight: 50,
+            annotations: const [
+              VisualAnnotationStroke(
+                id: 'stroke',
+                points: [
+                  NormalizedPoint(0.1, 0.2, pressure: 0.4),
+                  NormalizedPoint(0.9, 0.8, pressure: 0.8),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+      await source.saveDraftAsVariant(
+        draft('variant-a', 'Original'),
+        songId: 'song',
+      );
+      await source.saveDraftAsVariant(
+        draft('variant-b', 'Stage'),
+        songId: 'song',
+      );
+
+      final bytes = await SongBundleService(
+        source,
+      ).exportSongBytes('variant-a');
+      final result = await SongBundleService(target).importSongBytes(bytes);
+
+      expect(result.importedVariantIds, ['variant-a', 'variant-b']);
+      expect((await target.listSongs()).single.id, 'song');
+      expect(await target.listVariants('song'), hasLength(2));
+      final restored = await target.loadDraft('variant-b');
+      expect(restored!.provenance!.versionName, 'Stage');
+      expect(
+        restored.strips.single.annotations.single.points.last.pressure,
+        0.8,
+      );
+      expect(
+        await File(target.assetPath(asset.hash, asset.extension)).readAsBytes(),
+        await File(source.assetPath(asset.hash, asset.extension)).readAsBytes(),
+      );
+    },
+  );
+
+  test(
+    'identical imports skip and divergent IDs import as new variants',
+    () async {
+      final sourceDirectory = await Directory.systemTemp.createTemp(
+        'music_tabbler_mtsong_conflict_source_',
+      );
+      final targetDirectory = await Directory.systemTemp.createTemp(
+        'music_tabbler_mtsong_conflict_target_',
+      );
+      final source = await LocalLibrary.forTesting(sourceDirectory);
+      final target = await LocalLibrary.forTesting(targetDirectory);
+      addTearDown(() {
+        source.close();
+        target.close();
+        sourceDirectory.deleteSync(recursive: true);
+        targetDirectory.deleteSync(recursive: true);
+      });
+      final now = DateTime.utc(2026, 7, 24);
+      final original = VisualChartDraft(
+        id: 'same-id',
+        title: 'Original',
+        artist: '',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await source.saveDraftAsVariant(original, songId: 'song');
+      final service = SongBundleService(target);
+      final bundle = await SongBundleService(source).exportSongBytes('same-id');
+
+      final first = await service.importSongBytes(bundle);
+      final second = await service.importSongBytes(bundle);
+      await target.saveDraft(
+        original.copyWith(title: 'Local edit', updatedAt: now),
+      );
+      final divergent = await service.importSongBytes(bundle);
+
+      expect(first.importedVariantIds, ['same-id']);
+      expect(second.skippedVariantIds, ['same-id']);
+      expect(divergent.importedVariantIds.single, isNot('same-id'));
+      expect(await target.listDrafts(), hasLength(2));
+      expect(await target.listSongs(), hasLength(2));
+      expect((await target.loadDraft('same-id'))!.title, 'Local edit');
+    },
+  );
+
+  test('corrupt mtsong does not install assets or drafts', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_mtsong_corrupt_',
+    );
+    final library = await LocalLibrary.forTesting(directory);
+    addTearDown(() {
+      library.close();
+      directory.deleteSync(recursive: true);
+    });
+
+    await expectLater(
+      SongBundleService(library).importSongBytes(Uint8List.fromList([1, 2, 3])),
+      throwsException,
+    );
+
+    expect(await library.listDrafts(), isEmpty);
+    expect(await library.assetsDirectory.list().toList(), isEmpty);
+  });
+}
