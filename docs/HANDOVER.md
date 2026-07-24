@@ -18,8 +18,9 @@ order, the user-testing gate, and the reusable implementation cycle.
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
 - Latest automated checkpoint: MT-203 recoverable whole-library state transfer.
   MT-107 through MT-203 remain at one combined user/physical-tablet verification
-  gate before sprint integration.
+gate before sprint integration.
 - Near-term product target: dependable, stage-readable charts for the user's 16 August 2026 gig
+- Combined user-test sheet: `docs/COMBINED_USER_TEST_MT203.md`
 
 Before making changes, run:
 
