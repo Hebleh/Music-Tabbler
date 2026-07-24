@@ -109,7 +109,7 @@ documented debt unless they materially block gig preparation.
   - Full-screen Windows rehearsal of one chart or an entire set.
 - [~] **MT-111 — Android visual-workflow parity**
   - Physical-tablet import, edit, save, reopen, and export.
-- [ ] **MT-112 — Gig navigation, fullscreen, and keep-awake**
+- [~] **MT-112 — Gig navigation, fullscreen, and keep-awake**
   - Swipe navigation, safe previous/exit behavior, active-only keep-awake, and
     the reusable editable setlist sidebar.
 - [ ] **MT-113 — Vector annotation core**

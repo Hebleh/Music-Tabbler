@@ -545,6 +545,53 @@ void main() {
     expect(find.text('Gig'), findsWidgets);
   });
 
+  testWidgets('gig mode swipes safely and releases performance mode on exit', (
+    tester,
+  ) async {
+    final library = _FakeLibrary()..setlists.add(_setlist('set-1', 'Gig'));
+    final deckBuilder = _RecordingPerformanceDeckBuilder();
+    final performanceMode = _RecordingPerformanceModeController();
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MusicTabblerApp(
+        services: await _testServices(
+          library: library,
+          performanceDeckBuilder: deckBuilder,
+          performanceMode: performanceMode,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openGigs(tester);
+    await tester.tap(find.text('Gig'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Start gig mode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stage readable'));
+    await tester.pumpAndSettle();
+
+    expect(performanceMode.values, contains(true));
+    expect(find.text('1 / 2'), findsOneWidget);
+    await tester.tap(find.byTooltip('Next page'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 2'), findsOneWidget);
+    expect(find.byTooltip('Next page'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Use Exit to leave gig mode safely.'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Exit'));
+    await tester.pumpAndSettle();
+
+    expect(performanceMode.values.last, isFalse);
+    expect(find.text('Gig'), findsWidgets);
+  });
+
   testWidgets('setlist cards and actions fit a narrow tablet layout', (
     tester,
   ) async {
@@ -624,6 +671,7 @@ Future<AppServices> _testServices({
   _FakeLibrary? library,
   SetlistPdfExporter? setlistExporter,
   PerformanceDeckBuilder? performanceDeckBuilder,
+  PerformanceModeController? performanceMode,
 }) async {
   final resolvedLibrary = library ?? _FakeLibrary();
   const unusedExporter = _UnusedExporter();
@@ -637,6 +685,7 @@ Future<AppServices> _testServices({
     performanceDeckBuilder: performanceDeckBuilder ?? unusedExporter,
     textRecognition: const _UnusedTextRecognition(),
     preferences: _MemoryPreferencesStore(),
+    performanceMode: performanceMode ?? _RecordingPerformanceModeController(),
   );
 }
 
@@ -649,6 +698,15 @@ class _MemoryPreferencesStore implements DevicePreferencesStore {
   @override
   Future<void> save(DevicePreferences preferences) async {
     value = preferences;
+  }
+}
+
+class _RecordingPerformanceModeController implements PerformanceModeController {
+  final values = <bool>[];
+
+  @override
+  Future<void> setActive(bool active) async {
+    values.add(active);
   }
 }
 

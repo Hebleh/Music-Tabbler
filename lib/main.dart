@@ -11,6 +11,7 @@ import 'application/text_recognition_service.dart';
 import 'application/visual_import_service.dart';
 import 'infrastructure/local_library.dart';
 import 'infrastructure/device_preferences_store.dart';
+import 'infrastructure/performance_mode_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +36,7 @@ Future<void> main() async {
           performanceDeckBuilder: pdfExporter,
           textRecognition: NativeTextRecognitionService(library),
           preferences: preferences,
+          performanceMode: const MethodChannelPerformanceModeController(),
         ),
       ),
     );

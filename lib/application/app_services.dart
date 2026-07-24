@@ -11,6 +11,7 @@ class AppServices {
     required this.performanceDeckBuilder,
     required this.textRecognition,
     required this.preferences,
+    required this.performanceMode,
   });
 
   final ChartLibrary library;
@@ -22,4 +23,5 @@ class AppServices {
   final PerformanceDeckBuilder performanceDeckBuilder;
   final TextRecognitionService textRecognition;
   final DevicePreferencesStore preferences;
+  final PerformanceModeController performanceMode;
 }

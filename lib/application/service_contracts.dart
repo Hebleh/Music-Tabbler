@@ -10,6 +10,10 @@ abstract interface class DevicePreferencesStore {
   Future<void> save(DevicePreferences preferences);
 }
 
+abstract interface class PerformanceModeController {
+  Future<void> setActive(bool active);
+}
+
 abstract interface class ChartLibrary {
   String assetPath(String hash, String extension);
   Future<void> saveDraft(VisualChartDraft draft);

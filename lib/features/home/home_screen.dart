@@ -8,6 +8,7 @@ import '../../domain/visual_chart_models.dart';
 import '../chart/chart_editor_screen.dart';
 import '../import/visual_import_screen.dart';
 import '../performance/performance_preview_screen.dart';
+import '../performance/gig_mode_screen.dart';
 import '../setlists/setlist_sidebar.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -904,6 +905,22 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
     );
   }
 
+  Future<void> _startGigMode() async {
+    final density = await _chooseExportDensity();
+    if (density == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GigModeScreen(
+          services: widget.services,
+          setlist: _setlist!,
+          density: density,
+          preferences: widget.preferences,
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
@@ -920,6 +937,11 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
       appBar: AppBar(
         title: Text(setlist.name),
         actions: [
+          IconButton(
+            tooltip: 'Start gig mode',
+            onPressed: _exporting ? null : _startGigMode,
+            icon: const Icon(Icons.play_circle_outline),
+          ),
           IconButton(
             tooltip: 'Open performance preview',
             onPressed: _exporting ? null : _openPerformancePreview,

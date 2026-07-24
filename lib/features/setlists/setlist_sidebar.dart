@@ -15,6 +15,8 @@ class SetlistSidebar extends StatelessWidget {
     required this.onRemove,
     required this.onEditPlaceholder,
     required this.onReorder,
+    this.onEntryTap,
+    this.selectedEntryId,
   });
 
   final LibrarySetlist setlist;
@@ -22,6 +24,8 @@ class SetlistSidebar extends StatelessWidget {
   final ValueChanged<int> onRemove;
   final ValueChanged<int> onEditPlaceholder;
   final void Function(int oldIndex, int newIndex) onReorder;
+  final ValueChanged<int>? onEntryTap;
+  final String? selectedEntryId;
 
   @override
   Widget build(BuildContext context) {
@@ -57,8 +61,13 @@ class SetlistSidebar extends StatelessWidget {
             : draft.artist;
         return Card(
           key: ValueKey(entry.id),
-          color: isPlaceholder ? Colors.red.shade100 : null,
+          color: isPlaceholder
+              ? Colors.red.shade100
+              : entry.id == selectedEntryId
+              ? Theme.of(context).colorScheme.primaryContainer
+              : null,
           child: ListTile(
+            onTap: onEntryTap == null ? null : () => onEntryTap!(index),
             leading: CircleAvatar(
               backgroundColor: isPlaceholder ? Colors.red.shade300 : null,
               foregroundColor: isPlaceholder ? Colors.black87 : null,
