@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../domain/library_models.dart';
 import '../domain/visual_chart_models.dart';
+import 'performance_deck.dart';
 import 'service_contracts.dart';
 import 'visual_image_processor.dart';
 
@@ -385,7 +386,8 @@ class StagedPdfFileWriter {
   }
 }
 
-class PdfExportService implements ChartPdfExporter, SetlistPdfExporter {
+class PdfExportService
+    implements ChartPdfExporter, SetlistPdfExporter, PerformanceDeckBuilder {
   PdfExportService(
     this.library, {
     this.processor = const VisualImageProcessor(),
@@ -450,8 +452,7 @@ class PdfExportService implements ChartPdfExporter, SetlistPdfExporter {
       'headerHeight': exportLayout.headerHeight,
       'gap': exportLayout.gap,
       'minimumRowHeight': exportLayout.minimumRowHeight,
-      'minimumRowHeightTolerance':
-          exportLayout.minimumRowHeightTolerance,
+      'minimumRowHeightTolerance': exportLayout.minimumRowHeightTolerance,
     });
   }
 
@@ -479,6 +480,49 @@ class PdfExportService implements ChartPdfExporter, SetlistPdfExporter {
     LibrarySetlist setlist, {
     required VisualExportDensity density,
   }) async {
+    final items = await _collectSetlistItems(setlist);
+    try {
+      return await compute(_buildSetlistPdfInBackground, {
+        'setlistId': setlist.id,
+        'setlistName': setlist.name,
+        'density': density.name,
+        'items': items,
+      });
+    } on SetlistPdfExportException {
+      rethrow;
+    } catch (error) {
+      throw SetlistPdfExportException(
+        'The setlist PDF could not be created: $error',
+      );
+    }
+  }
+
+  @override
+  Future<PerformanceDeck> buildPerformanceDeck(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) async {
+    final items = await _collectSetlistItems(setlist);
+    try {
+      final message = await compute(_buildPerformanceDeckMessage, {
+        'setlistId': setlist.id,
+        'setlistName': setlist.name,
+        'density': density.name,
+        'items': items,
+      });
+      return PerformanceDeck.fromMessage(message);
+    } on SetlistPdfExportException {
+      rethrow;
+    } catch (error) {
+      throw SetlistPdfExportException(
+        'The performance pages could not be prepared: $error',
+      );
+    }
+  }
+
+  Future<List<Map<String, Object?>>> _collectSetlistItems(
+    LibrarySetlist setlist,
+  ) async {
     if (setlist.entries.isEmpty) {
       throw const SetlistPdfExportException(
         'Add at least one song or placeholder before exporting this setlist.',
@@ -490,6 +534,7 @@ class PdfExportService implements ChartPdfExporter, SetlistPdfExporter {
       if (entry.kind == SetlistEntryKind.placeholder) {
         items.add({
           'kind': SetlistEntryKind.placeholder.name,
+          'entryId': entry.id,
           'title': entry.placeholderTitle,
         });
         continue;
@@ -517,23 +562,13 @@ class PdfExportService implements ChartPdfExporter, SetlistPdfExporter {
       }
       items.add({
         'kind': SetlistEntryKind.chart.name,
+        'entryId': entry.id,
+        'chartVariantId': entry.chartVariantId,
         'draft': draft.toJson(),
         'assetPaths': assetPaths,
       });
     }
-    try {
-      return await compute(_buildSetlistPdfInBackground, {
-        'setlistName': setlist.name,
-        'density': density.name,
-        'items': items,
-      });
-    } on SetlistPdfExportException {
-      rethrow;
-    } catch (error) {
-      throw SetlistPdfExportException(
-        'The setlist PDF could not be created: $error',
-      );
-    }
+    return items;
   }
 
   @override
@@ -618,8 +653,7 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
     headerHeight: request['headerHeight']! as double,
     gap: request['gap']! as double,
     minimumRowHeight: request['minimumRowHeight']! as double,
-    minimumRowHeightTolerance:
-        request['minimumRowHeightTolerance']! as double,
+    minimumRowHeightTolerance: request['minimumRowHeightTolerance']! as double,
   );
   final pages = layout.plan([
     for (final item in processed) item['aspectRatio']! as double,
@@ -695,6 +729,14 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
 Future<Uint8List> _buildSetlistPdfInBackground(
   Map<String, Object?> request,
 ) async {
+  return _renderPerformanceDeckPdf(
+    PerformanceDeck.fromMessage(_buildPerformanceDeckMessage(request)),
+  );
+}
+
+Map<String, Object?> _buildPerformanceDeckMessage(
+  Map<String, Object?> request,
+) {
   final density = VisualExportDensity.values.byName(
     request['density']! as String,
   );
@@ -754,13 +796,58 @@ Future<Uint8List> _buildSetlistPdfInBackground(
   }
 
   final pages = layout.plan(layoutEntries);
-  final setlistName = request['setlistName']! as String;
-  final document = pw.Document(title: setlistName, creator: 'Music Tabbler');
-  for (final page in pages) {
+  return PerformanceDeck(
+    setlistId: request['setlistId']! as String,
+    setlistName: request['setlistName']! as String,
+    density: density,
+    pageWidth: layout.pageWidth,
+    pageHeight: layout.pageHeight,
+    margin: layout.margin,
+    gap: layout.gap,
+    pages: List.unmodifiable([
+      for (var pageIndex = 0; pageIndex < pages.length; pageIndex += 1)
+        PerformanceDeckPage(
+          id: '${request['setlistId']}:${density.name}:$pageIndex',
+          index: pageIndex,
+          elements: List.unmodifiable([
+            for (final element in pages[pageIndex].elements)
+              PerformanceDeckElement(
+                kind: PerformanceElementKind.values.byName(element.kind.name),
+                entryIndex: element.entryIndex,
+                entryId: rawItems[element.entryIndex]['entryId']! as String,
+                chartVariantId:
+                    rawItems[element.entryIndex]['chartVariantId'] as String?,
+                title: element.kind == PlannedSetlistElementKind.placeholder
+                    ? placeholdersByEntry[element.entryIndex]
+                    : draftsByEntry[element.entryIndex] == null
+                    ? null
+                    : _displayDraftTitle(draftsByEntry[element.entryIndex]!),
+                artist: draftsByEntry[element.entryIndex]?.artist.trim(),
+                rowIndex: element.rowIndex,
+                width: element.width,
+                height: element.height,
+                imageBytes: element.kind == PlannedSetlistElementKind.strip
+                    ? processedByEntry[element.entryIndex]![element
+                              .rowIndex!]['bytes']!
+                          as Uint8List
+                    : null,
+              ),
+          ]),
+        ),
+    ]),
+  ).toMessage();
+}
+
+Future<Uint8List> _renderPerformanceDeckPdf(PerformanceDeck deck) async {
+  final document = pw.Document(
+    title: deck.setlistName,
+    creator: 'Music Tabbler',
+  );
+  for (final page in deck.pages) {
     document.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat(layout.pageWidth, layout.pageHeight),
-        margin: pw.EdgeInsets.all(layout.margin),
+        pageFormat: PdfPageFormat(deck.pageWidth, deck.pageHeight),
+        margin: pw.EdgeInsets.all(deck.margin),
         build: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
@@ -769,13 +856,8 @@ Future<Uint8List> _buildSetlistPdfInBackground(
               elementIndex < page.elements.length;
               elementIndex += 1
             ) ...[
-              if (elementIndex > 0) pw.SizedBox(height: layout.gap),
-              _buildSetlistElement(
-                page.elements[elementIndex],
-                draftsByEntry: draftsByEntry,
-                placeholdersByEntry: placeholdersByEntry,
-                processedByEntry: processedByEntry,
-              ),
+              if (elementIndex > 0) pw.SizedBox(height: deck.gap),
+              _buildPerformanceDeckPdfElement(page.elements[elementIndex]),
             ],
           ],
         ),
@@ -783,6 +865,80 @@ Future<Uint8List> _buildSetlistPdfInBackground(
     );
   }
   return Uint8List.fromList(await document.save());
+}
+
+pw.Widget _buildPerformanceDeckPdfElement(PerformanceDeckElement element) {
+  return switch (element.kind) {
+    PerformanceElementKind.header => pw.SizedBox(
+      width: element.width,
+      height: element.height,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(
+            child: pw.FittedBox(
+              alignment: pw.Alignment.centerLeft,
+              fit: pw.BoxFit.scaleDown,
+              child: pw.Text(
+                element.title ?? 'Untitled chart',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          if ((element.artist ?? '').isNotEmpty)
+            pw.SizedBox(
+              height: 9,
+              child: pw.FittedBox(
+                alignment: pw.Alignment.centerLeft,
+                fit: pw.BoxFit.scaleDown,
+                child: pw.Text(
+                  element.artist!,
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+    PerformanceElementKind.boundary => pw.SizedBox(
+      width: element.width,
+      height: element.height,
+      child: pw.Container(
+        decoration: const pw.BoxDecoration(
+          border: pw.Border(
+            top: pw.BorderSide(width: 0.5, color: PdfColors.grey700),
+          ),
+        ),
+      ),
+    ),
+    PerformanceElementKind.placeholder => pw.SizedBox(
+      width: element.width,
+      height: element.height,
+      child: pw.Container(
+        color: const PdfColor(1, 0.8, 0.82),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        alignment: pw.Alignment.centerLeft,
+        child: pw.Text(
+          'Not playing - ${element.title}',
+          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+        ),
+      ),
+    ),
+    PerformanceElementKind.strip => pw.Align(
+      alignment: pw.Alignment.centerLeft,
+      child: pw.SizedBox(
+        width: element.width,
+        height: element.height,
+        child: pw.Image(
+          pw.MemoryImage(element.imageBytes!),
+          fit: pw.BoxFit.fill,
+        ),
+      ),
+    ),
+  };
 }
 
 List<Map<String, Object>> _processDraftForSetlist(
@@ -832,95 +988,6 @@ List<Map<String, Object>> _processDraftForSetlist(
         : (left['rowIndex']! as int).compareTo(right['rowIndex']! as int);
   });
   return List.unmodifiable(processed);
-}
-
-pw.Widget _buildSetlistElement(
-  PlannedSetlistElement element, {
-  required Map<int, VisualChartDraft> draftsByEntry,
-  required Map<int, String> placeholdersByEntry,
-  required Map<int, List<Map<String, Object>>> processedByEntry,
-}) {
-  return switch (element.kind) {
-    PlannedSetlistElementKind.header => _buildSetlistSongHeader(
-      draftsByEntry[element.entryIndex]!,
-      element,
-    ),
-    PlannedSetlistElementKind.boundary => pw.SizedBox(
-      width: element.width,
-      height: element.height,
-      child: pw.Container(
-        decoration: const pw.BoxDecoration(
-          border: pw.Border(
-            top: pw.BorderSide(width: 0.5, color: PdfColors.grey700),
-          ),
-        ),
-      ),
-    ),
-    PlannedSetlistElementKind.placeholder => pw.SizedBox(
-      width: element.width,
-      height: element.height,
-      child: pw.Container(
-        color: const PdfColor(1, 0.8, 0.82),
-        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        alignment: pw.Alignment.centerLeft,
-        child: pw.Text(
-          'Not playing - ${placeholdersByEntry[element.entryIndex]}',
-          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
-        ),
-      ),
-    ),
-    PlannedSetlistElementKind.strip => pw.Align(
-      alignment: pw.Alignment.centerLeft,
-      child: pw.SizedBox(
-        width: element.width,
-        height: element.height,
-        child: pw.Image(
-          pw.MemoryImage(
-            processedByEntry[element.entryIndex]![element.rowIndex!]['bytes']!
-                as Uint8List,
-          ),
-          fit: pw.BoxFit.fill,
-        ),
-      ),
-    ),
-  };
-}
-
-pw.Widget _buildSetlistSongHeader(
-  VisualChartDraft draft,
-  PlannedSetlistElement element,
-) {
-  return pw.SizedBox(
-    width: element.width,
-    height: element.height,
-    child: pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Expanded(
-          child: pw.FittedBox(
-            alignment: pw.Alignment.centerLeft,
-            fit: pw.BoxFit.scaleDown,
-            child: pw.Text(
-              _displayDraftTitle(draft),
-              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-            ),
-          ),
-        ),
-        if (draft.artist.trim().isNotEmpty)
-          pw.SizedBox(
-            height: 9,
-            child: pw.FittedBox(
-              alignment: pw.Alignment.centerLeft,
-              fit: pw.BoxFit.scaleDown,
-              child: pw.Text(
-                draft.artist.trim(),
-                style: const pw.TextStyle(fontSize: 8),
-              ),
-            ),
-          ),
-      ],
-    ),
-  );
 }
 
 class _ExportDensitySettings {

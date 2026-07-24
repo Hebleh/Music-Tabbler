@@ -32,6 +32,7 @@ Future<void> main() async {
           importer: VisualImportService(library),
           exporter: pdfExporter,
           setlistExporter: pdfExporter,
+          performanceDeckBuilder: pdfExporter,
           textRecognition: NativeTextRecognitionService(library),
           preferences: preferences,
         ),

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:music_tabbler/app.dart';
 import 'package:music_tabbler/application/app_services.dart';
+import 'package:music_tabbler/application/performance_deck.dart';
 import 'package:music_tabbler/application/service_contracts.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 import 'package:music_tabbler/domain/library_models.dart';
@@ -564,6 +565,7 @@ Future<AppServices> _testServices({
     importer: importer ?? const _UnusedImporter(),
     exporter: unusedExporter,
     setlistExporter: setlistExporter ?? unusedExporter,
+    performanceDeckBuilder: unusedExporter,
     textRecognition: const _UnusedTextRecognition(),
     preferences: _MemoryPreferencesStore(),
   );
@@ -769,7 +771,8 @@ class _UnusedTextRecognition implements TextRecognitionService {
       const MetadataSuggestion();
 }
 
-class _UnusedExporter implements ChartPdfExporter, SetlistPdfExporter {
+class _UnusedExporter
+    implements ChartPdfExporter, SetlistPdfExporter, PerformanceDeckBuilder {
   const _UnusedExporter();
   @override
   Future<Uint8List> exportBytes(VisualChartDraft draft) =>
@@ -786,6 +789,12 @@ class _UnusedExporter implements ChartPdfExporter, SetlistPdfExporter {
 
   @override
   Future<String?> exportSetlistWithPicker(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<PerformanceDeck> buildPerformanceDeck(
     LibrarySetlist setlist, {
     required VisualExportDensity density,
   }) => throw UnimplementedError();

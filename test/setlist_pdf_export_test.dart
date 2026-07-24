@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:music_tabbler/application/pdf_export_service.dart';
+import 'package:music_tabbler/application/performance_deck.dart';
 import 'package:music_tabbler/application/service_contracts.dart';
 import 'package:music_tabbler/application/visual_import_service.dart';
 import 'package:music_tabbler/domain/library_models.dart';
@@ -54,9 +55,15 @@ void main() {
         ],
       );
 
-      final bytes = await PdfExportService(
-        library,
-      ).exportSetlistBytes(setlist, density: VisualExportDensity.stageReadable);
+      final exporter = PdfExportService(library);
+      final deck = await exporter.buildPerformanceDeck(
+        setlist,
+        density: VisualExportDensity.stageReadable,
+      );
+      final bytes = await exporter.exportSetlistBytes(
+        setlist,
+        density: VisualExportDensity.stageReadable,
+      );
 
       expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
       expect(bytes.length, greaterThan(1000));
@@ -82,6 +89,21 @@ void main() {
         }
       }
       expect(redPixels, greaterThan(100));
+      expect(deck.pages, isNotEmpty);
+      expect(
+        deck.pages
+            .expand((page) => page.elements)
+            .map((element) => element.entryId)
+            .toSet(),
+        {'one', 'placeholder', 'two', 'repeat'},
+      );
+      expect(
+        deck.pages
+            .expand((page) => page.elements)
+            .where((element) => element.kind == PerformanceElementKind.header)
+            .map((element) => element.entryId),
+        orderedEquals(['one', 'repeat']),
+      );
 
       final outputPath =
           Platform.environment['MUSIC_TABBLER_SETLIST_VISUAL_OUTPUT'];

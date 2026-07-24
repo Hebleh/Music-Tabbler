@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../domain/library_models.dart';
 import '../domain/device_preferences.dart';
 import '../domain/visual_chart_models.dart';
+import 'performance_deck.dart';
 
 abstract interface class DevicePreferencesStore {
   Future<DevicePreferences> load();
@@ -80,6 +81,13 @@ abstract interface class SetlistPdfExporter {
     required VisualExportDensity density,
   });
   Future<String?> exportSetlistWithPicker(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  });
+}
+
+abstract interface class PerformanceDeckBuilder {
+  Future<PerformanceDeck> buildPerformanceDeck(
     LibrarySetlist setlist, {
     required VisualExportDensity density,
   });

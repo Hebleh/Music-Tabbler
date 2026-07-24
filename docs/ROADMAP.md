@@ -103,7 +103,7 @@ documented debt unless they materially block gig preparation.
 
 ### Sprint 2 — Performance surfaces
 
-- [ ] **MT-109 — Shared performance-page deck**
+- [~] **MT-109 — Shared performance-page deck**
   - One page/song sequence shared by preview, gig mode, and PDF planning.
 - [ ] **MT-110 — Desktop performance preview**
   - Full-screen Windows rehearsal of one chart or an entire set.

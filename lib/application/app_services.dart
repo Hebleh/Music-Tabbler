@@ -8,6 +8,7 @@ class AppServices {
     required this.importer,
     required this.exporter,
     required this.setlistExporter,
+    required this.performanceDeckBuilder,
     required this.textRecognition,
     required this.preferences,
   });
@@ -18,6 +19,7 @@ class AppServices {
   final VisualImporter importer;
   final ChartPdfExporter exporter;
   final SetlistPdfExporter setlistExporter;
+  final PerformanceDeckBuilder performanceDeckBuilder;
   final TextRecognitionService textRecognition;
   final DevicePreferencesStore preferences;
 }
