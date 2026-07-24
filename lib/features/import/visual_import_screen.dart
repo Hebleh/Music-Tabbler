@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -123,7 +124,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       child: Focus(
         focusNode: _shortcutFocusNode,
         autofocus: true,
-        child: DropTarget(
+        child: _DesktopDropRegion(
           onDragEntered: (_) => setState(() => _dragging = true),
           onDragExited: (_) => setState(() => _dragging = false),
           onDragDone: _importDropped,
@@ -148,20 +149,36 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                         message: 'Edits autosave locally',
                         child: Icon(Icons.cloud_done_outlined),
                       ),
-                    TextButton.icon(
-                      onPressed: _busy ? null : _save,
-                      icon: const Icon(Icons.save_outlined),
-                      label: const Text('Save'),
-                    ),
+                    if (MediaQuery.sizeOf(context).width >= 700)
+                      TextButton.icon(
+                        onPressed: _busy ? null : _save,
+                        icon: const Icon(Icons.save_outlined),
+                        label: const Text('Save'),
+                      )
+                    else
+                      IconButton(
+                        tooltip: 'Save',
+                        onPressed: _busy ? null : _save,
+                        icon: const Icon(Icons.save_outlined),
+                      ),
                     const SizedBox(width: 8),
-                    FilledButton.icon(
-                      onPressed: _busy || _draft.strips.isEmpty
-                          ? null
-                          : _export,
-                      icon: const Icon(Icons.picture_as_pdf_outlined),
-                      label: const Text('Export A4'),
-                    ),
-                    const SizedBox(width: 16),
+                    if (MediaQuery.sizeOf(context).width >= 700)
+                      FilledButton.icon(
+                        onPressed: _busy || _draft.strips.isEmpty
+                            ? null
+                            : _export,
+                        icon: const Icon(Icons.picture_as_pdf_outlined),
+                        label: const Text('Export A4'),
+                      )
+                    else
+                      IconButton.filled(
+                        tooltip: 'Export A4',
+                        onPressed: _busy || _draft.strips.isEmpty
+                            ? null
+                            : _export,
+                        icon: const Icon(Icons.picture_as_pdf_outlined),
+                      ),
+                    const SizedBox(width: 8),
                   ],
                 ),
                 body: Column(
@@ -172,83 +189,99 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _titleController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Song title',
-                                      border: OutlineInputBorder(),
-                                      contentPadding: EdgeInsets.fromLTRB(
-                                        14,
-                                        20,
-                                        14,
-                                        16,
-                                      ),
-                                      constraints: BoxConstraints(
-                                        minHeight: 60,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: TextField(
-                                    controller: _artistController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Artist',
-                                      border: OutlineInputBorder(),
-                                      contentPadding: EdgeInsets.fromLTRB(
-                                        14,
-                                        20,
-                                        14,
-                                        16,
-                                      ),
-                                      constraints: BoxConstraints(
-                                        minHeight: 60,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                DropdownButton<VisualTreatment?>(
-                                  value: _draft.globalTreatment,
-                                  hint: const Text('Per-strip display'),
-                                  onChanged: (value) => _commitDraft(
-                                    value == null
-                                        ? _draft.copyWith(
-                                            clearGlobalTreatment: true,
-                                          )
-                                        : _draft.copyWith(
-                                            globalTreatment: value,
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final compact = constraints.maxWidth < 850;
+                                final fieldWidth = compact
+                                    ? constraints.maxWidth
+                                    : (constraints.maxWidth - 12) / 2;
+                                return Wrap(
+                                  spacing: 12,
+                                  runSpacing: 12,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: fieldWidth,
+                                      child: TextField(
+                                        controller: _titleController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Song title',
+                                          border: OutlineInputBorder(),
+                                          contentPadding: EdgeInsets.fromLTRB(
+                                            14,
+                                            20,
+                                            14,
+                                            16,
                                           ),
-                                  ),
-                                  items: [
-                                    const DropdownMenuItem<VisualTreatment?>(
-                                      value: null,
-                                      child: Text('Per-strip display'),
-                                    ),
-                                    ...VisualTreatment.values.map(
-                                      (value) =>
-                                          DropdownMenuItem<VisualTreatment?>(
-                                            value: value,
-                                            child: Text(
-                                              'Whole tab: ${value.label}',
-                                            ),
+                                          constraints: BoxConstraints(
+                                            minHeight: 60,
                                           ),
+                                        ),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: fieldWidth,
+                                      child: TextField(
+                                        controller: _artistController,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Artist',
+                                          border: OutlineInputBorder(),
+                                          contentPadding: EdgeInsets.fromLTRB(
+                                            14,
+                                            20,
+                                            14,
+                                            16,
+                                          ),
+                                          constraints: BoxConstraints(
+                                            minHeight: 60,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    DropdownButton<VisualTreatment?>(
+                                      value: _draft.globalTreatment,
+                                      hint: const Text('Per-strip display'),
+                                      onChanged: (value) => _commitDraft(
+                                        value == null
+                                            ? _draft.copyWith(
+                                                clearGlobalTreatment: true,
+                                              )
+                                            : _draft.copyWith(
+                                                globalTreatment: value,
+                                              ),
+                                      ),
+                                      items: [
+                                        const DropdownMenuItem<
+                                          VisualTreatment?
+                                        >(
+                                          value: null,
+                                          child: Text('Per-strip display'),
+                                        ),
+                                        ...VisualTreatment.values.map(
+                                          (value) =>
+                                              DropdownMenuItem<
+                                                VisualTreatment?
+                                              >(
+                                                value: value,
+                                                child: Text(
+                                                  'Whole tab: ${value.label}',
+                                                ),
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                    FilterChip(
+                                      label: const Text(
+                                        'Title / artist in PDF',
+                                      ),
+                                      selected: _draft.showHeader,
+                                      onSelected: (value) => _commitDraft(
+                                        _draft.copyWith(showHeader: value),
+                                      ),
                                     ),
                                   ],
-                                ),
-                                const SizedBox(width: 12),
-                                FilterChip(
-                                  label: const Text('Title / artist in PDF'),
-                                  selected: _draft.showHeader,
-                                  onSelected: (value) => _commitDraft(
-                                    _draft.copyWith(showHeader: value),
-                                  ),
-                                ),
-                              ],
+                                );
+                              },
                             ),
                             const SizedBox(height: 12),
                             Wrap(
@@ -301,15 +334,17 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                                   ),
                                   label: const Text('Add PDF'),
                                 ),
-                                FilledButton.tonalIcon(
-                                  onPressed: _busy
-                                      ? null
-                                      : () => _add(_ImportKind.clipboard),
-                                  icon: const Icon(
-                                    Icons.content_paste_outlined,
+                                if (defaultTargetPlatform ==
+                                    TargetPlatform.windows)
+                                  FilledButton.tonalIcon(
+                                    onPressed: _busy
+                                        ? null
+                                        : () => _add(_ImportKind.clipboard),
+                                    icon: const Icon(
+                                      Icons.content_paste_outlined,
+                                    ),
+                                    label: const Text('Paste image (Ctrl+V)'),
                                   ),
-                                  label: const Text('Paste image (Ctrl+V)'),
-                                ),
                                 OutlinedButton.icon(
                                   onPressed: _busy || _draft.strips.isEmpty
                                       ? null
@@ -338,8 +373,10 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            const Text(
-                              'You can also drag images, PDFs, or an entire screenshot folder anywhere into this editor.',
+                            Text(
+                              defaultTargetPlatform == TargetPlatform.windows
+                                  ? 'You can also drag images, PDFs, or an entire screenshot folder anywhere into this editor.'
+                                  : 'Use Add PNG / JPEG or Add PDF to choose files stored on this device.',
                             ),
                           ],
                         ),
@@ -886,6 +923,31 @@ class _StripCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DesktopDropRegion extends StatelessWidget {
+  const _DesktopDropRegion({
+    required this.onDragEntered,
+    required this.onDragExited,
+    required this.onDragDone,
+    required this.child,
+  });
+
+  final ValueChanged<DropEventDetails> onDragEntered;
+  final ValueChanged<DropEventDetails> onDragExited;
+  final ValueChanged<DropDoneDetails> onDragDone;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (defaultTargetPlatform != TargetPlatform.windows) return child;
+    return DropTarget(
+      onDragEntered: onDragEntered,
+      onDragExited: onDragExited,
+      onDragDone: onDragDone,
+      child: child,
     );
   }
 }

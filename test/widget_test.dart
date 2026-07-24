@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -92,6 +93,34 @@ void main() {
     expect(importer.pasteCalls, 1);
     expect(find.text('Row 1'), findsOneWidget);
   });
+
+  testWidgets(
+    'Android visual editor uses file pickers without desktop controls',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      tester.view.physicalSize = const Size(600, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(MusicTabblerApp(services: await _testServices()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('New / Import'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Add PNG / JPEG'), findsOneWidget);
+      expect(find.text('Add PDF'), findsOneWidget);
+      expect(find.textContaining('Paste image'), findsNothing);
+      expect(
+        find.textContaining('choose files stored on this device'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
 
   testWidgets('mouse wheel can return upward after loading a long row list', (
     tester,

@@ -107,7 +107,7 @@ documented debt unless they materially block gig preparation.
   - One page/song sequence shared by preview, gig mode, and PDF planning.
 - [~] **MT-110 — Desktop performance preview**
   - Full-screen Windows rehearsal of one chart or an entire set.
-- [ ] **MT-111 — Android visual-workflow parity**
+- [~] **MT-111 — Android visual-workflow parity**
   - Physical-tablet import, edit, save, reopen, and export.
 - [ ] **MT-112 — Gig navigation, fullscreen, and keep-awake**
   - Swipe navigation, safe previous/exit behavior, active-only keep-awake, and
