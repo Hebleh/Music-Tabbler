@@ -7,6 +7,7 @@ import 'package:music_tabbler/application/app_services.dart';
 import 'package:music_tabbler/application/service_contracts.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 import 'package:music_tabbler/domain/library_models.dart';
+import 'package:music_tabbler/domain/device_preferences.dart';
 
 void main() {
   testWidgets('opens the semantic sample chart from the song pool', (
@@ -564,7 +565,20 @@ Future<AppServices> _testServices({
     exporter: unusedExporter,
     setlistExporter: setlistExporter ?? unusedExporter,
     textRecognition: const _UnusedTextRecognition(),
+    preferences: _MemoryPreferencesStore(),
   );
+}
+
+class _MemoryPreferencesStore implements DevicePreferencesStore {
+  DevicePreferences value = DevicePreferences.defaults;
+
+  @override
+  Future<DevicePreferences> load() async => value;
+
+  @override
+  Future<void> save(DevicePreferences preferences) async {
+    value = preferences;
+  }
 }
 
 class _RecordingImporter implements VisualImporter {

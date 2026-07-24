@@ -1,7 +1,13 @@
 import 'dart:typed_data';
 
 import '../domain/library_models.dart';
+import '../domain/device_preferences.dart';
 import '../domain/visual_chart_models.dart';
+
+abstract interface class DevicePreferencesStore {
+  Future<DevicePreferences> load();
+  Future<void> save(DevicePreferences preferences);
+}
 
 abstract interface class ChartLibrary {
   String assetPath(String hash, String extension);

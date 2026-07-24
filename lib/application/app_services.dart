@@ -9,6 +9,7 @@ class AppServices {
     required this.exporter,
     required this.setlistExporter,
     required this.textRecognition,
+    required this.preferences,
   });
 
   final ChartLibrary library;
@@ -18,4 +19,5 @@ class AppServices {
   final ChartPdfExporter exporter;
   final SetlistPdfExporter setlistExporter;
   final TextRecognitionService textRecognition;
+  final DevicePreferencesStore preferences;
 }

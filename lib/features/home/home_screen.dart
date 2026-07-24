@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../application/app_services.dart';
 import '../../application/service_contracts.dart';
 import '../../domain/library_models.dart';
+import '../../domain/device_preferences.dart';
 import '../../domain/visual_chart_models.dart';
 import '../chart/chart_editor_screen.dart';
 import '../import/visual_import_screen.dart';
@@ -12,13 +13,13 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     required this.services,
-    required this.onToggleTheme,
-    required this.isDark,
+    required this.preferences,
+    required this.onPreferencesChanged,
   });
 
   final AppServices services;
-  final VoidCallback onToggleTheme;
-  final bool isDark;
+  final DevicePreferences preferences;
+  final ValueChanged<DevicePreferences> onPreferencesChanged;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -121,8 +122,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onOpenSemantic: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ChartEditorScreen(
-              onToggleTheme: widget.onToggleTheme,
-              isDark: widget.isDark,
+              preferences: widget.preferences,
+              onPreferencesChanged: widget.onPreferencesChanged,
             ),
           ),
         ),
@@ -141,9 +142,22 @@ class _HomeScreenState extends State<HomeScreen> {
             title: const Text('Music Tabbler'),
             actions: [
               IconButton(
-                tooltip: widget.isDark ? 'Use light theme' : 'Use dark theme',
-                onPressed: widget.onToggleTheme,
-                icon: Icon(widget.isDark ? Icons.light_mode : Icons.dark_mode),
+                tooltip: widget.preferences.appTheme == AppThemePreference.dark
+                    ? 'Use light theme'
+                    : 'Use dark theme',
+                onPressed: () => widget.onPreferencesChanged(
+                  widget.preferences.copyWith(
+                    appTheme:
+                        widget.preferences.appTheme == AppThemePreference.dark
+                        ? AppThemePreference.light
+                        : AppThemePreference.dark,
+                  ),
+                ),
+                icon: Icon(
+                  widget.preferences.appTheme == AppThemePreference.dark
+                      ? Icons.light_mode
+                      : Icons.dark_mode,
+                ),
               ),
               const SizedBox(width: 8),
             ],

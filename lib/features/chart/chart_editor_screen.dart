@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/music_models.dart';
+import '../../domain/device_preferences.dart';
 import 'tab_chart_view.dart';
 
 class ChartEditorScreen extends StatefulWidget {
   const ChartEditorScreen({
     super.key,
-    required this.onToggleTheme,
-    required this.isDark,
+    required this.preferences,
+    required this.onPreferencesChanged,
   });
 
-  final VoidCallback onToggleTheme;
-  final bool isDark;
+  final DevicePreferences preferences;
+  final ValueChanged<DevicePreferences> onPreferencesChanged;
 
   @override
   State<ChartEditorScreen> createState() => _ChartEditorScreenState();
@@ -20,9 +21,9 @@ class ChartEditorScreen extends StatefulWidget {
 class _ChartEditorScreenState extends State<ChartEditorScreen> {
   late SongChart _chart;
   String? _selectedNoteId;
-  bool _showTitle = true;
-  bool _showTab = true;
-  bool _showNotation = true;
+  late bool _showTitle;
+  late bool _showTab;
+  late bool _showNotation;
   double _leadVocalContrast = 0.38;
 
   @override
@@ -30,6 +31,24 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
     super.initState();
     _chart = SongChart.foundationExample();
     _selectedNoteId = _chart.measures.first.notes.first.id;
+    _showTitle = widget.preferences.showTitle;
+    _showTab = widget.preferences.showTab;
+    _showNotation = widget.preferences.showNotation;
+  }
+
+  void _updateDisplay({bool? showTitle, bool? showTab, bool? showNotation}) {
+    setState(() {
+      _showTitle = showTitle ?? _showTitle;
+      _showTab = showTab ?? _showTab;
+      _showNotation = showNotation ?? _showNotation;
+    });
+    widget.onPreferencesChanged(
+      widget.preferences.copyWith(
+        showTitle: _showTitle,
+        showTab: _showTab,
+        showNotation: _showNotation,
+      ),
+    );
   }
 
   @override
@@ -42,9 +61,21 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
         title: Text(_chart.title),
         actions: [
           IconButton(
-            tooltip: widget.isDark ? 'Use light theme' : 'Use dark theme',
-            onPressed: widget.onToggleTheme,
-            icon: Icon(widget.isDark ? Icons.light_mode : Icons.dark_mode),
+            tooltip: widget.preferences.appTheme == AppThemePreference.dark
+                ? 'Use light theme'
+                : 'Use dark theme',
+            onPressed: () => widget.onPreferencesChanged(
+              widget.preferences.copyWith(
+                appTheme: widget.preferences.appTheme == AppThemePreference.dark
+                    ? AppThemePreference.light
+                    : AppThemePreference.dark,
+              ),
+            ),
+            icon: Icon(
+              widget.preferences.appTheme == AppThemePreference.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+            ),
           ),
           const SizedBox(width: 8),
         ],
@@ -59,17 +90,17 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
               FilterChip(
                 label: const Text('Title & artist'),
                 selected: _showTitle,
-                onSelected: (value) => setState(() => _showTitle = value),
+                onSelected: (value) => _updateDisplay(showTitle: value),
               ),
               FilterChip(
                 label: const Text('Tablature'),
                 selected: _showTab,
-                onSelected: (value) => setState(() => _showTab = value),
+                onSelected: (value) => _updateDisplay(showTab: value),
               ),
               FilterChip(
                 label: const Text('Standard notation'),
                 selected: _showNotation,
-                onSelected: (value) => setState(() => _showNotation = value),
+                onSelected: (value) => _updateDisplay(showNotation: value),
               ),
               Chip(
                 avatar: const Icon(Icons.tune, size: 18),

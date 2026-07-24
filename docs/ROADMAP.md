@@ -72,7 +72,7 @@ Only a verified sprint merges into `master`.
   - [x] Fail by set item for missing, empty, or unreadable charts.
   - [x] Stage completed bytes before replacing the chosen destination.
   - [~] Real-setlist visual verification and merge gate.
-- [ ] MT-105 Persistent per-device preferences, if it does not endanger the
+- [~] MT-105 Persistent per-device preferences, if it does not endanger the
   gig-critical PDF path.
 
 MT-102 master-crop persistence and MT-103 Japanese OCR diagnostics remain
@@ -90,7 +90,7 @@ documented debt unless they materially block gig preparation.
   - Report the local OCR engine/languages and measure Unicode extraction.
 - [x] **MT-104 — Versioned migrations and stable identities**
   - Migration-tested song and chart-variant identities preserving MVP drafts.
-- [ ] **MT-105 — Persistent per-device preferences**
+- [~] **MT-105 — Persistent per-device preferences**
   - Theme and display choices survive restart without entering transferable
     library state.
 - [x] **MT-106 — Ordered setlist repository**
