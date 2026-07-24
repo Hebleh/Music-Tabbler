@@ -46,6 +46,11 @@ Only a verified sprint merges into `master`.
 
 ## Current checkpoint
 
+MT-107 through MT-203 are implemented and automated-check clean on their
+stacked contract commits. They intentionally remain `[~]` until one combined
+Windows and physical Android user-verification pass is completed. No sprint
+merge should occur before that report is bug-squashed.
+
 - [x] Preserve `mvp/v0.1.0` at the MVP checkpoint.
 - [x] Keep `master` as the stable integration branch.
 - [x] Establish `codex/sprint-gig-ready`.

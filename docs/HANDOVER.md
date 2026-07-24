@@ -1,6 +1,6 @@
 # Music Tabbler handover
 
-Updated: 23 July 2026
+Updated: 24 July 2026
 
 This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset user work; inspect the current branch and working tree before starting a contract.
 
@@ -11,12 +11,14 @@ order, the user-testing gate, and the reusable implementation cycle.
 
 - Repository: `C:\vibes\Music Tabbler`
 - Stable integration branch: `master`
-- Current sprint integration branch: `codex/sprint-gig-ready`
+- Current implementation branch: `codex/mt-203-mtstate`
 - Immutable MVP archive branch: `mvp/v0.1.0`
 - Release checkpoint: Windows MVP `v0.1.0`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Latest completed feature contract: MT-106 Ordered setlist repository; the next planned contract is MT-107 Setlist editor UI
+- Latest automated checkpoint: MT-203 recoverable whole-library state transfer.
+  MT-107 through MT-203 remain at one combined user/physical-tablet verification
+  gate before sprint integration.
 - Near-term product target: dependable, stage-readable charts for the user's 16 August 2026 gig
 
 Before making changes, run:
@@ -60,6 +62,13 @@ Music Tabbler is a fully local Flutter application that turns mixed music source
 9. Edits autosave locally after a short debounce. Ctrl+Z or the toolbar undo restores prior draft snapshots. The Save button remains as an explicit retry/checkpoint. Saved visual drafts can be deleted after confirmation without deleting shared content-addressed assets.
 10. Export A4. Title/artist appears only on page one when enabled; provenance is omitted.
 11. Choose **Original**, **Balanced**, or **Stage-readable** export density. Original preserves the MVP portrait layout, while Stage-readable uses landscape A4 and larger minimum rows for at-a-glance use.
+12. In **Gigs**, create an ordered setlist, repeat songs, add light-red
+    non-playing placeholders, reorder entries, export one combined PDF, or open
+    the performance preview/gig view.
+13. Use the home toolbar's **Library transfer and recovery** action to export,
+    merge, replace, or restore `.mtstate`. Replacement validates first and
+    creates a backup. Song-level `.mtsong` import/export is available from Song
+    Pool actions.
 
 ## Windows MVP checkpoint
 
@@ -121,6 +130,16 @@ The latest slice has the following verification evidence:
 - MT-104 adds transactional SQLite schema migrations, stable song/visual-variant identities, and a separate repository boundary without changing current visual-editor callers. A copied real MVP library migrated, edited, reopened, and retained identical asset hashes; the installed library was never modified.
 - MT-106 adds schema-v3 ordered setlists, duplicate chart references with distinct stable entry IDs, metadata persistence, transactional reorder/save, and typed reference blockers. A copied real library created, reopened, and deleted a duplicate-entry setlist without changing its chart or asset hashes.
 - `flutter test --no-pub` after MT-106: 58/58 passed; the combined focused persistence suite passed 14/14; `flutter analyze --no-pub` reported no issues.
+- `flutter test --no-pub` after MT-203: 125/125 passed, including portable
+  archive adversarial checks, `.mtsong` round trips, transactional `.mtstate`
+  replacement/merge/restore, corrupt-existing-asset rejection, setlist/PDF,
+  performance, annotation, Android widget, and legacy workflow regressions.
+- `flutter analyze --no-pub` and `git diff --check` after MT-203 reported no
+  issues.
+- Combined-test debug builds on 24/25 July 2026 succeeded:
+  `build\windows\x64\runner\Debug\music_tabbler.exe` and
+  `build\app\outputs\flutter-apk\app-debug.apk`. The APK SHA-256 is
+  `1D1842A646482712A8D31BB2892E7FC76AF989CFF15C25A82C4701AB027B274E`.
 
 Release artifacts:
 
@@ -141,10 +160,13 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 - Master side-crop control positions do not persist reliably through every split-dialog action or reopening; saved row crops remain intact. This convenience-state limitation is accepted MVP debt.
 - Extending a lyric highlight to the tab below is geometric same-column mapping, not semantic note/lyric alignment.
 - Imported visual charts do not yet have semantic note or lyric editing.
-- A combined full-chart performance/gig preview remains deferred by request. The chart-wide highlighter composes the current rows for editing only.
-- Direct URL intake is still a UI/workflow placeholder; Songsterr/Ultimate Guitar/YouTube adapters are not implemented.
-- Setlist UI/export, safe portable state bundles, Android gig mode, S Pen annotations, full semantic OMR, transposition, and re-tabbing remain future work.
-- Theme preference and semantic sample-song data are not persisted yet; visual drafts are persisted.
+- Direct URLs are stored only as local provenance and can be opened in the
+  normal browser. Songsterr/Ultimate Guitar/YouTube adapters are not
+  implemented.
+- Full semantic OMR, imported-chart note/lyric editing, transposition, and
+  re-tabbing remain future work.
+- Theme/gig display preferences and visual drafts are persisted. Semantic
+  sample-song data is not.
 - The current notation painter is a semantic prototype, not production engraving.
 - Android parity has only been build-verified, not exercised end to end on the user's physical tablet.
 
@@ -152,13 +174,15 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 
 Keep the reliable visual fallback ahead of semantic research until the gig workflow is dependable.
 
-1. Add the setlist editor for creating, naming, deleting, populating, duplicating, and reordering entries.
-2. Add combined setlist PDF export.
-3. Exercise the current import, split, highlighter, save/reopen, delete, and export flow on the physical Samsung tablet. Record Android-specific failures before expanding scope.
-4. Add safe `.mtstate`/`.mtsong` export/import with checksum validation, staging, last-known-good preservation, and failure recovery.
-5. Persist theme/gig-display preference, then implement Android gig navigation, keep-awake behavior, and nondestructive S Pen vector overlays.
-6. Start Songsterr semantic recognition only with an annotated fixture set, explicit metrics, confidence states, and side-by-side correction.
-7. Review source terms/content rights and dependency licenses before implementing or distributing any online adapter or making the repository public.
+1. Complete the single combined Windows and physical Samsung-tablet user test
+   for MT-107 through MT-203 and record every UX/behavior defect.
+2. Bug-squash that report without broadening into semantic features.
+3. Merge the verified sprint chain into the sprint integration branch, then
+   `master`, only after the manual gate passes.
+4. Start semantic persistence (MT-301) from updated `master`.
+5. Review source terms/content rights and dependency licenses before
+   implementing or distributing any online adapter or making the repository
+   public.
 
 ## External reference material
 
@@ -175,7 +199,7 @@ Temporary clipboard screenshots under `C:\Users\Gerri\AppData\Local\Temp` may di
 
 Follow `AGENTS.md` exactly. Query `http://127.0.0.1:8080/v1/models` before Qwen delegation and use the returned identifier. GLM 5.2 is text-only and uses limited NanoGPT quota. Keep architecture, visual judgment, security/legal work, destructive actions, and final verification with Codex.
 
-Pi's GitHub access was reported working again on 21 July 2026. Future routine release packaging/GitHub chores may be delegated when a release is explicitly requested, but ordinary development must not package releases and Codex must verify the final scope and artifacts. The user explicitly requested no new builds or packages during the current home-development phase; use `dev.bat` only for interactive app launches.
+Pi's GitHub access was reported working again on 21 July 2026. Future routine release packaging/GitHub chores may be delegated when a release is explicitly requested, but ordinary development must not package releases and Codex must verify the final scope and artifacts. Ordinary development uses `dev.bat` and does not package releases. The user explicitly requested Windows and Android debug builds for the combined MT-107-through-MT-203 test checkpoint; these are development artifacts, not a public release.
 
 The local Qwen endpoint was subsequently restored on 21 July 2026. Its read-only review of `dev.ps1` identified a PowerShell 7 native-error preference edge case; Codex reviewed and applied the narrow exit-code hardening.
 

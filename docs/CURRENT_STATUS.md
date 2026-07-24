@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 23 July 2026
+Updated: 24 July 2026
 
 ## Repository state
 
@@ -20,7 +20,7 @@ Updated: 23 July 2026
 - `flutter doctor -v` reports no issues for Windows or Android.
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
-- `flutter analyze` passes with no issues, and the current source suite passes 58/58 tests.
+- `flutter analyze --no-pub` passes with no issues, and the current source suite passes 125/125 tests.
 - `flutter build windows --release --no-pub` produces the `v0.1.0+1` Windows runtime.
 - `tool/package_windows.ps1` produces a single-file user-level installer EXE, a portable ZIP, and SHA-256 sidecars for the Windows MVP.
 - `flutter build apk --debug` produces an installable debug APK.
@@ -47,8 +47,10 @@ Updated: 23 July 2026
 - A custom stage-oriented renderer with string lines cleared behind fret numbers, rhythm stems, measure labels, lyrics, and a simple standard-notation view.
 - Independent tablature, standard-notation, and title/artist visibility controls.
 - Direct note editing for string, fret, and duration, plus backing-vocal assignment and main-vocal contrast.
-- A direct URL intake field in the New / Import area as a clearly labelled workflow preview.
-- Dark and light app themes selectable for the current run.
+- Direct URL intake creates a fully local provenance record without fetching the
+  URL. Source details remain editable and are excluded from PDFs.
+- Dark/light app, gig-theme, and display preferences persist per device and are
+  deliberately excluded from portable library state.
 
 ### Manual visual-chart workflow
 
@@ -58,7 +60,9 @@ Updated: 23 July 2026
 - SQLite now uses ordered, transactional `PRAGMA user_version` migrations. Schema v2 adds stable song and chart-variant identities while preserving the existing visual-chart payloads and immutable assets.
 - Existing MVP draft IDs remain stable visual-variant IDs. Legacy drafts receive deterministic song identities, and multiple visual variants can explicitly share one song identity through a separate repository boundary.
 - SQLite schema v3 adds persistent setlists with stable setlist and entry identities, optional scheduled date and notes, and explicit entry ordering. The same chart variant may appear repeatedly without copying its chart.
-- Setlist saves and reorders are transactional. Missing variants and cross-setlist entry-ID conflicts roll back cleanly; deleting a referenced chart is blocked with the referencing setlist IDs rather than cascading or leaving dangling entries.
+- Setlist saves and reorders are transactional. Missing variants and cross-setlist entry-ID conflicts roll back cleanly. The setlist editor supports duplicate chart entries, named light-red non-playing placeholders, drag reordering, and explicit referenced-chart removal.
+- Combined setlist A4 export preserves song, duplicate, and placeholder order
+  under one selected Original, Balanced, or Stage-readable density profile.
 - A chart is arranged as full-width horizontal tab rows. Rows can be reordered, duplicated, cropped, or removed without changing the source asset.
 - Each row can use Original, Grayscale, Invert, or High contrast treatment, with a whole-tab dropdown to apply one treatment in one action.
 - Existing screenshot lyrics remain part of the source image. A lyric band can receive adjustable contrast and multiple translucent backing-vocal highlight regions.
@@ -89,17 +93,46 @@ Updated: 23 July 2026
 - Preview work crops first, caps preview width, runs image processing in a background isolate, reuses a bounded LRU cache, and isolates row repainting. Full-resolution processing remains reserved for final PDF export.
 - The MIT-licensed OCR plugin is vendored under `third_party/flutter_ocr_native`. Flutter's Windows runner remains STA, while blocking WinRT bitmap/OCR waits run on a dedicated MTA worker and return plain results on the original platform thread. This prevents the debug C++/WinRT `!is_sta_thread()` assertion when opening the highlighter.
 
+### Performance, Android, and portable data
+
+- A shared deterministic performance deck drives setlist PDF planning, desktop
+  preview, and Android gig navigation so page/song ordering cannot drift.
+- Desktop preview and Android gig mode provide explicit next/previous/exit
+  behavior. Android fullscreen and keep-awake state are active only during gig
+  mode and are released on exit or lifecycle changes.
+- The gig sidebar shows the complete editable set order, supports placeholders,
+  reordering, and direct jumps.
+- Vector annotations use normalized coordinates, autosave without changing
+  source assets, support undo/erase/visibility, and enter PDF output only when
+  explicitly enabled.
+- Android input distinguishes stylus, inverted-stylus eraser, and touch/palm
+  input; pressure is preserved where the device supplies it.
+- `.mtsong` bundles round-trip a song's visual variants, assets, provenance,
+  and annotations through a checksummed, size-limited portable container.
+- `.mtstate` transfers the whole song/setlist library. Import fully stages and
+  validates content before changes, supports merge or replacement, creates a
+  recoverable last-known-good backup before replacement, retains five backups,
+  and can restore them. Device preferences are excluded.
+- Portable archives reject traversal, ambiguous or duplicate paths, unsupported
+  ZIP structures, undeclared files, excessive expansion, checksum failures, and
+  corrupt pre-existing content-addressed assets.
+
 ## Current limitations
 
-- Semantic sample-song data and theme preferences are not persisted yet; visual-chart drafts are persisted.
-- Direct URL import is still a workflow placeholder. Image/PDF and OCR intake work on Windows and Android; clipboard-image paste is currently Windows-only.
+- Semantic sample-song data is not persisted yet; visual-chart drafts and
+  per-device preferences are persisted.
+- Direct URL records do not download or scrape content. Image/PDF and OCR intake
+  work on Windows and Android; clipboard-image paste is currently Windows-only.
 - The notation painter is an early semantic rendering spike, not full engraving.
-- Setlist UI/export, full tab OMR/semantic conversion, safe state transfer, Android gig mode, source adapters, semantic lyric editing, and note editing for imported visual charts remain future slices.
+- Full tab OMR/semantic conversion, source adapters, semantic lyric editing, and
+  note editing for imported visual charts remain future slices.
 - Title/artist and text-region OCR are assistive proposals and must remain user-correctable. OCR is now performed on each cropped chart row with stronger upscaling so small, faint, widely spaced lyric fragments have more pixels to work with, but isolated characters may still need freeform selection. The "corresponding tab below" option is currently a geometric same-column extension, not semantic note-to-lyric alignment.
 - Japanese OCR on Windows requires the optional Japanese Windows OCR language capability to be installed. If `ja-JP` is unavailable, the plugin falls back to the installed English/profile recognizers.
 - Export whitespace detection is intentionally conservative. Tiny isolated footer marks or source page numbers can preserve trailing whitespace rather than risk deleting notation or lyrics.
 - The reported 43-row upward wheel-scroll stall is covered by a regression test after stabilizing preview heights. It still needs user confirmation with the real saved chart through `dev.bat`.
-- A combined full-chart performance/gig preview is deliberately deferred. The chart-wide highlighter is the first shared-row composition surface, but it is not yet a gig/setlist preview.
+- Performance preview, Android parity, S Pen behavior, and portable state are
+  implemented but still await the combined physical-device/user verification
+  gate recorded in `docs/ROADMAP.md`.
 - `file_picker` is pinned to 10.3.10 because its current 11.x Android plugin assumes Flutter's built-in Kotlin migration. `file_picker`, `desktop_drop`, and `flutter_ocr_native` currently emit the same future Kotlin-migration warning, although the APK builds successfully today.
 
 ## Reference examples (external, not committed)
@@ -120,7 +153,9 @@ Updated: 23 July 2026
 - **Complete:** Add deterministic Original, Balanced, and Stage-readable export profiles and approve the landscape Stage-readable result against a real Songsterr screenshot.
 - **Complete:** Add versioned migrations and stable song/chart-variant identities with fresh, legacy-upgrade, idempotence, rollback, future-schema, and asset-integrity coverage.
 - **Complete:** Add ordered setlist storage with duplicate references, stable entry identities, transactional reordering, and safe chart-reference blocking.
-- **Next:** Add the setlist editor, followed by combined setlist PDF export.
+- **Complete pending combined user verification:** setlist editor, combined
+  setlist PDF, performance preview/gig mode, Android parity, annotations, local
+  provenance, `.mtsong`, and recoverable `.mtstate` transfer.
 
 ### Slice 2 - semantic editor
 
@@ -136,12 +171,15 @@ Updated: 23 July 2026
 
 ### Slice 4 - transformations and safe transfer
 
-- Add pitch transposition, re-tabbing, ranked fingering candidates, original/adapted variants, `.mtsong`/`.mtstate`, backups, conflicts, and restore.
+- Add pitch transposition, re-tabbing, ranked fingering candidates, and
+  original/adapted variants. Portable `.mtsong`/`.mtstate`, backups, conflicts,
+  and restore are implemented pending combined user verification.
 
 ### Slice 5 - Android parity and gig hardening
 
-- Exercise the full workflow on Android.
-- Add swipe navigation, keep-awake behavior, tablet layouts, S Pen vector annotations, and on-device PDF/state import/export verification.
+- Exercise the implemented full workflow on the user's physical Android tablet.
+- Swipe navigation, keep-awake behavior, tablet layouts, and S Pen vector
+  annotations are implemented pending physical-device verification.
 
 ## Near-term acceptance target
 
