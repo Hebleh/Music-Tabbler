@@ -223,6 +223,210 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
     );
   }
 
+  void _applyTuning(BassTuning tuning) {
+    final highestString = _chart.measures
+        .expand((measure) => measure.notes)
+        .fold<int>(
+          -1,
+          (value, note) => value > note.stringIndex ? value : note.stringIndex,
+        );
+    if (highestString >= tuning.strings.length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Move notes off the strings that would be removed before changing tuning.',
+          ),
+        ),
+      );
+      return;
+    }
+    _commitChart(_chart.copyWith(tuning: tuning));
+  }
+
+  Future<void> _editStringTunings() async {
+    var name = _chart.tuning.name;
+    final strings = [
+      for (final string in _chart.tuning.strings)
+        (name: string.name, midiPitch: string.midiPitch),
+    ];
+    final minimumStrings = _chart.measures
+        .expand((measure) => measure.notes)
+        .fold<int>(
+          0,
+          (value, note) =>
+              value > note.stringIndex + 1 ? value : note.stringIndex + 1,
+        );
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit individual string tunings'),
+          content: SizedBox(
+            width: 430,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    initialValue: name,
+                    decoration: const InputDecoration(labelText: 'Tuning name'),
+                    onChanged: (value) => name = value,
+                  ),
+                  const SizedBox(height: 12),
+                  for (var index = 0; index < strings.length; index += 1)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            key: ValueKey('string-name-$index'),
+                            initialValue: strings[index].name,
+                            decoration: InputDecoration(
+                              labelText: 'String ${index + 1}',
+                            ),
+                            onChanged: (value) {
+                              strings[index] = (
+                                name: value,
+                                midiPitch: strings[index].midiPitch,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 120,
+                          child: TextFormField(
+                            key: ValueKey('string-pitch-$index'),
+                            initialValue: strings[index].midiPitch.toString(),
+                            decoration: const InputDecoration(
+                              labelText: 'Open MIDI',
+                            ),
+                            keyboardType: TextInputType.number,
+                            onChanged: (value) {
+                              strings[index] = (
+                                name: strings[index].name,
+                                midiPitch:
+                                    int.tryParse(value) ??
+                                    strings[index].midiPitch,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: strings.length >= 8
+                            ? null
+                            : () => setDialogState(
+                                () => strings.add((
+                                  name: 'New',
+                                  midiPitch: strings.last.midiPitch - 5,
+                                )),
+                              ),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add string'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: strings.length <= minimumStrings
+                            ? null
+                            : () => setDialogState(strings.removeLast),
+                        icon: const Icon(Icons.remove),
+                        label: const Text('Remove lowest string'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Apply tuning'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (accepted != true) return;
+    _applyTuning(
+      BassTuning(
+        name: name.trim().isEmpty ? 'Custom tuning' : name.trim(),
+        strings: [
+          for (final string in strings)
+            StringTuning(
+              name: string.name.trim().isEmpty ? '?' : string.name.trim(),
+              midiPitch: string.midiPitch.clamp(0, 127),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addSection() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add section'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Section name',
+            hintText: 'Verse 1',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty) return;
+    _commitChart(
+      _chart.copyWith(
+        sections: [
+          ..._chart.sections,
+          SongSection(
+            id: 'section-${DateTime.now().microsecondsSinceEpoch}',
+            name: name,
+            measureIndex: _selectedMeasureIndex,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addRepeat() {
+    _commitChart(
+      _chart.copyWith(
+        repeats: [
+          ..._chart.repeats,
+          RepeatRegion(
+            id: 'repeat-${DateTime.now().microsecondsSinceEpoch}',
+            startMeasureIndex: _selectedMeasureIndex,
+            endMeasureIndex: _selectedMeasureIndex,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final selectedNote = _selectedNoteId == null
@@ -296,6 +500,42 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
             ],
           ),
           const SizedBox(height: 14),
+          _InstrumentEditor(
+            chart: _chart,
+            onTuningChanged: _applyTuning,
+            onEditStrings: _editStringTunings,
+            onCapoChanged: (capo) => _commitChart(_chart.copyWith(capo: capo)),
+          ),
+          const SizedBox(height: 10),
+          _StructureEditor(
+            chart: _chart,
+            selectedMeasureIndex: _selectedMeasureIndex,
+            onAddSection: _addSection,
+            onRemoveSection: (id) => _commitChart(
+              _chart.copyWith(
+                sections: _chart.sections
+                    .where((section) => section.id != id)
+                    .toList(),
+              ),
+            ),
+            onAddRepeat: _addRepeat,
+            onRepeatChanged: (replacement) => _commitChart(
+              _chart.copyWith(
+                repeats: [
+                  for (final repeat in _chart.repeats)
+                    if (repeat.id == replacement.id) replacement else repeat,
+                ],
+              ),
+            ),
+            onRemoveRepeat: (id) => _commitChart(
+              _chart.copyWith(
+                repeats: _chart.repeats
+                    .where((repeat) => repeat.id != id)
+                    .toList(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           _MeasureToolbar(
             chart: _chart,
             selectedMeasureIndex: _selectedMeasureIndex,
@@ -413,6 +653,259 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
       ),
     );
   }
+}
+
+class _InstrumentEditor extends StatelessWidget {
+  const _InstrumentEditor({
+    required this.chart,
+    required this.onTuningChanged,
+    required this.onEditStrings,
+    required this.onCapoChanged,
+  });
+
+  final SongChart chart;
+  final ValueChanged<BassTuning> onTuningChanged;
+  final VoidCallback onEditStrings;
+  final ValueChanged<int> onCapoChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Instrument and tuning',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: () => onTuningChanged(BassTuning.beadg),
+                  child: const Text('Use BEADG'),
+                ),
+                OutlinedButton(
+                  onPressed: () => onTuningChanged(BassTuning.eadg),
+                  child: const Text('Use EADG'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onEditStrings,
+                  icon: const Icon(Icons.tune),
+                  label: const Text('Edit individual strings'),
+                ),
+                Chip(
+                  label: Text(
+                    '${chart.tuning.name} • ${chart.tuning.strings.length} strings',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('Capo ${chart.capo}'),
+            Slider(
+              value: chart.capo.toDouble(),
+              min: 0,
+              max: 12,
+              divisions: 12,
+              label: chart.capo.toString(),
+              onChanged: (value) => onCapoChanged(value.round()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StructureEditor extends StatelessWidget {
+  const _StructureEditor({
+    required this.chart,
+    required this.selectedMeasureIndex,
+    required this.onAddSection,
+    required this.onRemoveSection,
+    required this.onAddRepeat,
+    required this.onRepeatChanged,
+    required this.onRemoveRepeat,
+  });
+
+  final SongChart chart;
+  final int selectedMeasureIndex;
+  final VoidCallback onAddSection;
+  final ValueChanged<String> onRemoveSection;
+  final VoidCallback onAddRepeat;
+  final ValueChanged<RepeatRegion> onRepeatChanged;
+  final ValueChanged<String> onRemoveRepeat;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Song structure',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: onAddSection,
+                  icon: const Icon(Icons.label_outline),
+                  label: Text(
+                    'Add section at measure ${selectedMeasureIndex + 1}',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onAddRepeat,
+                  icon: const Icon(Icons.repeat),
+                  label: Text(
+                    'Add repeat at measure ${selectedMeasureIndex + 1}',
+                  ),
+                ),
+                for (final section in chart.sections)
+                  InputChip(
+                    label: Text(
+                      '${section.name} • measure ${section.measureIndex + 1}',
+                    ),
+                    onDeleted: () => onRemoveSection(section.id),
+                  ),
+              ],
+            ),
+            for (final repeat in chart.repeats)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text('Repeat ${chart.repeats.indexOf(repeat) + 1}'),
+                    DropdownButton<int>(
+                      value: repeat.startMeasureIndex,
+                      items: _measureItems(chart),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        onRepeatChanged(
+                          RepeatRegion(
+                            id: repeat.id,
+                            startMeasureIndex: value,
+                            endMeasureIndex: repeat.endMeasureIndex < value
+                                ? value
+                                : repeat.endMeasureIndex,
+                            times: repeat.times,
+                            endings: repeat.endings,
+                          ),
+                        );
+                      },
+                    ),
+                    const Text('to'),
+                    DropdownButton<int>(
+                      value: repeat.endMeasureIndex,
+                      items: _measureItems(chart)
+                          .where(
+                            (item) => item.value! >= repeat.startMeasureIndex,
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        onRepeatChanged(
+                          RepeatRegion(
+                            id: repeat.id,
+                            startMeasureIndex: repeat.startMeasureIndex,
+                            endMeasureIndex: value,
+                            times: repeat.times,
+                            endings: repeat.endings,
+                          ),
+                        );
+                      },
+                    ),
+                    DropdownButton<int>(
+                      value: repeat.times,
+                      items: [
+                        for (var times = 2; times <= 8; times += 1)
+                          DropdownMenuItem(
+                            value: times,
+                            child: Text('$times×'),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        onRepeatChanged(
+                          RepeatRegion(
+                            id: repeat.id,
+                            startMeasureIndex: repeat.startMeasureIndex,
+                            endMeasureIndex: repeat.endMeasureIndex,
+                            times: value,
+                            endings: repeat.endings,
+                          ),
+                        );
+                      },
+                    ),
+                    OutlinedButton(
+                      onPressed: repeat.endings.length >= repeat.times
+                          ? null
+                          : () => onRepeatChanged(
+                              RepeatRegion(
+                                id: repeat.id,
+                                startMeasureIndex: repeat.startMeasureIndex,
+                                endMeasureIndex: repeat.endMeasureIndex,
+                                times: repeat.times,
+                                endings: [
+                                  ...repeat.endings,
+                                  RepeatEnding(
+                                    numbers: [repeat.endings.length + 1],
+                                    startMeasureIndex: repeat.endMeasureIndex,
+                                    endMeasureIndex: repeat.endMeasureIndex,
+                                  ),
+                                ],
+                              ),
+                            ),
+                      child: const Text('Add ending'),
+                    ),
+                    for (final ending in repeat.endings)
+                      InputChip(
+                        label: Text(
+                          'Ending ${ending.numbers.join(',')} at ${ending.startMeasureIndex + 1}',
+                        ),
+                        onDeleted: () => onRepeatChanged(
+                          RepeatRegion(
+                            id: repeat.id,
+                            startMeasureIndex: repeat.startMeasureIndex,
+                            endMeasureIndex: repeat.endMeasureIndex,
+                            times: repeat.times,
+                            endings: repeat.endings
+                                .where((item) => item != ending)
+                                .toList(),
+                          ),
+                        ),
+                      ),
+                    IconButton(
+                      tooltip: 'Delete repeat',
+                      onPressed: () => onRemoveRepeat(repeat.id),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<DropdownMenuItem<int>> _measureItems(SongChart chart) => [
+    for (var index = 0; index < chart.measures.length; index += 1)
+      DropdownMenuItem(value: index, child: Text('Measure ${index + 1}')),
+  ];
 }
 
 class _MeasureToolbar extends StatelessWidget {
@@ -606,6 +1099,38 @@ class _NoteEditor extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 12),
+                  Text(
+                    'Techniques',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final kind in TechniqueKind.values)
+                        FilterChip(
+                          label: Text(_techniqueLabel(kind)),
+                          selected: current.techniques.any(
+                            (technique) => technique.kind == kind,
+                          ),
+                          onSelected: (selected) {
+                            final retained = current.techniques
+                                .where((technique) => technique.kind != kind)
+                                .toList();
+                            onChanged(
+                              current.copyWith(
+                                techniques: [
+                                  ...retained,
+                                  if (selected) TechniqueMark(kind),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: onDelete,
                     icon: const Icon(Icons.delete_outline),
@@ -616,6 +1141,19 @@ class _NoteEditor extends StatelessWidget {
       ),
     );
   }
+
+  String _techniqueLabel(TechniqueKind kind) => switch (kind) {
+    TechniqueKind.slide => 'Slide',
+    TechniqueKind.bend => 'Bend',
+    TechniqueKind.hammerOn => 'Hammer-on',
+    TechniqueKind.pullOff => 'Pull-off',
+    TechniqueKind.naturalHarmonic => 'Natural harmonic',
+    TechniqueKind.artificialHarmonic => 'Artificial harmonic',
+    TechniqueKind.deadNote => 'Dead note',
+    TechniqueKind.palmMute => 'Palm mute',
+    TechniqueKind.letRing => 'Let ring',
+    TechniqueKind.accent => 'Accent',
+  };
 }
 
 class _BackingVocalEditor extends StatelessWidget {
@@ -653,27 +1191,61 @@ class _BackingVocalEditor extends StatelessWidget {
             ),
             const Divider(),
             for (final lyric in chart.lyrics)
-              Row(
-                children: [
-                  Checkbox(
-                    value: lyric.isBackingVocal,
-                    onChanged: (value) => onLyricChanged(
-                      lyric.copyWith(isBackingVocal: value ?? false),
-                    ),
-                  ),
-                  Expanded(
-                    child: TextFormField(
-                      key: ValueKey(lyric.id),
-                      initialValue: lyric.text,
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        border: InputBorder.none,
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Checkbox(
+                      value: lyric.isBackingVocal,
+                      onChanged: (value) => onLyricChanged(
+                        lyric.copyWith(isBackingVocal: value ?? false),
                       ),
-                      onChanged: (text) =>
-                          onLyricChanged(lyric.copyWith(text: text)),
                     ),
-                  ),
-                ],
+                    Expanded(
+                      child: TextFormField(
+                        key: ValueKey(lyric.id),
+                        initialValue: lyric.text,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                        ),
+                        onChanged: (text) =>
+                            onLyricChanged(lyric.copyWith(text: text)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 150,
+                      child: DropdownButtonFormField<String?>(
+                        initialValue: lyric.alignedNoteId,
+                        decoration: const InputDecoration(
+                          labelText: 'Aligned note',
+                          isDense: true,
+                        ),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('None'),
+                          ),
+                          for (final note
+                              in chart.measures[lyric.measureIndex].notes)
+                            DropdownMenuItem<String?>(
+                              value: note.id,
+                              child: Text(
+                                '${chart.tuning.strings[note.stringIndex].name}${note.fret}',
+                              ),
+                            ),
+                        ],
+                        onChanged: (noteId) => onLyricChanged(
+                          lyric.copyWith(
+                            alignedNoteId: noteId,
+                            clearAlignedNote: noteId == null,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),

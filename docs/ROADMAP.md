@@ -146,7 +146,7 @@ documented debt unless they materially block gig preparation.
   - Platform-independent primitives consumed by both screen and PDF.
 - [x] **MT-305 — Persisted core note/rest editor**
   - Direct reversible string, fret, pitch, duration, rest, beat, and measure edits.
-- [ ] **MT-306 — Structure, tuning, technique, and lyric editor**
+- [x] **MT-306 — Structure, tuning, technique, and lyric editor**
   - Complete manual semantic editing and backing-vocal presentation controls.
 - [ ] **MT-307 — MusicXML interchange boundary**
   - Documented supported subset with explicit loss diagnostics.

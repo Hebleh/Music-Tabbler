@@ -162,20 +162,6 @@ class SemanticLayoutEngine {
       final top = musicTop + system * systemHeight;
       systemTops.add(top);
       final measureWidth = (width - margin * 2) / count;
-      final section = chart.sections
-          .where((item) => item.measureIndex == start)
-          .firstOrNull;
-      if (section != null) {
-        primitives.add(
-          SemanticTextPrimitive(
-            text: section.name,
-            x: margin,
-            y: top,
-            role: SemanticTextRole.section,
-            size: 13,
-          ),
-        );
-      }
       final notationTop = top + 28;
       final tabTop = notationTop + (showNotation ? 76 : 0);
       if (showNotation) {
@@ -223,6 +209,45 @@ class SemanticLayoutEngine {
         final measureIndex = start + local;
         final measure = chart.measures[measureIndex];
         final left = margin + local * measureWidth;
+        for (final section in chart.sections.where(
+          (section) => section.measureIndex == measureIndex,
+        )) {
+          primitives.add(
+            SemanticTextPrimitive(
+              text: section.name,
+              x: left + 26,
+              y: top,
+              role: SemanticTextRole.section,
+              size: 13,
+            ),
+          );
+        }
+        for (final repeat in chart.repeats) {
+          if (repeat.startMeasureIndex == measureIndex) {
+            primitives.add(
+              SemanticTextPrimitive(
+                text: 'Repeat ×${repeat.times}',
+                x: left + 4,
+                y: top + 14,
+                role: SemanticTextRole.metadata,
+                size: 9,
+              ),
+            );
+          }
+          for (final ending in repeat.endings.where(
+            (ending) => ending.startMeasureIndex == measureIndex,
+          )) {
+            primitives.add(
+              SemanticTextPrimitive(
+                text: '${ending.numbers.join(',')}.',
+                x: left + 4,
+                y: top,
+                role: SemanticTextRole.section,
+                size: 10,
+              ),
+            );
+          }
+        }
         primitives.add(
           SemanticTextPrimitive(
             text: measure.number.toString(),
