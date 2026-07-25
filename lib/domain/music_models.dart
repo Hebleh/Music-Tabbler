@@ -542,23 +542,57 @@ class ChartMeasure {
 
   double get beats => length.value;
 
+  ChartMeasure copyWith({
+    int? number,
+    BeatFraction? length,
+    List<TabNote>? notes,
+    List<RestEvent>? rests,
+    TimeSignature? timeSignature,
+    String? keySignature,
+    int? tempoBpm,
+    bool clearTempo = false,
+    VerificationState? verification,
+    double? confidence,
+    bool clearConfidence = false,
+    SourceMapping? sourceMapping,
+    bool clearSourceMapping = false,
+  }) => ChartMeasure.exact(
+    number: number ?? this.number,
+    notes: notes ?? this.notes,
+    length: length ?? this.length,
+    rests: rests ?? this.rests,
+    timeSignature: timeSignature ?? this.timeSignature,
+    keySignature: keySignature ?? this.keySignature,
+    tempoBpm: clearTempo ? null : tempoBpm ?? this.tempoBpm,
+    verification: verification ?? this.verification,
+    confidence: clearConfidence ? null : confidence ?? this.confidence,
+    sourceMapping: clearSourceMapping
+        ? null
+        : sourceMapping ?? this.sourceMapping,
+  );
+
   ChartMeasure replaceNote(TabNote replacement) {
-    return ChartMeasure.exact(
-      number: number,
-      length: length,
+    return copyWith(
       notes: [
         for (final note in notes)
           if (note.id == replacement.id) replacement else note,
       ],
-      rests: rests,
-      timeSignature: timeSignature,
-      keySignature: keySignature,
-      tempoBpm: tempoBpm,
-      verification: verification,
-      confidence: confidence,
-      sourceMapping: sourceMapping,
     );
   }
+
+  ChartMeasure addNote(TabNote note) =>
+      copyWith(notes: List.unmodifiable([...notes, note]));
+
+  ChartMeasure removeNote(String noteId) => copyWith(
+    notes: List.unmodifiable(notes.where((note) => note.id != noteId)),
+  );
+
+  ChartMeasure addRest(RestEvent rest) =>
+      copyWith(rests: List.unmodifiable([...rests, rest]));
+
+  ChartMeasure removeRest(String restId) => copyWith(
+    rests: List.unmodifiable(rests.where((rest) => rest.id != restId)),
+  );
 
   Map<String, Object> toJson() {
     final result = <String, Object>{
@@ -958,6 +992,100 @@ class SongChart {
       lyrics: lyrics,
       sections: sections,
       repeats: repeats,
+    );
+  }
+
+  SongChart replaceMeasure(int index, ChartMeasure replacement) => copyWith(
+    measures: List.unmodifiable([
+      for (var current = 0; current < measures.length; current += 1)
+        if (current == index) replacement else measures[current],
+    ]),
+  );
+
+  SongChart addNote(int measureIndex, TabNote note) =>
+      replaceMeasure(measureIndex, measures[measureIndex].addNote(note));
+
+  SongChart removeNote(String noteId) => copyWith(
+    measures: List.unmodifiable([
+      for (final measure in measures) measure.removeNote(noteId),
+    ]),
+  );
+
+  SongChart addRest(int measureIndex, RestEvent rest) =>
+      replaceMeasure(measureIndex, measures[measureIndex].addRest(rest));
+
+  SongChart removeRest(String restId) => copyWith(
+    measures: List.unmodifiable([
+      for (final measure in measures) measure.removeRest(restId),
+    ]),
+  );
+
+  SongChart addMeasure(ChartMeasure measure) => copyWith(
+    measures: List.unmodifiable([
+      ...measures,
+      measure.copyWith(number: measures.length + 1),
+    ]),
+  );
+
+  SongChart removeMeasure(int index) {
+    if (measures.length <= 1) {
+      throw StateError('A chart must keep at least one measure.');
+    }
+    return copyWith(
+      measures: List.unmodifiable([
+        for (var current = 0; current < measures.length; current += 1)
+          if (current != index)
+            measures[current].copyWith(
+              number: current < index ? current + 1 : current,
+            ),
+      ]),
+      lyrics: List.unmodifiable([
+        for (final lyric in lyrics)
+          if (lyric.measureIndex != index)
+            lyric.copyWith(
+              measureIndex: lyric.measureIndex > index
+                  ? lyric.measureIndex - 1
+                  : lyric.measureIndex,
+            ),
+      ]),
+      sections: List.unmodifiable([
+        for (final section in sections)
+          if (section.measureIndex != index)
+            SongSection(
+              id: section.id,
+              name: section.name,
+              measureIndex: section.measureIndex > index
+                  ? section.measureIndex - 1
+                  : section.measureIndex,
+            ),
+      ]),
+      repeats: List.unmodifiable([
+        for (final repeat in repeats)
+          if (index < repeat.startMeasureIndex ||
+              index > repeat.endMeasureIndex)
+            RepeatRegion(
+              id: repeat.id,
+              startMeasureIndex: repeat.startMeasureIndex > index
+                  ? repeat.startMeasureIndex - 1
+                  : repeat.startMeasureIndex,
+              endMeasureIndex: repeat.endMeasureIndex > index
+                  ? repeat.endMeasureIndex - 1
+                  : repeat.endMeasureIndex,
+              times: repeat.times,
+              endings: [
+                for (final ending in repeat.endings)
+                  RepeatEnding(
+                    numbers: ending.numbers,
+                    startMeasureIndex: ending.startMeasureIndex > index
+                        ? ending.startMeasureIndex - 1
+                        : ending.startMeasureIndex,
+                    endMeasureIndex: ending.endMeasureIndex > index
+                        ? ending.endMeasureIndex - 1
+                        : ending.endMeasureIndex,
+                  ),
+              ],
+            ),
+      ]),
     );
   }
 

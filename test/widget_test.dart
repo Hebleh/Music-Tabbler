@@ -38,6 +38,9 @@ void main() {
     expect(find.text('Tablature'), findsOneWidget);
     expect(find.text('Standard notation'), findsOneWidget);
     expect(find.text('Backing vocal mode'), findsOneWidget);
+    expect(find.text('Add note'), findsOneWidget);
+    expect(find.text('Add rest'), findsOneWidget);
+    expect(find.text('Add measure'), findsOneWidget);
   });
 
   testWidgets('keeps tablature visible when notation is toggled off', (
@@ -67,6 +70,29 @@ void main() {
     );
     expect(tabChip.selected, isTrue);
     expect(notationChip.selected, isFalse);
+  });
+
+  testWidgets('semantic editor adds a measure and undo restores the chart', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final services = await _testServices();
+    await tester.pumpWidget(MusicTabblerApp(services: services));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.text('Open sample chart'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add measure'));
+    await tester.pump();
+    expect(find.text('Measure 3'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Undo semantic edit'));
+    await tester.pump();
+    expect(find.text('Measure 3'), findsNothing);
   });
 
   testWidgets('Ctrl+V pastes a screenshot into the visual editor', (

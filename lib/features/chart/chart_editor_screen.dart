@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../application/semantic_edit_session.dart';
 import '../../domain/music_models.dart';
 import '../../domain/device_preferences.dart';
 import '../../application/service_contracts.dart';
@@ -35,12 +38,24 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
   late bool _showNotation;
   double _leadVocalContrast = 0.38;
   bool _exporting = false;
+  int _selectedMeasureIndex = 0;
+  final SemanticUndoHistory _history = SemanticUndoHistory();
+  late final DebouncedSemanticAutosaver _autosaver;
 
   @override
   void initState() {
     super.initState();
     _chart = widget.chart;
-    _selectedNoteId = _chart.measures.first.notes.first.id;
+    _selectedNoteId = _chart.measures.first.notes.firstOrNull?.id;
+    _autosaver = DebouncedSemanticAutosaver(
+      save: _saveChart,
+      onError: (error, _) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Autosave failed: $error')));
+      },
+    );
     _showTitle = widget.preferences.showTitle;
     _showTab = widget.preferences.showTab;
     _showNotation = widget.preferences.showNotation;
@@ -55,8 +70,31 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
   }
 
   void _commitChart(SongChart chart) {
+    _history.record(_chart);
     setState(() => _chart = chart);
-    _saveChart(chart);
+    _autosaver.schedule(chart);
+  }
+
+  void _undo() {
+    final prior = _history.undo();
+    if (prior == null) return;
+    setState(() {
+      _chart = prior;
+      if (_selectedMeasureIndex >= _chart.measures.length) {
+        _selectedMeasureIndex = _chart.measures.length - 1;
+      }
+      if (_selectedNoteId != null &&
+          _chart.noteById(_selectedNoteId!) == null) {
+        _selectedNoteId = null;
+      }
+    });
+    _autosaver.schedule(prior);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_autosaver.dispose());
+    super.dispose();
   }
 
   void _updateDisplay({bool? showTitle, bool? showTab, bool? showNotation}) {
@@ -102,6 +140,89 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
     }
   }
 
+  Future<void> _editRest(RestEvent rest) async {
+    var position = rest.position;
+    var value = rest.value;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit rest'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<BeatFraction>(
+                initialValue: position,
+                decoration: const InputDecoration(labelText: 'Beat position'),
+                items: [
+                  for (final beat in <BeatFraction>{
+                    position,
+                    for (var step = 0; step < 16; step += 1)
+                      BeatFraction(step, 4),
+                  }.toList()..sort())
+                    DropdownMenuItem(value: beat, child: Text(beat.toString())),
+                ],
+                onChanged: (next) {
+                  if (next != null) {
+                    setDialogState(() => position = next);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<NoteValue>(
+                initialValue: value,
+                decoration: const InputDecoration(labelText: 'Duration'),
+                items: [
+                  for (final option in NoteValue.values)
+                    DropdownMenuItem(value: option, child: Text(option.label)),
+                ],
+                onChanged: (next) {
+                  if (next != null) setDialogState(() => value = next);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (accepted != true) return;
+    final measure = _chart.measures[_selectedMeasureIndex];
+    _commitChart(
+      _chart.replaceMeasure(
+        _selectedMeasureIndex,
+        measure.copyWith(
+          rests: [
+            for (final current in measure.rests)
+              if (current.id == rest.id)
+                RestEvent(
+                  id: current.id,
+                  position: position,
+                  value: value,
+                  voice: current.voice,
+                  dots: current.dots,
+                  tuplet: current.tuplet,
+                  verification: current.verification,
+                  confidence: current.confidence,
+                  sourceMapping: current.sourceMapping,
+                )
+              else
+                current,
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final selectedNote = _selectedNoteId == null
@@ -111,6 +232,11 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
       appBar: AppBar(
         title: Text(_chart.title),
         actions: [
+          IconButton(
+            tooltip: 'Undo semantic edit',
+            onPressed: _history.canUndo ? _undo : null,
+            icon: const Icon(Icons.undo),
+          ),
           IconButton(
             tooltip: 'Export semantic A4 PDF',
             onPressed: _exporting ? null : _exportPdf,
@@ -170,6 +296,59 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
             ],
           ),
           const SizedBox(height: 14),
+          _MeasureToolbar(
+            chart: _chart,
+            selectedMeasureIndex: _selectedMeasureIndex,
+            onMeasureSelected: (index) =>
+                setState(() => _selectedMeasureIndex = index),
+            onAddNote: () {
+              final note = TabNote.exact(
+                id: 'note-${DateTime.now().microsecondsSinceEpoch}',
+                position: BeatFraction.zero,
+                stringIndex: 0,
+                fret: 0,
+                value: NoteValue.quarter,
+              );
+              _selectedNoteId = note.id;
+              _commitChart(_chart.addNote(_selectedMeasureIndex, note));
+            },
+            onAddRest: () {
+              final rest = RestEvent(
+                id: 'rest-${DateTime.now().microsecondsSinceEpoch}',
+                position: BeatFraction.zero,
+                value: NoteValue.quarter,
+              );
+              _commitChart(_chart.addRest(_selectedMeasureIndex, rest));
+            },
+            onEditRest: _editRest,
+            onDeleteRest: (id) => _commitChart(_chart.removeRest(id)),
+            onAddMeasure: () {
+              _commitChart(
+                _chart.addMeasure(
+                  ChartMeasure(
+                    number: _chart.measures.length + 1,
+                    notes: const [],
+                  ),
+                ),
+              );
+              setState(
+                () => _selectedMeasureIndex = _chart.measures.length - 1,
+              );
+            },
+            onDeleteMeasure: _chart.measures.length <= 1
+                ? null
+                : () {
+                    _commitChart(_chart.removeMeasure(_selectedMeasureIndex));
+                    setState(() {
+                      _selectedMeasureIndex = _selectedMeasureIndex.clamp(
+                        0,
+                        _chart.measures.length - 1,
+                      );
+                      _selectedNoteId = null;
+                    });
+                  },
+          ),
+          const SizedBox(height: 10),
           Card(
             clipBehavior: Clip.antiAlias,
             child: SingleChildScrollView(
@@ -198,6 +377,12 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
                   onChanged: (note) {
                     _commitChart(_chart.replaceNote(note));
                   },
+                  onDelete: selectedNote == null
+                      ? null
+                      : () {
+                          _commitChart(_chart.removeNote(selectedNote.id));
+                          setState(() => _selectedNoteId = null);
+                        },
                 ),
                 _BackingVocalEditor(
                   chart: _chart,
@@ -230,20 +415,111 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
   }
 }
 
+class _MeasureToolbar extends StatelessWidget {
+  const _MeasureToolbar({
+    required this.chart,
+    required this.selectedMeasureIndex,
+    required this.onMeasureSelected,
+    required this.onAddNote,
+    required this.onAddRest,
+    required this.onEditRest,
+    required this.onDeleteRest,
+    required this.onAddMeasure,
+    required this.onDeleteMeasure,
+  });
+
+  final SongChart chart;
+  final int selectedMeasureIndex;
+  final ValueChanged<int> onMeasureSelected;
+  final VoidCallback onAddNote;
+  final VoidCallback onAddRest;
+  final ValueChanged<RestEvent> onEditRest;
+  final ValueChanged<String> onDeleteRest;
+  final VoidCallback onAddMeasure;
+  final VoidCallback? onDeleteMeasure;
+
+  @override
+  Widget build(BuildContext context) {
+    final measure = chart.measures[selectedMeasureIndex];
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            DropdownButton<int>(
+              value: selectedMeasureIndex,
+              items: [
+                for (var index = 0; index < chart.measures.length; index += 1)
+                  DropdownMenuItem(
+                    value: index,
+                    child: Text('Measure ${chart.measures[index].number}'),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value != null) onMeasureSelected(value);
+              },
+            ),
+            OutlinedButton.icon(
+              onPressed: onAddNote,
+              icon: const Icon(Icons.music_note),
+              label: const Text('Add note'),
+            ),
+            OutlinedButton.icon(
+              onPressed: onAddRest,
+              icon: const Icon(Icons.pause),
+              label: const Text('Add rest'),
+            ),
+            OutlinedButton.icon(
+              onPressed: onAddMeasure,
+              icon: const Icon(Icons.add_box_outlined),
+              label: const Text('Add measure'),
+            ),
+            OutlinedButton.icon(
+              onPressed: onDeleteMeasure,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete measure'),
+            ),
+            for (final rest in measure.rests)
+              InputChip(
+                label: Text('Rest ${rest.position} (${rest.value.label})'),
+                onPressed: () => onEditRest(rest),
+                onDeleted: () => onDeleteRest(rest.id),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _NoteEditor extends StatelessWidget {
   const _NoteEditor({
     required this.note,
     required this.tuning,
     required this.onChanged,
+    required this.onDelete,
   });
 
   final TabNote? note;
   final BassTuning tuning;
   final ValueChanged<TabNote> onChanged;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
     final current = note;
+    final beatPositions =
+        current == null
+              ? const <BeatFraction>[]
+              : <BeatFraction>{
+                  current.position,
+                  for (var step = 0; step < 16; step += 1)
+                    BeatFraction(step, 4),
+                }.toList()
+          ..sort();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -293,6 +569,25 @@ class _NoteEditor extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 12),
+                  DropdownButtonFormField<BeatFraction>(
+                    initialValue: current.position,
+                    decoration: const InputDecoration(
+                      labelText: 'Beat position',
+                    ),
+                    items: [
+                      for (final position in beatPositions)
+                        DropdownMenuItem(
+                          value: position,
+                          child: Text(position.toString()),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        onChanged(current.copyWith(position: value));
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   Text(
                     'Duration',
                     style: Theme.of(context).textTheme.labelLarge,
@@ -309,6 +604,12 @@ class _NoteEditor extends StatelessWidget {
                               onChanged(current.copyWith(value: value)),
                         ),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Delete selected note'),
                   ),
                 ],
               ),
