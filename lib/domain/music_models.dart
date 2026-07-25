@@ -193,6 +193,10 @@ class TabNote {
     this.tieStart = false,
     this.tieEnd = false,
     this.tuplet,
+    this.techniques = const [],
+    this.verification = VerificationState.verified,
+    this.confidence,
+    this.sourceMapping,
   }) : position = BeatFraction.fromNum(beat);
 
   const TabNote.exact({
@@ -206,6 +210,10 @@ class TabNote {
     this.tieStart = false,
     this.tieEnd = false,
     this.tuplet,
+    this.techniques = const [],
+    this.verification = VerificationState.verified,
+    this.confidence,
+    this.sourceMapping,
   });
 
   final String id;
@@ -218,6 +226,10 @@ class TabNote {
   final bool tieStart;
   final bool tieEnd;
   final TupletRatio? tuplet;
+  final List<TechniqueMark> techniques;
+  final VerificationState verification;
+  final double? confidence;
+  final SourceMapping? sourceMapping;
 
   double get beat => position.value;
 
@@ -232,8 +244,8 @@ class TabNote {
     return ratio == null ? result : result * ratio.durationScale;
   }
 
-  int midiPitch(BassTuning tuning) =>
-      tuning.strings[stringIndex].midiPitch + fret;
+  int midiPitch(BassTuning tuning, {int capo = 0}) =>
+      tuning.strings[stringIndex].midiPitch + fret + capo;
 
   TabNote copyWith({
     num? beat,
@@ -247,6 +259,12 @@ class TabNote {
     bool? tieEnd,
     TupletRatio? tuplet,
     bool clearTuplet = false,
+    List<TechniqueMark>? techniques,
+    VerificationState? verification,
+    double? confidence,
+    bool clearConfidence = false,
+    SourceMapping? sourceMapping,
+    bool clearSourceMapping = false,
   }) {
     return TabNote.exact(
       id: id,
@@ -261,6 +279,12 @@ class TabNote {
       tieStart: tieStart ?? this.tieStart,
       tieEnd: tieEnd ?? this.tieEnd,
       tuplet: clearTuplet ? null : tuplet ?? this.tuplet,
+      techniques: techniques ?? this.techniques,
+      verification: verification ?? this.verification,
+      confidence: clearConfidence ? null : confidence ?? this.confidence,
+      sourceMapping: clearSourceMapping
+          ? null
+          : sourceMapping ?? this.sourceMapping,
     );
   }
 
@@ -275,6 +299,10 @@ class TabNote {
     'tieStart': tieStart,
     'tieEnd': tieEnd,
     if (tuplet != null) 'tuplet': tuplet!.toJson(),
+    'techniques': [for (final technique in techniques) technique.toJson()],
+    'verification': verification.name,
+    'confidence': ?confidence,
+    'sourceMapping': ?sourceMapping?.toJson(),
   };
 
   factory TabNote.fromJson(Map<String, Object?> json, {int schemaVersion = 2}) {
@@ -297,6 +325,21 @@ class TabNote {
       tuplet: tupletJson == null
           ? null
           : TupletRatio.fromJson((tupletJson as Map).cast<String, Object?>()),
+      techniques: List.unmodifiable(
+        ((json['techniques'] as List?) ?? const []).map(
+          (value) =>
+              TechniqueMark.fromJson((value as Map).cast<String, Object?>()),
+        ),
+      ),
+      verification: VerificationState.values.byName(
+        json['verification'] as String? ?? VerificationState.verified.name,
+      ),
+      confidence: (json['confidence'] as num?)?.toDouble(),
+      sourceMapping: json['sourceMapping'] == null
+          ? null
+          : SourceMapping.fromJson(
+              (json['sourceMapping']! as Map).cast<String, Object?>(),
+            ),
     );
   }
 }
@@ -317,6 +360,76 @@ class TupletRatio {
   );
 }
 
+enum TechniqueKind {
+  slide,
+  bend,
+  hammerOn,
+  pullOff,
+  naturalHarmonic,
+  artificialHarmonic,
+  deadNote,
+  palmMute,
+  letRing,
+  accent,
+}
+
+class TechniqueMark {
+  const TechniqueMark(this.kind, {this.value});
+
+  final TechniqueKind kind;
+  final double? value;
+
+  Map<String, Object> toJson() => {'kind': kind.name, 'value': ?value};
+
+  factory TechniqueMark.fromJson(Map<String, Object?> json) => TechniqueMark(
+    TechniqueKind.values.byName(json['kind']! as String),
+    value: (json['value'] as num?)?.toDouble(),
+  );
+}
+
+enum VerificationState { verified, proposed }
+
+class SourceMapping {
+  const SourceMapping({
+    required this.sourceId,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+
+  final String sourceId;
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+
+  bool get isValid =>
+      sourceId.trim().isNotEmpty &&
+      left >= 0 &&
+      top >= 0 &&
+      right <= 1 &&
+      bottom <= 1 &&
+      right > left &&
+      bottom > top;
+
+  Map<String, Object> toJson() => {
+    'sourceId': sourceId,
+    'left': left,
+    'top': top,
+    'right': right,
+    'bottom': bottom,
+  };
+
+  factory SourceMapping.fromJson(Map<String, Object?> json) => SourceMapping(
+    sourceId: json['sourceId']! as String,
+    left: (json['left']! as num).toDouble(),
+    top: (json['top']! as num).toDouble(),
+    right: (json['right']! as num).toDouble(),
+    bottom: (json['bottom']! as num).toDouble(),
+  );
+}
+
 class RestEvent {
   const RestEvent({
     required this.id,
@@ -325,6 +438,9 @@ class RestEvent {
     this.voice = 1,
     this.dots = 0,
     this.tuplet,
+    this.verification = VerificationState.verified,
+    this.confidence,
+    this.sourceMapping,
   });
 
   final String id;
@@ -333,6 +449,9 @@ class RestEvent {
   final int voice;
   final int dots;
   final TupletRatio? tuplet;
+  final VerificationState verification;
+  final double? confidence;
+  final SourceMapping? sourceMapping;
 
   BeatFraction get duration => TabNote.exact(
     id: id,
@@ -352,6 +471,9 @@ class RestEvent {
     'voice': voice,
     'dots': dots,
     if (tuplet != null) 'tuplet': tuplet!.toJson(),
+    'verification': verification.name,
+    'confidence': ?confidence,
+    'sourceMapping': ?sourceMapping?.toJson(),
   };
 
   factory RestEvent.fromJson(Map<String, Object?> json) {
@@ -367,6 +489,15 @@ class RestEvent {
       tuplet: tupletJson == null
           ? null
           : TupletRatio.fromJson((tupletJson as Map).cast<String, Object?>()),
+      verification: VerificationState.values.byName(
+        json['verification'] as String? ?? VerificationState.verified.name,
+      ),
+      confidence: (json['confidence'] as num?)?.toDouble(),
+      sourceMapping: json['sourceMapping'] == null
+          ? null
+          : SourceMapping.fromJson(
+              (json['sourceMapping']! as Map).cast<String, Object?>(),
+            ),
     );
   }
 }
@@ -380,6 +511,9 @@ class ChartMeasure {
     this.timeSignature = const TimeSignature(4, 4),
     this.keySignature = 'C',
     this.tempoBpm,
+    this.verification = VerificationState.verified,
+    this.confidence,
+    this.sourceMapping,
   }) : length = BeatFraction.fromNum(beats);
 
   const ChartMeasure.exact({
@@ -390,6 +524,9 @@ class ChartMeasure {
     this.timeSignature = const TimeSignature(4, 4),
     this.keySignature = 'C',
     this.tempoBpm,
+    this.verification = VerificationState.verified,
+    this.confidence,
+    this.sourceMapping,
   });
 
   final int number;
@@ -399,6 +536,9 @@ class ChartMeasure {
   final TimeSignature timeSignature;
   final String keySignature;
   final int? tempoBpm;
+  final VerificationState verification;
+  final double? confidence;
+  final SourceMapping? sourceMapping;
 
   double get beats => length.value;
 
@@ -414,6 +554,9 @@ class ChartMeasure {
       timeSignature: timeSignature,
       keySignature: keySignature,
       tempoBpm: tempoBpm,
+      verification: verification,
+      confidence: confidence,
+      sourceMapping: sourceMapping,
     );
   }
 
@@ -425,8 +568,13 @@ class ChartMeasure {
       'rests': [for (final rest in rests) rest.toJson()],
       'timeSignature': timeSignature.toJson(),
       'keySignature': keySignature,
+      'verification': verification.name,
     };
     if (tempoBpm case final tempo?) result['tempoBpm'] = tempo;
+    if (confidence case final value?) result['confidence'] = value;
+    if (sourceMapping case final mapping?) {
+      result['sourceMapping'] = mapping.toJson();
+    }
     return result;
   }
 
@@ -463,11 +611,26 @@ class ChartMeasure {
           ),
     keySignature: json['keySignature'] as String? ?? 'C',
     tempoBpm: json['tempoBpm'] as int?,
+    verification: VerificationState.values.byName(
+      json['verification'] as String? ?? VerificationState.verified.name,
+    ),
+    confidence: (json['confidence'] as num?)?.toDouble(),
+    sourceMapping: json['sourceMapping'] == null
+        ? null
+        : SourceMapping.fromJson(
+            (json['sourceMapping']! as Map).cast<String, Object?>(),
+          ),
   );
 
   List<String> validationErrors() {
     final errors = <String>[];
     if (!length.isPositive) errors.add('Measure $number has no duration.');
+    if (confidence != null && (confidence! < 0 || confidence! > 1)) {
+      errors.add('Measure $number has invalid recognition confidence.');
+    }
+    if (sourceMapping != null && !sourceMapping!.isValid) {
+      errors.add('Measure $number has an invalid source mapping.');
+    }
     if (!timeSignature.isValid) {
       errors.add('Measure $number has an invalid time signature.');
     } else if (length != timeSignature.quarterNoteLength) {
@@ -478,7 +641,10 @@ class ChartMeasure {
           note.dots < 0 ||
           note.dots > 3 ||
           (note.tuplet != null &&
-              (note.tuplet!.actual < 1 || note.tuplet!.normal < 1))) {
+              (note.tuplet!.actual < 1 || note.tuplet!.normal < 1)) ||
+          (note.confidence != null &&
+              (note.confidence! < 0 || note.confidence! > 1)) ||
+          (note.sourceMapping != null && !note.sourceMapping!.isValid)) {
         errors.add('Note ${note.id} has invalid rhythm metadata.');
       }
     }
@@ -487,7 +653,10 @@ class ChartMeasure {
           rest.dots < 0 ||
           rest.dots > 3 ||
           (rest.tuplet != null &&
-              (rest.tuplet!.actual < 1 || rest.tuplet!.normal < 1))) {
+              (rest.tuplet!.actual < 1 || rest.tuplet!.normal < 1)) ||
+          (rest.confidence != null &&
+              (rest.confidence! < 0 || rest.confidence! > 1)) ||
+          (rest.sourceMapping != null && !rest.sourceMapping!.isValid)) {
         errors.add('Rest ${rest.id} has invalid rhythm metadata.');
       }
     }
@@ -553,6 +722,10 @@ class LyricSyllable {
     required num beat,
     required this.text,
     this.isBackingVocal = false,
+    this.alignedNoteId,
+    this.verification = VerificationState.verified,
+    this.confidence,
+    this.sourceMapping,
   }) : position = BeatFraction.fromNum(beat);
 
   const LyricSyllable.exact({
@@ -561,6 +734,10 @@ class LyricSyllable {
     required this.position,
     required this.text,
     this.isBackingVocal = false,
+    this.alignedNoteId,
+    this.verification = VerificationState.verified,
+    this.confidence,
+    this.sourceMapping,
   });
 
   final String id;
@@ -568,6 +745,10 @@ class LyricSyllable {
   final BeatFraction position;
   final String text;
   final bool isBackingVocal;
+  final String? alignedNoteId;
+  final VerificationState verification;
+  final double? confidence;
+  final SourceMapping? sourceMapping;
 
   double get beat => position.value;
 
@@ -577,6 +758,13 @@ class LyricSyllable {
     BeatFraction? position,
     String? text,
     bool? isBackingVocal,
+    String? alignedNoteId,
+    bool clearAlignedNote = false,
+    VerificationState? verification,
+    double? confidence,
+    bool clearConfidence = false,
+    SourceMapping? sourceMapping,
+    bool clearSourceMapping = false,
   }) {
     return LyricSyllable.exact(
       id: id,
@@ -586,6 +774,14 @@ class LyricSyllable {
           (beat == null ? this.position : BeatFraction.fromNum(beat)),
       text: text ?? this.text,
       isBackingVocal: isBackingVocal ?? this.isBackingVocal,
+      alignedNoteId: clearAlignedNote
+          ? null
+          : alignedNoteId ?? this.alignedNoteId,
+      verification: verification ?? this.verification,
+      confidence: clearConfidence ? null : confidence ?? this.confidence,
+      sourceMapping: clearSourceMapping
+          ? null
+          : sourceMapping ?? this.sourceMapping,
     );
   }
 
@@ -595,6 +791,10 @@ class LyricSyllable {
     'position': position.toJson(),
     'text': text,
     'isBackingVocal': isBackingVocal,
+    'alignedNoteId': ?alignedNoteId,
+    'verification': verification.name,
+    'confidence': ?confidence,
+    'sourceMapping': ?sourceMapping?.toJson(),
   };
 
   factory LyricSyllable.fromJson(
@@ -610,6 +810,16 @@ class LyricSyllable {
           ),
     text: json['text']! as String,
     isBackingVocal: json['isBackingVocal'] as bool? ?? false,
+    alignedNoteId: json['alignedNoteId'] as String?,
+    verification: VerificationState.values.byName(
+      json['verification'] as String? ?? VerificationState.verified.name,
+    ),
+    confidence: (json['confidence'] as num?)?.toDouble(),
+    sourceMapping: json['sourceMapping'] == null
+        ? null
+        : SourceMapping.fromJson(
+            (json['sourceMapping']! as Map).cast<String, Object?>(),
+          ),
   );
 }
 
@@ -706,16 +916,20 @@ class SongChart {
     required this.tuning,
     required this.measures,
     required this.lyrics,
+    this.instrumentName = 'Bass guitar',
+    this.capo = 0,
     this.sections = const [],
     this.repeats = const [],
   });
 
-  static const schemaVersion = 2;
+  static const schemaVersion = 3;
 
   final String id;
   final String title;
   final String artist;
+  final String instrumentName;
   final BassTuning tuning;
+  final int capo;
   final List<ChartMeasure> measures;
   final List<LyricSyllable> lyrics;
   final List<SongSection> sections;
@@ -735,7 +949,9 @@ class SongChart {
       id: id,
       title: title,
       artist: artist,
+      instrumentName: instrumentName,
       tuning: tuning,
+      capo: capo,
       measures: [
         for (final measure in measures) measure.replaceNote(replacement),
       ],
@@ -750,7 +966,9 @@ class SongChart {
       id: id,
       title: title,
       artist: artist,
+      instrumentName: instrumentName,
       tuning: tuning,
+      capo: capo,
       measures: measures,
       lyrics: [
         for (final lyric in lyrics)
@@ -765,7 +983,9 @@ class SongChart {
     String? id,
     String? title,
     String? artist,
+    String? instrumentName,
     BassTuning? tuning,
+    int? capo,
     List<ChartMeasure>? measures,
     List<LyricSyllable>? lyrics,
     List<SongSection>? sections,
@@ -775,7 +995,9 @@ class SongChart {
       id: id ?? this.id,
       title: title ?? this.title,
       artist: artist ?? this.artist,
+      instrumentName: instrumentName ?? this.instrumentName,
       tuning: tuning ?? this.tuning,
+      capo: capo ?? this.capo,
       measures: measures ?? this.measures,
       lyrics: lyrics ?? this.lyrics,
       sections: sections ?? this.sections,
@@ -788,7 +1010,9 @@ class SongChart {
     'id': id,
     'title': title,
     'artist': artist,
+    'instrumentName': instrumentName,
     'tuning': tuning.toJson(),
+    'capo': capo,
     'measures': [for (final measure in measures) measure.toJson()],
     'lyrics': [for (final lyric in lyrics) lyric.toJson()],
     'sections': [for (final section in sections) section.toJson()],
@@ -806,9 +1030,11 @@ class SongChart {
       id: json['id']! as String,
       title: json['title']! as String,
       artist: json['artist']! as String,
+      instrumentName: json['instrumentName'] as String? ?? 'Bass guitar',
       tuning: BassTuning.fromJson(
         (json['tuning']! as Map).cast<String, Object?>(),
       ),
+      capo: json['capo'] as int? ?? 0,
       measures: List.unmodifiable(
         (json['measures']! as List).map(
           (value) => ChartMeasure.fromJson(
@@ -850,6 +1076,29 @@ class SongChart {
     final errors = <String>[
       for (final measure in measures) ...measure.validationErrors(),
     ];
+    if (instrumentName.trim().isEmpty) {
+      errors.add('Instrument name cannot be empty.');
+    }
+    if (tuning.strings.isEmpty ||
+        tuning.strings.any(
+          (string) =>
+              string.name.trim().isEmpty ||
+              string.midiPitch < 0 ||
+              string.midiPitch > 127,
+        )) {
+      errors.add('The instrument tuning is invalid.');
+    }
+    if (capo < 0 || capo > 24) errors.add('The capo position is invalid.');
+    for (final measure in measures) {
+      for (final note in measure.notes) {
+        if (note.stringIndex < 0 ||
+            note.stringIndex >= tuning.strings.length ||
+            note.fret < 0 ||
+            note.fret > 36) {
+          errors.add('Note ${note.id} is not playable on this instrument.');
+        }
+      }
+    }
     for (final section in sections) {
       if (section.measureIndex < 0 || section.measureIndex >= measures.length) {
         errors.add('Section ${section.name} points outside the song.');
@@ -878,6 +1127,21 @@ class SongChart {
     for (final lyric in lyrics) {
       if (lyric.measureIndex < 0 || lyric.measureIndex >= measures.length) {
         errors.add('Lyric ${lyric.id} points outside the song.');
+        continue;
+      }
+      if (lyric.confidence != null &&
+          (lyric.confidence! < 0 || lyric.confidence! > 1)) {
+        errors.add('Lyric ${lyric.id} has invalid recognition confidence.');
+      }
+      if (lyric.sourceMapping != null && !lyric.sourceMapping!.isValid) {
+        errors.add('Lyric ${lyric.id} has an invalid source mapping.');
+      }
+      final aligned = lyric.alignedNoteId;
+      if (aligned != null &&
+          !measures[lyric.measureIndex].notes.any(
+            (note) => note.id == aligned,
+          )) {
+        errors.add('Lyric ${lyric.id} is aligned to a missing note.');
       }
     }
     return errors;

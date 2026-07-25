@@ -196,7 +196,7 @@ class _TabChartPainter extends CustomPainter {
           note,
           showNotation,
         );
-        final midi = note.midiPitch(chart.tuning);
+        final midi = note.midiPitch(chart.tuning, capo: chart.capo);
         final y = 135 - (midi - 28) * 2.1;
         final center = Offset(tabPosition.dx, y.clamp(82, 144));
         canvas.save();

@@ -140,7 +140,7 @@ documented debt unless they materially block gig preparation.
   - Save and reopen current semantic notes, measures, tuning, and lyrics.
 - [x] **MT-302 — Rhythm and navigation schema**
   - Exact beats, voices, rests, tuplets, signatures, repeats, endings, sections.
-- [ ] **MT-303 — Instrument, technique, lyric, and confidence schema**
+- [x] **MT-303 — Instrument, technique, lyric, and confidence schema**
   - Arbitrary tunings/string counts, techniques, lyric alignment, proposals.
 - [ ] **MT-304 — Shared screen/PDF semantic renderer**
   - Platform-independent primitives consumed by both screen and PDF.

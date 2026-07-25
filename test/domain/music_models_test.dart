@@ -110,7 +110,7 @@ void main() {
       expect(migrated.measures.first.notes[1].position, BeatFraction.one);
       expect(migrated.measures.first.length, BeatFraction(4));
       expect(migrated.sections, isEmpty);
-      expect(migrated.encode(), contains('"schemaVersion":2'));
+      expect(migrated.encode(), contains('"schemaVersion":3'));
     });
 
     test('measure and repeat diagnostics reject invalid structures', () {
@@ -155,6 +155,177 @@ void main() {
           'Section Outro points outside the song.',
           'Repeat bad-repeat has invalid boundaries.',
         ]),
+      );
+    });
+
+    test(
+      'custom instruments, techniques, aligned lyrics, and proposals round-trip',
+      () {
+        final chart = SongChart(
+          id: 'proposal',
+          title: 'Proposal',
+          artist: 'Band',
+          instrumentName: 'Extended bass',
+          capo: 1,
+          tuning: const BassTuning(
+            name: 'Custom 6',
+            strings: [
+              StringTuning(name: 'C', midiPitch: 48),
+              StringTuning(name: 'G', midiPitch: 43),
+              StringTuning(name: 'D', midiPitch: 38),
+              StringTuning(name: 'A', midiPitch: 33),
+              StringTuning(name: 'E', midiPitch: 28),
+              StringTuning(name: 'B', midiPitch: 23),
+            ],
+          ),
+          measures: [
+            ChartMeasure.exact(
+              number: 1,
+              length: BeatFraction(4),
+              verification: VerificationState.proposed,
+              confidence: 0.82,
+              sourceMapping: const SourceMapping(
+                sourceId: 'row-1',
+                left: 0,
+                top: 0,
+                right: 1,
+                bottom: 0.5,
+              ),
+              notes: [
+                TabNote.exact(
+                  id: 'n',
+                  position: BeatFraction.zero,
+                  stringIndex: 5,
+                  fret: 5,
+                  value: NoteValue.quarter,
+                  techniques: const [
+                    TechniqueMark(TechniqueKind.slide),
+                    TechniqueMark(TechniqueKind.bend, value: 1),
+                  ],
+                  verification: VerificationState.proposed,
+                  confidence: 0.71,
+                ),
+              ],
+            ),
+          ],
+          lyrics: [
+            LyricSyllable.exact(
+              id: 'lyric',
+              measureIndex: 0,
+              position: BeatFraction.zero,
+              text: 'hey',
+              alignedNoteId: 'n',
+              verification: VerificationState.proposed,
+              confidence: 0.66,
+            ),
+          ],
+        );
+
+        final restored = SongChart.decode(chart.encode());
+
+        expect(restored.instrumentName, 'Extended bass');
+        expect(restored.tuning.strings, hasLength(6));
+        expect(restored.measures.single.notes.single.techniques, hasLength(2));
+        expect(
+          restored.measures.single.notes.single.verification,
+          VerificationState.proposed,
+        );
+        expect(restored.lyrics.single.alignedNoteId, 'n');
+        expect(
+          restored.measures.single.notes.single.midiPitch(
+            restored.tuning,
+            capo: restored.capo,
+          ),
+          29,
+        );
+        expect(restored.validationErrors(), isEmpty);
+      },
+    );
+
+    test('schema v2 charts default new instrument and verification fields', () {
+      final legacy = SongChart.foundationExample().toJson()
+        ..['schemaVersion'] = 2
+        ..remove('instrumentName')
+        ..remove('capo');
+      for (final rawMeasure
+          in (legacy['measures']! as List).cast<Map<String, Object>>()) {
+        rawMeasure
+          ..remove('verification')
+          ..remove('confidence')
+          ..remove('sourceMapping');
+        for (final rawNote
+            in (rawMeasure['notes']! as List).cast<Map<String, Object>>()) {
+          rawNote
+            ..remove('techniques')
+            ..remove('verification')
+            ..remove('confidence')
+            ..remove('sourceMapping');
+        }
+      }
+      for (final rawLyric
+          in (legacy['lyrics']! as List).cast<Map<String, Object>>()) {
+        rawLyric
+          ..remove('alignedNoteId')
+          ..remove('verification')
+          ..remove('confidence')
+          ..remove('sourceMapping');
+      }
+
+      final restored = SongChart.decode(jsonEncode(legacy));
+
+      expect(restored.instrumentName, 'Bass guitar');
+      expect(restored.capo, 0);
+      expect(
+        restored.measures.first.notes.first.verification,
+        VerificationState.verified,
+      );
+      expect(restored.measures.first.notes.first.techniques, isEmpty);
+    });
+
+    test('proposal metadata remains explicitly unverified and validated', () {
+      final invalid = SongChart(
+        title: 'Invalid proposal',
+        artist: '',
+        tuning: BassTuning.beadg,
+        measures: [
+          ChartMeasure(
+            number: 1,
+            notes: [
+              TabNote(
+                id: 'bad',
+                beat: 0,
+                stringIndex: 9,
+                fret: 50,
+                value: NoteValue.quarter,
+                verification: VerificationState.proposed,
+                confidence: 1.2,
+                sourceMapping: const SourceMapping(
+                  sourceId: '',
+                  left: 0.8,
+                  top: 0,
+                  right: 0.2,
+                  bottom: 1,
+                ),
+              ),
+            ],
+          ),
+        ],
+        lyrics: [
+          LyricSyllable(
+            id: 'bad-lyric',
+            measureIndex: 0,
+            beat: 0,
+            text: 'word',
+            alignedNoteId: 'missing',
+            verification: VerificationState.proposed,
+          ),
+        ],
+      );
+
+      expect(invalid.validationErrors(), isNotEmpty);
+      expect(
+        invalid.measures.single.notes.single.verification,
+        VerificationState.proposed,
       );
     });
   });
