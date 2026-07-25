@@ -47,6 +47,8 @@ class SemanticRecognitionService {
       throw const FormatException('Recognition needs at least one visual row.');
     }
     final measures = <ChartMeasure>[];
+    final lyrics = <LyricSyllable>[];
+    final sections = <SongSection>[];
     final diagnostics = <String>[];
     var total = 0;
     for (final (measureIndex, strip) in strips.indexed) {
@@ -93,16 +95,18 @@ class SemanticRecognitionService {
       }
       final notes = <TabNote>[];
       for (final (ordinal, candidate) in candidates.take(16).indexed) {
+        final noteId = 'proposal-${measureIndex + 1}-$ordinal';
         notes.add(
           TabNote.exact(
-            id: 'proposal-${measureIndex + 1}-$ordinal',
+            id: noteId,
             position: BeatFraction(ordinal % 16, 4),
             stringIndex: candidate.stringIndex.clamp(
               0,
               tuning.strings.length - 1,
             ),
             fret: candidate.fret,
-            value: NoteValue.sixteenth,
+            value: _recognizedNoteValue(candidate, strip.regions),
+            techniques: _recognizedTechniques(candidate, strip.regions),
             verification: VerificationState.proposed,
             confidence: _confidence(candidate, strip),
             sourceMapping: SourceMapping(
@@ -115,6 +119,17 @@ class SemanticRecognitionService {
           ),
         );
       }
+      _recognizeSections(
+        strip,
+        measureIndex: measureIndex,
+        destination: sections,
+      );
+      _recognizeLyrics(
+        strip,
+        measureIndex: measureIndex,
+        notes: notes,
+        destination: lyrics,
+      );
       total += notes.length;
       measures.add(
         ChartMeasure.exact(
@@ -143,7 +158,8 @@ class SemanticRecognitionService {
         artist: artist,
         tuning: tuning,
         measures: List.unmodifiable(measures),
-        lyrics: const [],
+        lyrics: List.unmodifiable(lyrics),
+        sections: List.unmodifiable(sections),
       ),
       diagnostics: List.unmodifiable(diagnostics),
       proposedEvents: total,
@@ -156,6 +172,146 @@ class SemanticRecognitionService {
     final ideal = (candidate.stringIndex + 0.5) / strip.stringCount;
     final offset = (relative - ideal).abs() * strip.stringCount;
     return (0.82 - offset * 0.28).clamp(0.35, 0.82);
+  }
+
+  NoteValue _recognizedNoteValue(
+    _FretCandidate candidate,
+    List<RecognizedTextRegion> regions,
+  ) {
+    final marker = _nearbyMarker(candidate, regions, const {
+      'w',
+      'h',
+      'q',
+      'e',
+      's',
+      '16',
+    });
+    return switch (marker) {
+      'w' => NoteValue.whole,
+      'h' => NoteValue.half,
+      'q' => NoteValue.quarter,
+      'e' => NoteValue.eighth,
+      's' || '16' => NoteValue.sixteenth,
+      _ => NoteValue.sixteenth,
+    };
+  }
+
+  List<TechniqueMark> _recognizedTechniques(
+    _FretCandidate candidate,
+    List<RecognizedTextRegion> regions,
+  ) {
+    final marker = _nearbyMarker(candidate, regions, const {
+      '/',
+      '\\',
+      'b',
+      'h',
+      'p',
+      'x',
+      '<>',
+      '~',
+    });
+    final kind = switch (marker) {
+      '/' || '\\' => TechniqueKind.slide,
+      'b' => TechniqueKind.bend,
+      'h' => TechniqueKind.hammerOn,
+      'p' => TechniqueKind.pullOff,
+      'x' => TechniqueKind.deadNote,
+      '<>' => TechniqueKind.naturalHarmonic,
+      '~' => TechniqueKind.letRing,
+      _ => null,
+    };
+    return kind == null ? const [] : [TechniqueMark(kind)];
+  }
+
+  String? _nearbyMarker(
+    _FretCandidate candidate,
+    List<RecognizedTextRegion> regions,
+    Set<String> supported,
+  ) {
+    final centerX = (candidate.rect.left + candidate.rect.right) / 2;
+    RecognizedTextRegion? nearest;
+    var distance = 1.0;
+    for (final region in regions) {
+      final marker = region.text.trim().toLowerCase();
+      if (!supported.contains(marker)) continue;
+      final regionX = (region.rect.left + region.rect.right) / 2;
+      final nextDistance = (regionX - centerX).abs();
+      if (nextDistance < distance && nextDistance <= 0.035) {
+        nearest = region;
+        distance = nextDistance;
+      }
+    }
+    return nearest?.text.trim().toLowerCase();
+  }
+
+  void _recognizeSections(
+    RecognitionStripInput strip, {
+    required int measureIndex,
+    required List<SongSection> destination,
+  }) {
+    final pattern = RegExp(
+      r'^(intro|verse|pre[\s-]?chorus|chorus|bridge|solo|outro)(\s+\d+)?$',
+      caseSensitive: false,
+    );
+    for (final region in strip.regions) {
+      final name = region.text.trim();
+      if (pattern.hasMatch(name)) {
+        destination.add(
+          SongSection(
+            id: 'proposal-section-$measureIndex-${destination.length}',
+            name: name,
+            measureIndex: measureIndex,
+          ),
+        );
+      }
+    }
+  }
+
+  void _recognizeLyrics(
+    RecognitionStripInput strip, {
+    required int measureIndex,
+    required List<TabNote> notes,
+    required List<LyricSyllable> destination,
+  }) {
+    final words = strip.regions.where((region) {
+      final centerY = (region.rect.top + region.rect.bottom) / 2;
+      final value = region.text.trim();
+      return centerY > strip.tabBand.bottom &&
+          value.isNotEmpty &&
+          RegExp(r'[A-Za-z\u3040-\u30ff\u3400-\u9fff]').hasMatch(value);
+    });
+    for (final region in words) {
+      final centerX = (region.rect.left + region.rect.right) / 2;
+      TabNote? nearest;
+      var distance = 2.0;
+      for (final note in notes) {
+        final mapping = note.sourceMapping!;
+        final noteX = (mapping.left + mapping.right) / 2;
+        final nextDistance = (noteX - centerX).abs();
+        if (nextDistance < distance) {
+          nearest = note;
+          distance = nextDistance;
+        }
+      }
+      destination.add(
+        LyricSyllable.exact(
+          id: 'proposal-lyric-$measureIndex-${destination.length}',
+          measureIndex: measureIndex,
+          position: nearest?.position ?? BeatFraction.zero,
+          text: region.text.trim(),
+          alignedNoteId: nearest?.id,
+          verification: VerificationState.proposed,
+          confidence: nearest == null ? 0.35 : 0.58,
+          sourceMapping: SourceMapping(
+            sourceId: strip.sourceId,
+            left: region.rect.left,
+            top: region.rect.top,
+            right: region.rect.right,
+            bottom: region.rect.bottom,
+          ),
+        ),
+      );
+    }
   }
 }
 

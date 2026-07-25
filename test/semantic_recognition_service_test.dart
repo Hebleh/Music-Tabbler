@@ -65,4 +65,46 @@ void main() {
       VerificationState.proposed,
     );
   });
+
+  test('rhythm markers techniques sections and lyrics stay proposed', () {
+    final result = service.propose(
+      chartId: 'musical-proposal',
+      title: 'Synthetic',
+      artist: '',
+      strips: const [
+        RecognitionStripInput(
+          sourceId: 'row',
+          regions: [
+            RecognizedTextRegion(
+              text: 'Verse 1',
+              rect: NormalizedRect(0.02, 0.01, 0.14, 0.06),
+            ),
+            RecognizedTextRegion(
+              text: '3',
+              rect: NormalizedRect(0.2, 0.2, 0.23, 0.25),
+            ),
+            RecognizedTextRegion(
+              text: '/',
+              rect: NormalizedRect(0.225, 0.22, 0.24, 0.27),
+            ),
+            RecognizedTextRegion(
+              text: 'e',
+              rect: NormalizedRect(0.19, 0.14, 0.21, 0.17),
+            ),
+            RecognizedTextRegion(
+              text: 'hello',
+              rect: NormalizedRect(0.18, 0.88, 0.27, 0.94),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final note = result.chart.measures.single.notes.single;
+    expect(note.value, NoteValue.eighth);
+    expect(note.techniques.single.kind, TechniqueKind.slide);
+    expect(result.chart.sections.single.name, 'Verse 1');
+    expect(result.chart.lyrics.single.text, 'hello');
+    expect(result.chart.lyrics.single.verification, VerificationState.proposed);
+  });
 }
