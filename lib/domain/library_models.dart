@@ -1,4 +1,4 @@
-enum ChartVariantKind { visual }
+enum ChartVariantKind { visual, semantic }
 
 class LibrarySong {
   const LibrarySong({

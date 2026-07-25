@@ -36,5 +36,21 @@ void main() {
       expect(updated.lyrics.first.isBackingVocal, isTrue);
       expect(updated.lyrics.first.text, original.lyrics.first.text);
     });
+
+    test('semantic chart JSON round-trips tuning notes and lyrics', () {
+      final original = SongChart.foundationExample();
+      final restored = SongChart.decode(original.encode());
+
+      expect(restored.id, original.id);
+      expect(restored.tuning.strings.map((string) => string.midiPitch), [
+        43,
+        38,
+        33,
+        28,
+        23,
+      ]);
+      expect(restored.measures.first.notes.first.fret, 3);
+      expect(restored.lyrics.last.isBackingVocal, isTrue);
+    });
   });
 }

@@ -7,6 +7,7 @@ import 'package:music_tabbler/application/library_state_service.dart';
 import 'package:music_tabbler/application/portable_container.dart';
 import 'package:music_tabbler/application/service_contracts.dart';
 import 'package:music_tabbler/domain/library_models.dart';
+import 'package:music_tabbler/domain/music_models.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 import 'package:music_tabbler/infrastructure/local_library.dart';
 
@@ -50,6 +51,75 @@ void main() {
       );
     },
   );
+
+  test('mtstate v2 replacement round-trips semantic variants', () async {
+    final sourceFixture = await _fixture('semantic-state-source');
+    final targetFixture = await _fixture('semantic-state-target');
+    addTearDown(sourceFixture.dispose);
+    addTearDown(targetFixture.dispose);
+    final sourceChart = SongChart.foundationExample().copyWith(
+      id: 'semantic-source',
+      title: 'Semantic source',
+    );
+    await sourceFixture.library.saveSemanticChart(
+      sourceChart,
+      songId: 'song-semantic-source',
+      updatedAt: DateTime.utc(2026, 7, 25),
+    );
+
+    final bytes = await LibraryStateService(
+      sourceFixture.library,
+    ).exportStateBytes();
+    final result = await LibraryStateService(
+      targetFixture.library,
+    ).importStateBytes(bytes, mode: StateImportMode.replace);
+
+    expect(result.importedVariants, 1);
+    expect(
+      (await targetFixture.library.loadSemanticChart(
+        'semantic-source',
+      ))!.encode(),
+      sourceChart.encode(),
+    );
+    expect(
+      (await targetFixture.library.identityForDraft('semantic-source'))!.kind,
+      ChartVariantKind.semantic,
+    );
+  });
+
+  test('mtstate v1 remains importable without semantic metadata', () async {
+    final sourceFixture = await _fixture('legacy-state-source');
+    final targetFixture = await _fixture('legacy-state-target');
+    addTearDown(sourceFixture.dispose);
+    addTearDown(targetFixture.dispose);
+    await _saveChart(sourceFixture.library, 'legacy-chart', 'Legacy chart');
+    final current = await LibraryStateService(
+      sourceFixture.library,
+    ).exportStateBytes();
+    const codec = PortableContainerCodec();
+    final decoded = codec.decode(
+      current,
+      expectedKind: LibraryStateService.kind,
+    );
+    final metadata = Map<String, Object?>.of(decoded.metadata)
+      ..remove('semanticVariants');
+    final legacy = codec.encode(
+      kind: LibraryStateService.kind,
+      schemaVersion: 1,
+      metadata: metadata,
+      files: [
+        for (final file in decoded.files)
+          PortableContainerFile(path: file.path, bytes: file.bytes),
+      ],
+    );
+
+    await LibraryStateService(
+      targetFixture.library,
+    ).importStateBytes(legacy, mode: StateImportMode.replace);
+
+    expect(await targetFixture.library.loadDraft('legacy-chart'), isNotNull);
+    expect(await targetFixture.library.listSemanticCharts(), isEmpty);
+  });
 
   test(
     'corrupt and cancelled state imports leave live state unchanged',

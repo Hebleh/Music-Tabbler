@@ -34,6 +34,7 @@ Future<void> main() async {
         services: AppServices(
           library: library,
           songVariants: library,
+          semanticCharts: library,
           setlists: library,
           importer: VisualImportService(library),
           exporter: pdfExporter,

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../domain/library_models.dart';
 import '../domain/device_preferences.dart';
+import '../domain/music_models.dart';
 import '../domain/visual_chart_models.dart';
 import 'performance_deck.dart';
 
@@ -84,6 +85,16 @@ abstract interface class SongVariantLibrary {
     VisualChartDraft draft, {
     required String songId,
   });
+}
+
+abstract interface class SemanticChartLibrary {
+  Future<void> saveSemanticChart(
+    SongChart chart, {
+    required String songId,
+    required DateTime updatedAt,
+  });
+  Future<List<SongChart>> listSemanticCharts();
+  Future<SongChart?> loadSemanticChart(String id);
 }
 
 abstract interface class SetlistLibrary {

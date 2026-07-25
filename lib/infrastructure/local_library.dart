@@ -7,6 +7,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../application/service_contracts.dart';
 import '../domain/library_models.dart';
+import '../domain/music_models.dart';
 import '../domain/visual_chart_models.dart';
 
 class StoredAsset {
@@ -21,10 +22,15 @@ class StoredAsset {
   final String path;
 }
 
-class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
+class LocalLibrary
+    implements
+        ChartLibrary,
+        SongVariantLibrary,
+        SemanticChartLibrary,
+        SetlistLibrary {
   LocalLibrary._(this.root, this.assetsDirectory, this._database);
 
-  static const currentSchemaVersion = 4;
+  static const currentSchemaVersion = 5;
 
   final Directory root;
   final Directory assetsDirectory;
@@ -87,6 +93,9 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
             break;
           case 4:
             _migrateToVersion4(database);
+            break;
+          case 5:
+            _migrateToVersion5(database);
             break;
           default:
             throw StateError('Missing library migration $nextVersion.');
@@ -272,6 +281,16 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
     database.execute('''
       CREATE INDEX setlist_entries_chart_variant_id_index
       ON setlist_entries(chart_variant_id);
+    ''');
+  }
+
+  static void _migrateToVersion5(Database database) {
+    database.execute('''
+      CREATE TABLE semantic_charts (
+        id TEXT PRIMARY KEY NOT NULL
+          REFERENCES chart_variants(id) ON DELETE CASCADE,
+        payload_json TEXT NOT NULL
+      );
     ''');
   }
 
@@ -495,6 +514,100 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
   }
 
   @override
+  Future<void> saveSemanticChart(
+    SongChart chart, {
+    required String songId,
+    required DateTime updatedAt,
+  }) async {
+    _inTransaction(() => _saveSemanticChart(chart, songId, updatedAt));
+  }
+
+  void _saveSemanticChart(SongChart chart, String songId, DateTime updatedAt) {
+    final existing = _database.select(
+      'SELECT song_id, kind FROM chart_variants WHERE id = ? LIMIT 1;',
+      [chart.id],
+    );
+    if (existing.isNotEmpty &&
+        (existing.single['song_id'] != songId ||
+            existing.single['kind'] != ChartVariantKind.semantic.name)) {
+      throw StateError(
+        'Semantic chart ${chart.id} conflicts with another variant.',
+      );
+    }
+    final createdAt = existing.isEmpty
+        ? updatedAt.toIso8601String()
+        : (_database.select(
+                'SELECT created_at FROM chart_variants WHERE id = ?;',
+                [chart.id],
+              ).single['created_at']
+              as String);
+    _database.execute(
+      '''
+        INSERT INTO songs (id, title, artist, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          title = excluded.title,
+          artist = excluded.artist,
+          updated_at = excluded.updated_at;
+      ''',
+      [
+        songId,
+        chart.title,
+        chart.artist,
+        createdAt,
+        updatedAt.toIso8601String(),
+      ],
+    );
+    _database.execute(
+      '''
+        INSERT INTO chart_variants (
+          id, song_id, kind, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at;
+      ''',
+      [
+        chart.id,
+        songId,
+        ChartVariantKind.semantic.name,
+        createdAt,
+        updatedAt.toIso8601String(),
+      ],
+    );
+    _database.execute(
+      '''
+        INSERT INTO semantic_charts (id, payload_json)
+        VALUES (?, ?)
+        ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json;
+      ''',
+      [chart.id, chart.encode()],
+    );
+  }
+
+  @override
+  Future<List<SongChart>> listSemanticCharts() async {
+    final rows = _database.select('''
+      SELECT semantic_charts.payload_json
+      FROM semantic_charts
+      JOIN chart_variants ON chart_variants.id = semantic_charts.id
+      ORDER BY chart_variants.updated_at DESC, semantic_charts.id ASC;
+    ''');
+    return rows
+        .map((row) => SongChart.decode(row['payload_json'] as String))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<SongChart?> loadSemanticChart(String id) async {
+    final rows = _database.select(
+      'SELECT payload_json FROM semantic_charts WHERE id = ? LIMIT 1;',
+      [id],
+    );
+    return rows.isEmpty
+        ? null
+        : SongChart.decode(rows.single['payload_json'] as String);
+  }
+
+  @override
   Future<List<LibrarySong>> listSongs() async {
     final rows = _database.select('''
       SELECT id, title, artist, created_at, updated_at
@@ -560,6 +673,9 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
 
   Future<void> installLibraryStateAtomically({
     required List<({VisualChartDraft draft, String songId})> variants,
+    List<({SongChart chart, String songId, DateTime updatedAt})>
+        semanticVariants =
+        const [],
     required List<LibrarySetlist> setlists,
     required bool replace,
   }) async {
@@ -576,6 +692,9 @@ class LocalLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
       }
       for (final variant in variants) {
         _saveDraftAsVariant(variant.draft, variant.songId);
+      }
+      for (final variant in semanticVariants) {
+        _saveSemanticChart(variant.chart, variant.songId, variant.updatedAt);
       }
       for (final setlist in setlists) {
         _saveSetlist(setlist);

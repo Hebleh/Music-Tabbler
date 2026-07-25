@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum NoteValue {
   whole('Semibreve', 4),
   half('Minim', 2),
@@ -9,6 +11,8 @@ enum NoteValue {
 
   final String label;
   final double quarterNotes;
+
+  Map<String, Object> toJson() => {'name': name};
 }
 
 class StringTuning {
@@ -16,6 +20,13 @@ class StringTuning {
 
   final String name;
   final int midiPitch;
+
+  Map<String, Object> toJson() => {'name': name, 'midiPitch': midiPitch};
+
+  factory StringTuning.fromJson(Map<String, Object?> json) => StringTuning(
+    name: json['name']! as String,
+    midiPitch: json['midiPitch']! as int,
+  );
 }
 
 class BassTuning {
@@ -35,6 +46,31 @@ class BassTuning {
       StringTuning(name: 'E', midiPitch: 28),
       StringTuning(name: 'B', midiPitch: 23),
     ],
+  );
+
+  static const eadg = BassTuning(
+    name: '4-string EADG',
+    strings: [
+      StringTuning(name: 'G', midiPitch: 43),
+      StringTuning(name: 'D', midiPitch: 38),
+      StringTuning(name: 'A', midiPitch: 33),
+      StringTuning(name: 'E', midiPitch: 28),
+    ],
+  );
+
+  Map<String, Object> toJson() => {
+    'name': name,
+    'strings': [for (final string in strings) string.toJson()],
+  };
+
+  factory BassTuning.fromJson(Map<String, Object?> json) => BassTuning(
+    name: json['name']! as String,
+    strings: List.unmodifiable(
+      (json['strings']! as List).map(
+        (value) =>
+            StringTuning.fromJson((value as Map).cast<String, Object?>()),
+      ),
+    ),
   );
 }
 
@@ -70,6 +106,22 @@ class TabNote {
       value: value ?? this.value,
     );
   }
+
+  Map<String, Object> toJson() => {
+    'id': id,
+    'beat': beat,
+    'stringIndex': stringIndex,
+    'fret': fret,
+    'value': value.name,
+  };
+
+  factory TabNote.fromJson(Map<String, Object?> json) => TabNote(
+    id: json['id']! as String,
+    beat: (json['beat']! as num).toDouble(),
+    stringIndex: json['stringIndex']! as int,
+    fret: json['fret']! as int,
+    value: NoteValue.values.byName(json['value']! as String),
+  );
 }
 
 class ChartMeasure {
@@ -93,6 +145,22 @@ class ChartMeasure {
       ],
     );
   }
+
+  Map<String, Object> toJson() => {
+    'number': number,
+    'beats': beats,
+    'notes': [for (final note in notes) note.toJson()],
+  };
+
+  factory ChartMeasure.fromJson(Map<String, Object?> json) => ChartMeasure(
+    number: json['number']! as int,
+    beats: (json['beats']! as num).toDouble(),
+    notes: List.unmodifiable(
+      (json['notes']! as List).map(
+        (value) => TabNote.fromJson((value as Map).cast<String, Object?>()),
+      ),
+    ),
+  );
 }
 
 class LyricSyllable {
@@ -119,10 +187,27 @@ class LyricSyllable {
       isBackingVocal: isBackingVocal ?? this.isBackingVocal,
     );
   }
+
+  Map<String, Object> toJson() => {
+    'id': id,
+    'measureIndex': measureIndex,
+    'beat': beat,
+    'text': text,
+    'isBackingVocal': isBackingVocal,
+  };
+
+  factory LyricSyllable.fromJson(Map<String, Object?> json) => LyricSyllable(
+    id: json['id']! as String,
+    measureIndex: json['measureIndex']! as int,
+    beat: (json['beat']! as num).toDouble(),
+    text: json['text']! as String,
+    isBackingVocal: json['isBackingVocal'] as bool? ?? false,
+  );
 }
 
 class SongChart {
   const SongChart({
+    this.id = 'semantic-foundation',
     required this.title,
     required this.artist,
     required this.tuning,
@@ -130,6 +215,9 @@ class SongChart {
     required this.lyrics,
   });
 
+  static const schemaVersion = 1;
+
+  final String id;
   final String title;
   final String artist;
   final BassTuning tuning;
@@ -147,6 +235,7 @@ class SongChart {
 
   SongChart replaceNote(TabNote replacement) {
     return SongChart(
+      id: id,
       title: title,
       artist: artist,
       tuning: tuning,
@@ -159,6 +248,7 @@ class SongChart {
 
   SongChart replaceLyric(LyricSyllable replacement) {
     return SongChart(
+      id: id,
       title: title,
       artist: artist,
       tuning: tuning,
@@ -170,8 +260,69 @@ class SongChart {
     );
   }
 
+  SongChart copyWith({
+    String? id,
+    String? title,
+    String? artist,
+    BassTuning? tuning,
+    List<ChartMeasure>? measures,
+    List<LyricSyllable>? lyrics,
+  }) {
+    return SongChart(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      tuning: tuning ?? this.tuning,
+      measures: measures ?? this.measures,
+      lyrics: lyrics ?? this.lyrics,
+    );
+  }
+
+  Map<String, Object> toJson() => {
+    'schemaVersion': schemaVersion,
+    'id': id,
+    'title': title,
+    'artist': artist,
+    'tuning': tuning.toJson(),
+    'measures': [for (final measure in measures) measure.toJson()],
+    'lyrics': [for (final lyric in lyrics) lyric.toJson()],
+  };
+
+  String encode() => jsonEncode(toJson());
+
+  factory SongChart.fromJson(Map<String, Object?> json) {
+    final version = json['schemaVersion'] as int? ?? 1;
+    if (version != schemaVersion) {
+      throw FormatException('Unsupported semantic chart schema $version.');
+    }
+    return SongChart(
+      id: json['id']! as String,
+      title: json['title']! as String,
+      artist: json['artist']! as String,
+      tuning: BassTuning.fromJson(
+        (json['tuning']! as Map).cast<String, Object?>(),
+      ),
+      measures: List.unmodifiable(
+        (json['measures']! as List).map(
+          (value) =>
+              ChartMeasure.fromJson((value as Map).cast<String, Object?>()),
+        ),
+      ),
+      lyrics: List.unmodifiable(
+        (json['lyrics']! as List).map(
+          (value) =>
+              LyricSyllable.fromJson((value as Map).cast<String, Object?>()),
+        ),
+      ),
+    );
+  }
+
+  factory SongChart.decode(String source) =>
+      SongChart.fromJson((jsonDecode(source) as Map).cast<String, Object?>());
+
   static SongChart foundationExample() {
     return const SongChart(
+      id: 'semantic-foundation',
       title: 'Foundation Groove',
       artist: 'Music Tabbler',
       tuning: BassTuning.beadg,

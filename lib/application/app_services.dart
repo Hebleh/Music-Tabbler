@@ -4,6 +4,7 @@ class AppServices {
   const AppServices({
     required this.library,
     required this.songVariants,
+    required this.semanticCharts,
     required this.setlists,
     required this.importer,
     required this.exporter,
@@ -19,6 +20,7 @@ class AppServices {
 
   final ChartLibrary library;
   final SongVariantLibrary songVariants;
+  final SemanticChartLibrary semanticCharts;
   final SetlistLibrary setlists;
   final VisualImporter importer;
   final ChartPdfExporter exporter;

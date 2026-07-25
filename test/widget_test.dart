@@ -10,6 +10,7 @@ import 'package:music_tabbler/application/service_contracts.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 import 'package:music_tabbler/domain/library_models.dart';
 import 'package:music_tabbler/domain/device_preferences.dart';
+import 'package:music_tabbler/domain/music_models.dart';
 
 void main() {
   testWidgets('opens the semantic sample chart from the song pool', (
@@ -728,6 +729,7 @@ Future<AppServices> _testServices({
   return AppServices(
     library: resolvedLibrary,
     songVariants: resolvedLibrary,
+    semanticCharts: resolvedLibrary,
     setlists: resolvedLibrary,
     importer: importer ?? const _UnusedImporter(),
     exporter: unusedExporter,
@@ -827,8 +829,14 @@ class _RecordingImporter implements VisualImporter {
   Future<List<VisualStrip>> pickPdf() async => [];
 }
 
-class _FakeLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
+class _FakeLibrary
+    implements
+        ChartLibrary,
+        SongVariantLibrary,
+        SemanticChartLibrary,
+        SetlistLibrary {
   final List<VisualChartDraft> drafts = [];
+  final List<SongChart> semanticCharts = [];
   final List<LibrarySetlist> setlists = [];
 
   @override
@@ -917,6 +925,27 @@ class _FakeLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
     VisualChartDraft draft, {
     required String songId,
   }) => saveDraft(draft);
+
+  @override
+  Future<void> saveSemanticChart(
+    SongChart chart, {
+    required String songId,
+    required DateTime updatedAt,
+  }) async {
+    semanticCharts.removeWhere((item) => item.id == chart.id);
+    semanticCharts.add(chart);
+  }
+
+  @override
+  Future<SongChart?> loadSemanticChart(String id) async {
+    for (final chart in semanticCharts) {
+      if (chart.id == id) return chart;
+    }
+    return null;
+  }
+
+  @override
+  Future<List<SongChart>> listSemanticCharts() async => List.of(semanticCharts);
 
   @override
   Future<void> saveSetlist(LibrarySetlist setlist) async {

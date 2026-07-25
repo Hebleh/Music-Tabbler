@@ -4,6 +4,7 @@ import '../../application/app_services.dart';
 import '../../application/service_contracts.dart';
 import '../../domain/library_models.dart';
 import '../../domain/device_preferences.dart';
+import '../../domain/music_models.dart';
 import '../../domain/visual_chart_models.dart';
 import '../chart/chart_editor_screen.dart';
 import '../import/visual_import_screen.dart';
@@ -325,6 +326,26 @@ class _HomeScreenState extends State<HomeScreen> {
     ).showSnackBar(SnackBar(content: Text(error.toString())));
   }
 
+  Future<void> _openSemanticEditor() async {
+    const chartId = 'semantic-foundation';
+    const songId = 'song-semantic-foundation';
+    final chart =
+        await widget.services.semanticCharts.loadSemanticChart(chartId) ??
+        SongChart.foundationExample();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChartEditorScreen(
+          preferences: widget.preferences,
+          onPreferencesChanged: widget.onPreferencesChanged,
+          repository: widget.services.semanticCharts,
+          chart: chart,
+          songId: songId,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -338,14 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onImportPortable: widget.services.songBundles == null
             ? null
             : _importPortableSong,
-        onOpenSemantic: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => ChartEditorScreen(
-              preferences: widget.preferences,
-              onPreferencesChanged: widget.onPreferencesChanged,
-            ),
-          ),
-        ),
+        onOpenSemantic: _openSemanticEditor,
       ),
       _GigsAndSetlists(
         key: ValueKey(_libraryRevision),

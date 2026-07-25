@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/music_models.dart';
 import '../../domain/device_preferences.dart';
+import '../../application/service_contracts.dart';
 import 'tab_chart_view.dart';
 
 class ChartEditorScreen extends StatefulWidget {
@@ -9,10 +10,16 @@ class ChartEditorScreen extends StatefulWidget {
     super.key,
     required this.preferences,
     required this.onPreferencesChanged,
+    required this.repository,
+    required this.chart,
+    required this.songId,
   });
 
   final DevicePreferences preferences;
   final ValueChanged<DevicePreferences> onPreferencesChanged;
+  final SemanticChartLibrary repository;
+  final SongChart chart;
+  final String songId;
 
   @override
   State<ChartEditorScreen> createState() => _ChartEditorScreenState();
@@ -29,11 +36,24 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
   @override
   void initState() {
     super.initState();
-    _chart = SongChart.foundationExample();
+    _chart = widget.chart;
     _selectedNoteId = _chart.measures.first.notes.first.id;
     _showTitle = widget.preferences.showTitle;
     _showTab = widget.preferences.showTab;
     _showNotation = widget.preferences.showNotation;
+  }
+
+  Future<void> _saveChart(SongChart chart) {
+    return widget.repository.saveSemanticChart(
+      chart,
+      songId: widget.songId,
+      updatedAt: DateTime.now().toUtc(),
+    );
+  }
+
+  void _commitChart(SongChart chart) {
+    setState(() => _chart = chart);
+    _saveChart(chart);
   }
 
   void _updateDisplay({bool? showTitle, bool? showTab, bool? showNotation}) {
@@ -135,7 +155,7 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
                   note: selectedNote,
                   tuning: _chart.tuning,
                   onChanged: (note) {
-                    setState(() => _chart = _chart.replaceNote(note));
+                    _commitChart(_chart.replaceNote(note));
                   },
                 ),
                 _BackingVocalEditor(
@@ -144,7 +164,7 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
                   onContrastChanged: (value) =>
                       setState(() => _leadVocalContrast = value),
                   onLyricChanged: (lyric) {
-                    setState(() => _chart = _chart.replaceLyric(lyric));
+                    _commitChart(_chart.replaceLyric(lyric));
                   },
                 ),
               ];
