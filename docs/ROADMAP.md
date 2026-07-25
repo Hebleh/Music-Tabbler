@@ -136,9 +136,9 @@ documented debt unless they materially block gig preparation.
 
 ### Sprint 4 — Semantic foundation
 
-- [ ] **MT-301 — Persist the semantic foundation**
+- [x] **MT-301 — Persist the semantic foundation**
   - Save and reopen current semantic notes, measures, tuning, and lyrics.
-- [ ] **MT-302 — Rhythm and navigation schema**
+- [x] **MT-302 — Rhythm and navigation schema**
   - Exact beats, voices, rests, tuplets, signatures, repeats, endings, sections.
 - [ ] **MT-303 — Instrument, technique, lyric, and confidence schema**
   - Arbitrary tunings/string counts, techniques, lyric alignment, proposals.
