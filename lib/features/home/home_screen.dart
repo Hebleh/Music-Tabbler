@@ -146,8 +146,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Imported ${result.importedVariantIds.length} chart variant(s); '
-            'skipped ${result.skippedVariantIds.length} identical variant(s).',
+            'Imported ${result.importedVariantIds.length} chart variant(s). '
+            'Existing copies are retained as separate variants.',
           ),
         ),
       );

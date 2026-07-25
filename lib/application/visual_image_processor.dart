@@ -34,6 +34,7 @@ class VisualImageProcessor {
     List<VisualStrip> strips, {
     VisualTreatment? globalTreatment,
     double splitDetectedRowsBelowAspectRatio = 2.2,
+    double maximumRowAspectRatio = double.infinity,
   }) {
     var decoded = img.decodeImage(sourceBytes);
     if (decoded == null) {
@@ -45,6 +46,7 @@ class VisualImageProcessor {
         _compactImage(
           _processDecoded(decoded, strip, globalTreatment: globalTreatment),
           splitDetectedRowsBelowAspectRatio: splitDetectedRowsBelowAspectRatio,
+          maximumRowAspectRatio: maximumRowAspectRatio,
         ),
     ];
   }
@@ -124,24 +126,30 @@ class VisualImageProcessor {
   List<ProcessedExportImage> _compactImage(
     img.Image image, {
     required double splitDetectedRowsBelowAspectRatio,
+    required double maximumRowAspectRatio,
   }) {
     final rendered = Uint8List.fromList(img.encodePng(image, level: 3));
     final detected = const HorizontalRowDetector().detect(rendered);
-    if (detected.isEmpty) {
-      return [
-        ProcessedExportImage(
-          rendered,
-          image.width / image.height,
-          sourceRect: const NormalizedRect.full(),
-        ),
-      ];
-    }
-    final rows = image.width / image.height < splitDetectedRowsBelowAspectRatio
+    final rows = detected.isEmpty
+        ? [const NormalizedRect.full()]
+        : image.width / image.height < splitDetectedRowsBelowAspectRatio
         ? detected
         : [NormalizedRect(0, detected.first.top, 1, detected.last.bottom)];
-    return [
+    final safeRows = [
       for (final row in rows)
+        ..._splitWideRow(image, row, maximumRowAspectRatio),
+    ];
+    return [
+      for (final row in safeRows)
         () {
+          final left = (row.left * image.width).floor().clamp(
+            0,
+            image.width - 1,
+          );
+          final right = (row.right * image.width).ceil().clamp(
+            left + 1,
+            image.width,
+          );
           final top = (row.top * image.height).floor().clamp(
             0,
             image.height - 1,
@@ -153,14 +161,102 @@ class VisualImageProcessor {
           final bytes = _encodeRect(image, row);
           return ProcessedExportImage(
             bytes,
-            image.width / (bottom - top),
+            (right - left) / (bottom - top),
             sourceRect: row,
           );
         }(),
     ];
   }
 
+  List<NormalizedRect> _splitWideRow(
+    img.Image image,
+    NormalizedRect row,
+    double maximumAspectRatio,
+  ) {
+    if (!maximumAspectRatio.isFinite || maximumAspectRatio <= 0) return [row];
+    final width = image.width * row.width;
+    final height = image.height * row.height;
+    final aspect = width / height;
+    if (aspect <= maximumAspectRatio) return [row];
+    final count = (aspect / maximumAspectRatio).ceil();
+    final left = (row.left * image.width).round();
+    final right = (row.right * image.width).round();
+    final top = (row.top * image.height).floor().clamp(0, image.height - 1);
+    final bottom = (row.bottom * image.height).ceil().clamp(
+      top + 1,
+      image.height,
+    );
+    final boundaries = <int>[left];
+    for (var index = 1; index < count; index += 1) {
+      final target = left + ((right - left) * index / count).round();
+      final radius = ((right - left) / count * 0.12).round().clamp(4, 80);
+      boundaries.add(
+        _safestVerticalCut(image, target, radius, left, right, top, bottom),
+      );
+    }
+    boundaries.add(right);
+    return [
+      for (var index = 0; index < boundaries.length - 1; index += 1)
+        NormalizedRect(
+          boundaries[index] / image.width,
+          row.top,
+          boundaries[index + 1] / image.width,
+          row.bottom,
+        ),
+    ];
+  }
+
+  int _safestVerticalCut(
+    img.Image image,
+    int target,
+    int radius,
+    int left,
+    int right,
+    int top,
+    int bottom,
+  ) {
+    final start = (target - radius).clamp(left + 2, right - 3);
+    final end = (target + radius).clamp(start + 1, right - 2);
+    final background = _edgeBackground(image, left, right, top, bottom);
+    final yStep = ((bottom - top) / 500).ceil().clamp(1, bottom - top);
+    var best = target.clamp(start, end);
+    var bestScore = double.infinity;
+    for (var x = start; x <= end; x += 1) {
+      var score = 0.0;
+      for (var y = top; y < bottom; y += yStep) {
+        score += (_luminance(image.getPixel(x, y)) - background).abs();
+      }
+      final targetPenalty = (x - target).abs() * 0.01;
+      if (score + targetPenalty < bestScore) {
+        bestScore = score + targetPenalty;
+        best = x;
+      }
+    }
+    return best;
+  }
+
+  double _edgeBackground(
+    img.Image image,
+    int left,
+    int right,
+    int top,
+    int bottom,
+  ) {
+    final samples = [
+      image.getPixel(left, top),
+      image.getPixel(right - 1, top),
+      image.getPixel(left, bottom - 1),
+      image.getPixel(right - 1, bottom - 1),
+    ];
+    return samples.map(_luminance).reduce((a, b) => a + b) / samples.length;
+  }
+
+  double _luminance(img.Pixel pixel) =>
+      pixel.r * 0.2126 + pixel.g * 0.7152 + pixel.b * 0.0722;
+
   Uint8List _encodeRect(img.Image image, NormalizedRect row) {
+    final left = (row.left * image.width).floor().clamp(0, image.width - 1);
+    final right = (row.right * image.width).ceil().clamp(left + 1, image.width);
     final top = (row.top * image.height).floor().clamp(0, image.height - 1);
     final bottom = (row.bottom * image.height).ceil().clamp(
       top + 1,
@@ -168,9 +264,9 @@ class VisualImageProcessor {
     );
     final cropped = img.copyCrop(
       image,
-      x: 0,
+      x: left,
       y: top,
-      width: image.width,
+      width: right - left,
       height: bottom - top,
     );
     return Uint8List.fromList(img.encodePng(cropped, level: 3));

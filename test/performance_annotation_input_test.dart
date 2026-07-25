@@ -45,6 +45,7 @@ void main() {
     tester,
   ) async {
     List<NormalizedPoint>? captured;
+    AnnotationTool? capturedTool;
     await tester.pumpWidget(
       MaterialApp(
         home: Center(
@@ -52,7 +53,10 @@ void main() {
             deck: deck,
             page: page,
             annotationTool: AnnotationTool.draw,
-            onStrokeCompleted: (_, points) => captured = points,
+            onStrokeCompleted: (_, points, tool) {
+              captured = points;
+              capturedTool = tool;
+            },
           ),
         ),
       ),
@@ -100,12 +104,14 @@ void main() {
     expect(captured!.first.pressure, 0.25);
     expect(captured!.last.pressure, 0.75);
     expect(captured!.last.x, closeTo(0.9, 0.01));
+    expect(capturedTool, AnnotationTool.draw);
   });
 
   testWidgets('inverted stylus uses the eraser without changing tools', (
     tester,
   ) async {
-    NormalizedPoint? erased;
+    List<NormalizedPoint>? erased;
+    var eraseCallbacks = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: Center(
@@ -113,7 +119,10 @@ void main() {
             deck: deck,
             page: page,
             annotationTool: AnnotationTool.draw,
-            onEraseAt: (_, point) => erased = point,
+            onEraseAt: (_, points) {
+              eraseCallbacks += 1;
+              erased = points;
+            },
           ),
         ),
       ),
@@ -128,17 +137,27 @@ void main() {
       ),
     );
     await tester.sendEventToBinding(
+      PointerMoveEvent(
+        pointer: 3,
+        position: origin + const Offset(120, 55),
+        delta: const Offset(20, 5),
+        kind: PointerDeviceKind.invertedStylus,
+      ),
+    );
+    await tester.sendEventToBinding(
       PointerUpEvent(
         pointer: 3,
-        position: origin + const Offset(100, 50),
+        position: origin + const Offset(120, 55),
         kind: PointerDeviceKind.invertedStylus,
       ),
     );
     await tester.pump();
 
     expect(erased, isNotNull);
-    expect(erased!.x, closeTo(0.5, 0.01));
-    expect(erased!.y, closeTo(0.5, 0.01));
+    expect(eraseCallbacks, 1);
+    expect(erased, hasLength(2));
+    expect(erased!.first.x, closeTo(0.5, 0.01));
+    expect(erased!.first.y, closeTo(0.5, 0.01));
   });
 }
 

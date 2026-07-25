@@ -143,17 +143,18 @@ class _PerformancePreviewScreenState extends State<PerformancePreviewScreen> {
   }
 }
 
-enum AnnotationTool { none, draw, erase }
+enum AnnotationTool { none, draw, highlight, erase }
 
 typedef PerformanceStrokeCallback =
     void Function(
       PerformanceDeckElement element,
       List<NormalizedPoint> rowLocalPoints,
+      AnnotationTool tool,
     );
 typedef PerformanceEraseCallback =
     void Function(
       PerformanceDeckElement element,
-      NormalizedPoint rowLocalPoint,
+      List<NormalizedPoint> rowLocalPoints,
     );
 
 class PerformanceDeckPageView extends StatelessWidget {
@@ -176,34 +177,38 @@ class PerformanceDeckPageView extends StatelessWidget {
   Widget build(BuildContext context) {
     final contentWidth = deck.pageWidth - deck.margin * 2;
     final contentHeight = deck.pageHeight - deck.margin * 2;
-    return AspectRatio(
-      aspectRatio: deck.pageWidth / deck.pageHeight,
-      child: ColoredBox(
-        color: Colors.white,
-        child: Padding(
-          padding: EdgeInsets.all(deck.margin),
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: contentWidth,
-              height: contentHeight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (
-                    var index = 0;
-                    index < page.elements.length;
-                    index += 1
-                  ) ...[
-                    if (index > 0) SizedBox(height: deck.gap),
-                    _PerformanceElementView(
-                      element: page.elements[index],
-                      annotationTool: annotationTool,
-                      onStrokeCompleted: onStrokeCompleted,
-                      onEraseAt: onEraseAt,
-                    ),
+    return FittedBox(
+      fit: BoxFit.contain,
+      child: SizedBox(
+        width: deck.pageWidth,
+        height: deck.pageHeight,
+        child: ColoredBox(
+          color: Colors.white,
+          child: Padding(
+            padding: EdgeInsets.all(deck.margin),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: contentWidth,
+                height: contentHeight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (
+                      var index = 0;
+                      index < page.elements.length;
+                      index += 1
+                    ) ...[
+                      if (index > 0) SizedBox(height: deck.gap),
+                      _PerformanceElementView(
+                        element: page.elements[index],
+                        annotationTool: annotationTool,
+                        onStrokeCompleted: onStrokeCompleted,
+                        onEraseAt: onEraseAt,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -233,8 +238,18 @@ class _PerformanceElementView extends StatefulWidget {
 
 class _PerformanceElementViewState extends State<_PerformanceElementView> {
   final _currentPoints = <NormalizedPoint>[];
+  final _pendingStrokes = <VisualAnnotationStroke>[];
   int? _activePointer;
   PointerDeviceKind? _activeKind;
+
+  @override
+  void didUpdateWidget(covariant _PerformanceElementView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.element.annotations.length >
+        oldWidget.element.annotations.length) {
+      _pendingStrokes.clear();
+    }
+  }
 
   NormalizedPoint _point(PointerEvent event, Size size) {
     final range = event.pressureMax - event.pressureMin;
@@ -273,7 +288,7 @@ class _PerformanceElementViewState extends State<_PerformanceElementView> {
     final box = context.findRenderObject()! as RenderBox;
     final point = _point(event, box.size);
     if (tool == AnnotationTool.erase) {
-      widget.onEraseAt?.call(widget.element, point);
+      _currentPoints.add(point);
       return;
     }
     setState(() => _currentPoints.add(point));
@@ -284,21 +299,40 @@ class _PerformanceElementViewState extends State<_PerformanceElementView> {
     final box = context.findRenderObject()! as RenderBox;
     final point = _point(event, box.size);
     if (_toolFor(event) == AnnotationTool.erase) {
-      widget.onEraseAt?.call(widget.element, point);
+      _currentPoints.add(point);
       return;
     }
-    if (_toolFor(event) == AnnotationTool.draw) {
+    if (_toolFor(event) == AnnotationTool.draw ||
+        _toolFor(event) == AnnotationTool.highlight) {
+      if (_currentPoints.isNotEmpty) {
+        final previous = _currentPoints.last;
+        final dx = previous.x - point.x;
+        final dy = previous.y - point.y;
+        if (dx * dx + dy * dy < 0.000004) return;
+      }
       setState(() => _currentPoints.add(point));
     }
   }
 
   void _pointerUp(PointerEvent event) {
     if (event.pointer != _activePointer) return;
-    if (_toolFor(event) == AnnotationTool.draw && _currentPoints.length >= 2) {
+    final tool = _toolFor(event);
+    if ((tool == AnnotationTool.draw || tool == AnnotationTool.highlight) &&
+        _currentPoints.length >= 2) {
+      final pending = VisualAnnotationStroke(
+        id: 'pending-${DateTime.now().microsecondsSinceEpoch}',
+        points: List.unmodifiable(_currentPoints),
+        colorArgb: tool == AnnotationTool.highlight ? 0x66FFEB3B : 0xFFFFD740,
+        width: tool == AnnotationTool.highlight ? 0.035 : 0.004,
+      );
+      setState(() => _pendingStrokes.add(pending));
       widget.onStrokeCompleted?.call(
         widget.element,
         List.unmodifiable(_currentPoints),
+        tool,
       );
+    } else if (tool == AnnotationTool.erase && _currentPoints.isNotEmpty) {
+      widget.onEraseAt?.call(widget.element, List.unmodifiable(_currentPoints));
     }
     _clearPointer();
   }
@@ -377,8 +411,9 @@ class _PerformanceElementViewState extends State<_PerformanceElementView> {
           if (element.annotationsVisible)
             CustomPaint(
               painter: _AnnotationPainter(
-                strokes: element.annotations,
+                strokes: [...element.annotations, ..._pendingStrokes],
                 currentPoints: _currentPoints,
+                currentTool: widget.annotationTool,
               ),
             ),
           if (widget.annotationTool != AnnotationTool.none)
@@ -404,10 +439,12 @@ class _AnnotationPainter extends CustomPainter {
   const _AnnotationPainter({
     required this.strokes,
     required this.currentPoints,
+    required this.currentTool,
   });
 
   final List<VisualAnnotationStroke> strokes;
   final List<NormalizedPoint> currentPoints;
+  final AnnotationTool currentTool;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -420,7 +457,15 @@ class _AnnotationPainter extends CustomPainter {
         stroke.width,
       );
     }
-    _paintStroke(canvas, size, currentPoints, const Color(0xFFFFD740), 0.004);
+    _paintStroke(
+      canvas,
+      size,
+      currentPoints,
+      currentTool == AnnotationTool.highlight
+          ? const Color(0x66FFEB3B)
+          : const Color(0xFFFFD740),
+      currentTool == AnnotationTool.highlight ? 0.035 : 0.004,
+    );
   }
 
   void _paintStroke(

@@ -138,6 +138,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Visual chart editor'), findsOneWidget);
+    expect(
+      find.text('The link is saved as source information only.'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('does not download or scrape Songsterr'),
+      findsOneWidget,
+    );
     await tester.tap(find.byTooltip('Source details'));
     await tester.pumpAndSettle();
     expect(find.text('Songsterr'), findsOneWidget);
@@ -629,12 +637,6 @@ void main() {
     expect(find.byTooltip('Next page'), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('Use Exit to leave gig mode safely.'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Exit'));
-    await tester.pumpAndSettle();
-
     expect(performanceMode.values.last, isFalse);
     expect(find.text('Gig'), findsWidgets);
   });

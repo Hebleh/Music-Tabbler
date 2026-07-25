@@ -135,6 +135,54 @@ void main() {
     expect(batches[0].single.sourceRect.right, 1);
   });
 
+  test(
+    'wide rows split into safe horizontal segments for readable density',
+    () {
+      final source = img.Image(width: 2400, height: 100);
+      img.fill(source, color: img.ColorRgb8(255, 255, 255));
+      for (var x = 0; x < source.width; x++) {
+        for (final y in [30, 40, 50, 60]) {
+          source.setPixelRgb(x, y, 80, 80, 80);
+        }
+      }
+      // Dense note-shaped regions make the midpoint less desirable than the
+      // surrounding blank measure space.
+      img.fillRect(
+        source,
+        x1: 1170,
+        y1: 10,
+        x2: 1230,
+        y2: 90,
+        color: img.ColorRgb8(0, 0, 0),
+      );
+
+      final rows = const VisualImageProcessor().processForExportBatch(
+        Uint8List.fromList(img.encodePng(source)),
+        const [
+          VisualStrip(
+            id: 'wide',
+            assetHash: 'hash',
+            assetExtension: 'png',
+            pixelWidth: 2400,
+            pixelHeight: 100,
+          ),
+        ],
+        maximumRowAspectRatio: 19.2,
+      ).single;
+
+      expect(rows, hasLength(2));
+      expect(
+        rows,
+        everyElement(
+          predicate<ProcessedExportImage>((row) => row.aspectRatio <= 19.2),
+        ),
+      );
+      expect(rows.first.sourceRect.left, 0);
+      expect(rows.last.sourceRect.right, 1);
+      expect(rows.first.sourceRect.right, rows.last.sourceRect.left);
+    },
+  );
+
   test('export compaction splits a tall image only across a blank band', () {
     final source = img.Image(width: 400, height: 500);
     img.fill(source, color: img.ColorRgb8(255, 255, 255));

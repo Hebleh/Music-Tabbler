@@ -39,6 +39,31 @@ class PerformanceDeckElement {
   final bool annotationsVisible;
   final bool includeAnnotationsInPdf;
 
+  PerformanceDeckElement copyWith({
+    List<VisualAnnotationStroke>? annotations,
+    bool? annotationsVisible,
+    bool? includeAnnotationsInPdf,
+  }) {
+    return PerformanceDeckElement(
+      kind: kind,
+      entryIndex: entryIndex,
+      entryId: entryId,
+      width: width,
+      height: height,
+      chartVariantId: chartVariantId,
+      sourceStripId: sourceStripId,
+      sourceRowRect: sourceRowRect,
+      title: title,
+      artist: artist,
+      rowIndex: rowIndex,
+      imageBytes: imageBytes,
+      annotations: annotations ?? this.annotations,
+      annotationsVisible: annotationsVisible ?? this.annotationsVisible,
+      includeAnnotationsInPdf:
+          includeAnnotationsInPdf ?? this.includeAnnotationsInPdf,
+    );
+  }
+
   Map<String, Object?> toMessage() => {
     'kind': kind.name,
     'entryIndex': entryIndex,
@@ -144,6 +169,19 @@ class PerformanceDeck {
   final double margin;
   final double gap;
   final List<PerformanceDeckPage> pages;
+
+  PerformanceDeck copyWith({List<PerformanceDeckPage>? pages}) {
+    return PerformanceDeck(
+      setlistId: setlistId,
+      setlistName: setlistName,
+      density: density,
+      pageWidth: pageWidth,
+      pageHeight: pageHeight,
+      margin: margin,
+      gap: gap,
+      pages: pages ?? this.pages,
+    );
+  }
 
   Map<String, Object?> toMessage() => {
     'setlistId': setlistId,

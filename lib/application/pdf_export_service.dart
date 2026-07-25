@@ -242,6 +242,9 @@ class SetlistA4Layout {
         );
         continue;
       }
+      // A song occurrence is a stage-navigation boundary. Keeping it on a
+      // fresh page makes preview, gig mode, and exported PDFs agree.
+      finishPage();
       if (entry.aspectRatios.isEmpty) {
         throw StateError(
           'Set item ${entry.entryIndex + 1} has no tab rows to export.',
@@ -430,6 +433,7 @@ class PdfExportService
           'globalTreatment': draft.globalTreatment?.name,
           'splitDetectedRowsBelowAspectRatio':
               density.splitDetectedRowsBelowAspectRatio,
+          'maximumRowAspectRatio': density.maximumRowAspectRatio,
         }),
       );
     }
@@ -625,6 +629,8 @@ List<Map<String, Object>> _processAssetForExport(Map<String, Object?> request) {
     globalTreatment: treatment,
     splitDetectedRowsBelowAspectRatio:
         (request['splitDetectedRowsBelowAspectRatio']! as num).toDouble(),
+    maximumRowAspectRatio: (request['maximumRowAspectRatio']! as num)
+        .toDouble(),
   );
   return [
     for (var stripIndex = 0; stripIndex < batches.length; stripIndex += 1)
@@ -787,6 +793,7 @@ Map<String, Object?> _buildPerformanceDeckMessage(
           (item['assetPaths']! as Map).cast<String, String>(),
           splitDetectedRowsBelowAspectRatio:
               settings.splitDetectedRowsBelowAspectRatio,
+          maximumRowAspectRatio: settings.maximumRowAspectRatio,
         );
       } catch (error) {
         throw SetlistPdfExportException(
@@ -995,6 +1002,7 @@ List<Map<String, Object>> _processDraftForSetlist(
   VisualChartDraft draft,
   Map<String, String> assetPaths, {
   required double splitDetectedRowsBelowAspectRatio,
+  required double maximumRowAspectRatio,
 }) {
   final grouped = <String, List<(int, VisualStrip)>>{};
   for (var index = 0; index < draft.strips.length; index += 1) {
@@ -1013,6 +1021,7 @@ List<Map<String, Object>> _processDraftForSetlist(
       [for (final item in entry.value) item.$2],
       globalTreatment: draft.globalTreatment,
       splitDetectedRowsBelowAspectRatio: splitDetectedRowsBelowAspectRatio,
+      maximumRowAspectRatio: maximumRowAspectRatio,
     );
     for (var stripIndex = 0; stripIndex < batches.length; stripIndex += 1) {
       for (
@@ -1113,6 +1122,13 @@ class _ExportDensitySettings {
 
   final A4StripLayout layout;
   final double splitDetectedRowsBelowAspectRatio;
+
+  double get maximumRowAspectRatio {
+    if (layout.minimumRowHeight <= 0) return double.infinity;
+    final availableWidth = layout.pageWidth - layout.margin * 2;
+    return availableWidth /
+        (layout.minimumRowHeight * layout.minimumRowHeightTolerance);
+  }
 
   static _ExportDensitySettings forDensity(VisualExportDensity density) {
     return switch (density) {

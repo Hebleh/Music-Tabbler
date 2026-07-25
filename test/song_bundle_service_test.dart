@@ -90,7 +90,7 @@ void main() {
   );
 
   test(
-    'identical imports skip and divergent IDs import as new variants',
+    'identical and divergent imports are retained as new variants',
     () async {
       final sourceDirectory = await Directory.systemTemp.createTemp(
         'music_tabbler_mtsong_conflict_source_',
@@ -126,9 +126,10 @@ void main() {
       final divergent = await service.importSongBytes(bundle);
 
       expect(first.importedVariantIds, ['same-id']);
-      expect(second.skippedVariantIds, ['same-id']);
+      expect(second.skippedVariantIds, isEmpty);
+      expect(second.importedVariantIds.single, isNot('same-id'));
       expect(divergent.importedVariantIds.single, isNot('same-id'));
-      expect(await target.listDrafts(), hasLength(2));
+      expect(await target.listDrafts(), hasLength(3));
       expect(await target.listSongs(), hasLength(2));
       expect((await target.loadDraft('same-id'))!.title, 'Local edit');
     },

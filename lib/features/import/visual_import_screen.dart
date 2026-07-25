@@ -395,7 +395,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                     ),
                     Expanded(
                       child: _draft.strips.isEmpty
-                          ? const _EmptyImportState()
+                          ? _EmptyImportState(sourceUrl: _draft.provenance?.url)
                           : Scrollbar(
                               controller: _editorScrollController,
                               thumbVisibility: true,
@@ -960,21 +960,37 @@ class _ProvenanceDialogResult {
 }
 
 class _EmptyImportState extends StatelessWidget {
-  const _EmptyImportState();
+  const _EmptyImportState({this.sourceUrl});
+
+  final String? sourceUrl;
 
   @override
   Widget build(BuildContext context) {
-    return const SingleChildScrollView(
-      padding: EdgeInsets.all(12),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.view_stream_outlined, size: 48),
-            SizedBox(height: 8),
-            Text('Add screenshots or a PDF to create horizontal tab rows.'),
-            SizedBox(height: 4),
-            Text(
+            const Icon(Icons.view_stream_outlined, size: 48),
+            const SizedBox(height: 8),
+            if (sourceUrl != null) ...[
+              const Text(
+                'The link is saved as source information only.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Music Tabbler does not download or scrape Songsterr. '
+                'Use Add PNG / JPEG, Add PDF, or Ctrl+V to attach the tab.',
+                textAlign: TextAlign.center,
+              ),
+            ] else
+              const Text(
+                'Add screenshots or a PDF to create horizontal tab rows.',
+              ),
+            const SizedBox(height: 4),
+            const Text(
               'Original files remain untouched. Crop and display edits are reversible.',
             ),
           ],

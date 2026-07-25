@@ -70,7 +70,7 @@ void main() {
     expect(pages.single.strips.single.height, closeTo(45.73, 0.1));
   });
 
-  test('setlist layout packs following songs and repeats their boundaries', () {
+  test('every setlist song occurrence starts on a fresh page', () {
     final layout = SetlistA4Layout.fromStripLayout(const A4StripLayout());
 
     final pages = layout.plan(const [
@@ -91,23 +91,19 @@ void main() {
       ),
     ]);
 
-    expect(pages, hasLength(1));
+    expect(pages, hasLength(3));
     expect(
-      pages.single.elements.map((element) => element.kind),
-      orderedEquals([
-        PlannedSetlistElementKind.header,
-        PlannedSetlistElementKind.strip,
-        PlannedSetlistElementKind.header,
-        PlannedSetlistElementKind.strip,
-        PlannedSetlistElementKind.header,
-        PlannedSetlistElementKind.strip,
-      ]),
+      pages.map((page) => page.elements.first.entryIndex),
+      orderedEquals([0, 1, 2]),
     );
     expect(
-      pages.single.elements
-          .where((element) => element.kind == PlannedSetlistElementKind.header)
-          .map((element) => element.entryIndex),
-      orderedEquals([0, 1, 2]),
+      pages.expand((page) => page.elements).map((element) => element.kind),
+      everyElement(
+        anyOf(
+          PlannedSetlistElementKind.header,
+          PlannedSetlistElementKind.strip,
+        ),
+      ),
     );
   });
 

@@ -33,10 +33,12 @@ class _GigModeScreenState extends State<GigModeScreen>
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   late LibrarySetlist _setlist;
   late Future<PerformanceDeck> _deck;
+  PerformanceDeck? _resolvedDeck;
   List<VisualChartDraft> _availableDrafts = const [];
   Map<String, VisualChartDraft> _draftsByVariant = const {};
   var _pageIndex = 0;
   var _allowExit = false;
+  var _exiting = false;
   var _annotationTool = AnnotationTool.none;
   _AnnotationUndo? _lastAnnotation;
 
@@ -66,11 +68,11 @@ class _GigModeScreenState extends State<GigModeScreen>
     super.dispose();
   }
 
-  Future<PerformanceDeck> _buildDeck() {
-    return widget.services.performanceDeckBuilder.buildPerformanceDeck(
-      _setlist,
-      density: widget.density,
-    );
+  Future<PerformanceDeck> _buildDeck() async {
+    final deck = await widget.services.performanceDeckBuilder
+        .buildPerformanceDeck(_setlist, density: widget.density);
+    _resolvedDeck = deck;
+    return deck;
   }
 
   Future<void> _loadDrafts() async {
@@ -231,6 +233,7 @@ class _GigModeScreenState extends State<GigModeScreen>
   Future<void> _saveAnnotatedDraft(
     PerformanceDeckElement element,
     VisualStrip Function(VisualStrip strip) update,
+    PerformanceDeckElement Function(PerformanceDeckElement element) patch,
   ) async {
     final variantId = element.chartVariantId;
     final stripId = element.sourceStripId;
@@ -249,15 +252,37 @@ class _GigModeScreenState extends State<GigModeScreen>
     );
     await widget.services.library.saveDraft(updated);
     if (!mounted) return;
+    final currentDeck = _resolvedDeck;
+    final patchedDeck = currentDeck?.copyWith(
+      pages: [
+        for (final page in currentDeck.pages)
+          PerformanceDeckPage(
+            id: page.id,
+            index: page.index,
+            elements: [
+              for (final deckElement in page.elements)
+                if (deckElement.chartVariantId == variantId &&
+                    deckElement.sourceStripId == stripId)
+                  patch(deckElement)
+                else
+                  deckElement,
+            ],
+          ),
+      ],
+    );
     setState(() {
       _draftsByVariant = {..._draftsByVariant, variantId: updated};
-      _deck = _buildDeck();
+      if (patchedDeck != null) {
+        _resolvedDeck = patchedDeck;
+        _deck = Future.value(patchedDeck);
+      }
     });
   }
 
   Future<void> _addStroke(
     PerformanceDeckElement element,
     List<NormalizedPoint> rowLocalPoints,
+    AnnotationTool tool,
   ) async {
     final row = element.sourceRowRect;
     if (row == null || rowLocalPoints.length < 2) return;
@@ -266,11 +291,13 @@ class _GigModeScreenState extends State<GigModeScreen>
       points: List.unmodifiable([
         for (final point in rowLocalPoints)
           NormalizedPoint(
-            point.x,
+            row.left + point.x * row.width,
             row.top + point.y * row.height,
             pressure: point.pressure,
           ).clamp(),
       ]),
+      colorArgb: tool == AnnotationTool.highlight ? 0x66FFEB3B : 0xFFFFD740,
+      width: tool == AnnotationTool.highlight ? 0.035 : 0.004,
     );
     _lastAnnotation = _AnnotationUndo(
       chartVariantId: element.chartVariantId!,
@@ -280,41 +307,72 @@ class _GigModeScreenState extends State<GigModeScreen>
     await _saveAnnotatedDraft(
       element,
       (strip) => strip.copyWith(annotations: [...strip.annotations, stroke]),
+      (deckElement) {
+        if (deckElement.sourceRowRect != row) return deckElement;
+        return deckElement.copyWith(
+          annotations: [
+            ...deckElement.annotations,
+            VisualAnnotationStroke(
+              id: stroke.id,
+              points: rowLocalPoints,
+              colorArgb: stroke.colorArgb,
+              width: stroke.width,
+            ),
+          ],
+        );
+      },
     );
   }
 
   Future<void> _eraseAt(
     PerformanceDeckElement element,
-    NormalizedPoint rowLocalPoint,
+    List<NormalizedPoint> rowLocalPoints,
   ) async {
     final row = element.sourceRowRect;
     if (row == null) return;
-    final sourcePoint = NormalizedPoint(
-      rowLocalPoint.x,
-      row.top + rowLocalPoint.y * row.height,
-    );
-    await _saveAnnotatedDraft(element, (strip) {
-      VisualAnnotationStroke? nearest;
-      var nearestDistance = double.infinity;
-      for (final stroke in strip.annotations) {
-        for (final point in stroke.points) {
-          final dx = point.x - sourcePoint.x;
-          final dy = point.y - sourcePoint.y;
-          final distance = dx * dx + dy * dy;
-          if (distance < nearestDistance) {
-            nearestDistance = distance;
-            nearest = stroke;
+    final sourcePoints = [
+      for (final point in rowLocalPoints)
+        NormalizedPoint(
+          row.left + point.x * row.width,
+          row.top + point.y * row.height,
+        ),
+    ];
+    final removedIds = <String>{};
+    await _saveAnnotatedDraft(
+      element,
+      (strip) {
+        const threshold = 0.0025;
+        for (final stroke in strip.annotations) {
+          var erase = false;
+          for (final point in stroke.points) {
+            for (final sourcePoint in sourcePoints) {
+              final dx = point.x - sourcePoint.x;
+              final dy = point.y - sourcePoint.y;
+              if (dx * dx + dy * dy <= threshold) {
+                erase = true;
+                break;
+              }
+            }
+            if (erase) break;
           }
+          if (erase) removedIds.add(stroke.id);
         }
-      }
-      if (nearest == null || nearestDistance > 0.0025) return strip;
-      _lastAnnotation = null;
-      return strip.copyWith(
-        annotations: strip.annotations
-            .where((stroke) => stroke.id != nearest!.id)
-            .toList(growable: false),
-      );
-    });
+        if (removedIds.isEmpty) return strip;
+        _lastAnnotation = null;
+        return strip.copyWith(
+          annotations: strip.annotations
+              .where((stroke) => !removedIds.contains(stroke.id))
+              .toList(growable: false),
+        );
+      },
+      (deckElement) {
+        return deckElement.copyWith(
+          annotations: deckElement.annotations
+              .where((stroke) => !removedIds.contains(stroke.id))
+              .toList(growable: false),
+        );
+      },
+    );
   }
 
   Future<void> _undoAnnotation(PerformanceDeckElement element) async {
@@ -331,6 +389,11 @@ class _GigModeScreenState extends State<GigModeScreen>
             .where((stroke) => stroke.id != undo.stroke.id)
             .toList(growable: false),
       ),
+      (deckElement) => deckElement.copyWith(
+        annotations: deckElement.annotations
+            .where((stroke) => stroke.id != undo.stroke.id)
+            .toList(growable: false),
+      ),
     );
     if (mounted) setState(() => _lastAnnotation = null);
   }
@@ -341,6 +404,9 @@ class _GigModeScreenState extends State<GigModeScreen>
     await _saveAnnotatedDraft(
       element,
       (strip) => strip.copyWith(annotationsVisible: !strip.annotationsVisible),
+      (deckElement) => deckElement.copyWith(
+        annotationsVisible: !deckElement.annotationsVisible,
+      ),
     );
   }
 
@@ -350,7 +416,79 @@ class _GigModeScreenState extends State<GigModeScreen>
       (strip) => strip.copyWith(
         includeAnnotationsInPdf: !strip.includeAnnotationsInPdf,
       ),
+      (deckElement) => deckElement.copyWith(
+        includeAnnotationsInPdf: !deckElement.includeAnnotationsInPdf,
+      ),
     );
+  }
+
+  Future<void> _clearAllPerformanceNotes() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear all performance notes?'),
+        content: const Text(
+          'This removes pen strokes and performance highlights from every '
+          'song in this gig. Chart-editor lyric highlights are not changed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Clear performance notes'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final variantIds = _setlist.entries
+        .map((entry) => entry.chartVariantId)
+        .whereType<String>()
+        .toSet();
+    final updatedDrafts = <String, VisualChartDraft>{};
+    for (final variantId in variantIds) {
+      final draft =
+          _draftsByVariant[variantId] ??
+          await widget.services.library.loadDraft(variantId);
+      if (draft == null) continue;
+      final updated = draft.copyWith(
+        updatedAt: DateTime.now().toUtc(),
+        strips: [
+          for (final strip in draft.strips)
+            strip.copyWith(annotations: const []),
+        ],
+      );
+      await widget.services.library.saveDraft(updated);
+      updatedDrafts[variantId] = updated;
+    }
+    if (!mounted) return;
+    final currentDeck = _resolvedDeck;
+    setState(() {
+      _lastAnnotation = null;
+      _draftsByVariant = {..._draftsByVariant, ...updatedDrafts};
+      if (currentDeck != null) {
+        final patched = currentDeck.copyWith(
+          pages: [
+            for (final page in currentDeck.pages)
+              PerformanceDeckPage(
+                id: page.id,
+                index: page.index,
+                elements: [
+                  for (final element in page.elements)
+                    element.kind == PerformanceElementKind.strip
+                        ? element.copyWith(annotations: const [])
+                        : element,
+                ],
+              ),
+          ],
+        );
+        _resolvedDeck = patched;
+        _deck = Future.value(patched);
+      }
+    });
   }
 
   void _jumpToEntry(PerformanceDeck deck, int entryIndex) {
@@ -368,7 +506,14 @@ class _GigModeScreenState extends State<GigModeScreen>
   }
 
   Future<void> _exit() async {
-    await widget.services.performanceMode.setActive(false);
+    if (_exiting) return;
+    _exiting = true;
+    try {
+      await widget.services.performanceMode.setActive(false);
+    } catch (_) {
+      // Navigation must remain recoverable even if a native fullscreen or
+      // keep-awake release reports an error.
+    }
     if (!mounted) return;
     setState(() => _allowExit = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -385,11 +530,7 @@ class _GigModeScreenState extends State<GigModeScreen>
     return PopScope(
       canPop: _allowExit,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Use Exit to leave gig mode safely.')),
-          );
-        }
+        if (!didPop) unawaited(_exit());
       },
       child: FutureBuilder<PerformanceDeck>(
         future: _deck,
@@ -506,116 +647,141 @@ class _GigModeScreenState extends State<GigModeScreen>
                     child: Material(
                       color: Colors.black.withValues(alpha: 0.82),
                       borderRadius: BorderRadius.circular(18),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            tooltip: 'Open setlist sidebar',
-                            onPressed: () =>
-                                _scaffoldKey.currentState?.openDrawer(),
-                            color: Colors.white,
-                            icon: const Icon(Icons.queue_music),
-                          ),
-                          TextButton(
-                            onPressed: _exit,
-                            child: const Text('Exit'),
-                          ),
-                          IconButton(
-                            tooltip: 'Draw annotations',
-                            onPressed: annotationElement == null
-                                ? null
-                                : () => setState(
-                                    () => _annotationTool =
-                                        _annotationTool == AnnotationTool.draw
-                                        ? AnnotationTool.none
-                                        : AnnotationTool.draw,
-                                  ),
-                            color: _annotationTool == AnnotationTool.draw
-                                ? Colors.amber
-                                : Colors.white,
-                            icon: const Icon(Icons.draw),
-                          ),
-                          IconButton(
-                            tooltip: 'Erase annotations',
-                            onPressed: annotationElement == null
-                                ? null
-                                : () => setState(
-                                    () => _annotationTool =
-                                        _annotationTool == AnnotationTool.erase
-                                        ? AnnotationTool.none
-                                        : AnnotationTool.erase,
-                                  ),
-                            color: _annotationTool == AnnotationTool.erase
-                                ? Colors.amber
-                                : Colors.white,
-                            icon: const Icon(Icons.auto_fix_normal),
-                          ),
-                          IconButton(
-                            tooltip: 'Undo annotation',
-                            onPressed:
-                                annotationElement == null ||
-                                    _lastAnnotation == null
-                                ? null
-                                : () => _undoAnnotation(annotationElement),
-                            color: Colors.white,
-                            icon: const Icon(Icons.undo),
-                          ),
-                          IconButton(
-                            tooltip:
-                                annotationElement?.annotationsVisible == true
-                                ? 'Hide annotations'
-                                : 'Show annotations',
-                            onPressed: annotationElement == null
-                                ? null
-                                : () => _toggleAnnotationVisibility(
-                                    annotationElement,
-                                  ),
-                            color: Colors.white,
-                            icon: Icon(
-                              annotationElement?.annotationsVisible == true
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Open setlist sidebar',
+                              onPressed: () =>
+                                  _scaffoldKey.currentState?.openDrawer(),
+                              color: Colors.white,
+                              icon: const Icon(Icons.queue_music),
                             ),
-                          ),
-                          IconButton(
-                            tooltip:
-                                annotationElement?.includeAnnotationsInPdf ==
-                                    true
-                                ? 'Exclude annotations from PDF'
-                                : 'Include annotations in PDF',
-                            onPressed: annotationElement == null
-                                ? null
-                                : () => _toggleAnnotationPdf(annotationElement),
-                            color:
-                                annotationElement?.includeAnnotationsInPdf ==
-                                    true
-                                ? Colors.amber
-                                : Colors.white,
-                            icon: const Icon(Icons.picture_as_pdf_outlined),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            tooltip: 'Previous page',
-                            onPressed: _pageIndex == 0
-                                ? null
-                                : () => _move(-1, deck.pages.length),
-                            color: Colors.white,
-                            icon: const Icon(Icons.arrow_back),
-                          ),
-                          Text(
-                            '${_pageIndex + 1} / ${deck.pages.length}',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          IconButton(
-                            tooltip: 'Next page',
-                            onPressed: _pageIndex + 1 == deck.pages.length
-                                ? null
-                                : () => _move(1, deck.pages.length),
-                            color: Colors.white,
-                            icon: const Icon(Icons.arrow_forward),
-                          ),
-                          const Spacer(),
-                          const SizedBox(width: 88),
-                        ],
+                            TextButton(
+                              onPressed: _exit,
+                              child: const Text('Exit'),
+                            ),
+                            IconButton(
+                              tooltip: 'Draw annotations',
+                              onPressed: annotationElement == null
+                                  ? null
+                                  : () => setState(
+                                      () => _annotationTool =
+                                          _annotationTool == AnnotationTool.draw
+                                          ? AnnotationTool.none
+                                          : AnnotationTool.draw,
+                                    ),
+                              color: _annotationTool == AnnotationTool.draw
+                                  ? Colors.amber
+                                  : Colors.white,
+                              icon: const Icon(Icons.draw),
+                            ),
+                            IconButton(
+                              tooltip: 'Highlight performance notes',
+                              onPressed: annotationElement == null
+                                  ? null
+                                  : () => setState(
+                                      () => _annotationTool =
+                                          _annotationTool ==
+                                              AnnotationTool.highlight
+                                          ? AnnotationTool.none
+                                          : AnnotationTool.highlight,
+                                    ),
+                              color: _annotationTool == AnnotationTool.highlight
+                                  ? Colors.amber
+                                  : Colors.white,
+                              icon: const Icon(Icons.border_color),
+                            ),
+                            IconButton(
+                              tooltip: 'Erase annotations',
+                              onPressed: annotationElement == null
+                                  ? null
+                                  : () => setState(
+                                      () => _annotationTool =
+                                          _annotationTool ==
+                                              AnnotationTool.erase
+                                          ? AnnotationTool.none
+                                          : AnnotationTool.erase,
+                                    ),
+                              color: _annotationTool == AnnotationTool.erase
+                                  ? Colors.amber
+                                  : Colors.white,
+                              icon: const Icon(Icons.auto_fix_normal),
+                            ),
+                            IconButton(
+                              tooltip: 'Undo annotation',
+                              onPressed:
+                                  annotationElement == null ||
+                                      _lastAnnotation == null
+                                  ? null
+                                  : () => _undoAnnotation(annotationElement),
+                              color: Colors.white,
+                              icon: const Icon(Icons.undo),
+                            ),
+                            IconButton(
+                              tooltip:
+                                  annotationElement?.annotationsVisible == true
+                                  ? 'Hide annotations'
+                                  : 'Show annotations',
+                              onPressed: annotationElement == null
+                                  ? null
+                                  : () => _toggleAnnotationVisibility(
+                                      annotationElement,
+                                    ),
+                              color: Colors.white,
+                              icon: Icon(
+                                annotationElement?.annotationsVisible == true
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip:
+                                  annotationElement?.includeAnnotationsInPdf ==
+                                      true
+                                  ? 'Exclude annotations from PDF'
+                                  : 'Include annotations in PDF',
+                              onPressed: annotationElement == null
+                                  ? null
+                                  : () =>
+                                        _toggleAnnotationPdf(annotationElement),
+                              color:
+                                  annotationElement?.includeAnnotationsInPdf ==
+                                      true
+                                  ? Colors.amber
+                                  : Colors.white,
+                              icon: const Icon(Icons.picture_as_pdf_outlined),
+                            ),
+                            IconButton(
+                              tooltip: 'Clear all performance notes',
+                              onPressed: _clearAllPerformanceNotes,
+                              color: Colors.white,
+                              icon: const Icon(Icons.layers_clear),
+                            ),
+                            IconButton(
+                              tooltip: 'Previous page',
+                              onPressed: _pageIndex == 0
+                                  ? null
+                                  : () => _move(-1, deck.pages.length),
+                              color: Colors.white,
+                              icon: const Icon(Icons.arrow_back),
+                            ),
+                            Text(
+                              '${_pageIndex + 1} / ${deck.pages.length}',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            IconButton(
+                              tooltip: 'Next page',
+                              onPressed: _pageIndex + 1 == deck.pages.length
+                                  ? null
+                                  : () => _move(1, deck.pages.length),
+                              color: Colors.white,
+                              icon: const Icon(Icons.arrow_forward),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

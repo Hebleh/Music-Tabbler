@@ -134,7 +134,6 @@ class SongBundleService implements SongBundleTransfer {
     }
 
     final staged = <({VisualChartDraft draft, String songId})>[];
-    final skipped = <String>[];
     final seenVariantIds = <String>{};
     final assetFiles = <String, PortableContainerFile>{};
     for (final file in container.files) {
@@ -191,10 +190,6 @@ class SongBundleService implements SongBundleTransfer {
         }
       }
       final existing = await library.loadDraft(originalId);
-      if (existing != null && existing.encode() == imported.encode()) {
-        skipped.add(originalId);
-        continue;
-      }
       final targetId = existing == null ? originalId : IdFactory.next('chart');
       staged.add((
         draft: targetId == originalId
@@ -222,7 +217,7 @@ class SongBundleService implements SongBundleTransfer {
       importedVariantIds: List.unmodifiable(
         staged.map((variant) => variant.draft.id),
       ),
-      skippedVariantIds: List.unmodifiable(skipped),
+      skippedVariantIds: const [],
     );
   }
 
