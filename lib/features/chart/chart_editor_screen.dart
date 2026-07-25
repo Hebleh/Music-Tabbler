@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../application/music_xml_service.dart';
 import '../../application/semantic_edit_session.dart';
 import '../../domain/music_models.dart';
 import '../../domain/device_preferences.dart';
@@ -138,6 +141,83 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
+  }
+
+  Future<void> _exportMusicXml() async {
+    try {
+      final result = const MusicXmlService().exportChart(_chart);
+      final destination = await FilePicker.platform.saveFile(
+        dialogTitle: 'Export MusicXML',
+        fileName: '${_safeFileName(_chart.title)}.musicxml',
+        type: FileType.custom,
+        allowedExtensions: const ['musicxml', 'xml'],
+      );
+      if (destination == null) return;
+      await File(destination).writeAsString(result.xml, flush: true);
+      if (!mounted) return;
+      final losses = result.diagnostics.where((item) => item.isLoss).length;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            losses == 0
+                ? 'Exported MusicXML to $destination'
+                : 'Exported MusicXML with $losses loss warning(s).',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('MusicXML export failed: $error')));
+    }
+  }
+
+  Future<void> _importMusicXml() async {
+    try {
+      final selection = await FilePicker.platform.pickFiles(
+        dialogTitle: 'Import MusicXML',
+        type: FileType.custom,
+        allowedExtensions: const ['musicxml', 'xml'],
+        allowMultiple: false,
+      );
+      final path = selection?.files.single.path;
+      if (path == null) return;
+      final result = const MusicXmlService().importChart(
+        await File(path).readAsString(),
+      );
+      final imported = result.chart.copyWith(id: _chart.id);
+      final errors = imported.validationErrors();
+      if (errors.isNotEmpty) {
+        throw FormatException(errors.join(' '));
+      }
+      _commitChart(imported);
+      if (!mounted) return;
+      setState(() {
+        _selectedMeasureIndex = 0;
+        _selectedNoteId = imported.measures.first.notes.firstOrNull?.id;
+      });
+      final losses = result.diagnostics.where((item) => item.isLoss).length;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            losses == 0
+                ? 'Imported MusicXML.'
+                : 'Imported MusicXML with $losses item(s) needing review.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('MusicXML import failed: $error')));
+    }
+  }
+
+  String _safeFileName(String value) {
+    final cleaned = value.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
+    return cleaned.isEmpty ? 'music-tabbler-chart' : cleaned;
   }
 
   Future<void> _editRest(RestEvent rest) async {
@@ -450,6 +530,21 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.picture_as_pdf),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'MusicXML interchange',
+            onSelected: (value) {
+              if (value == 'import') {
+                unawaited(_importMusicXml());
+              } else {
+                unawaited(_exportMusicXml());
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'import', child: Text('Import MusicXML')),
+              PopupMenuItem(value: 'export', child: Text('Export MusicXML')),
+            ],
+            icon: const Icon(Icons.import_export),
           ),
           IconButton(
             tooltip: widget.preferences.appTheme == AppThemePreference.dark

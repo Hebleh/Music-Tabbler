@@ -43,6 +43,7 @@ void main() {
     expect(find.text('Add measure'), findsOneWidget);
     expect(find.text('Instrument and tuning'), findsOneWidget);
     expect(find.text('Song structure'), findsOneWidget);
+    expect(find.byTooltip('MusicXML interchange'), findsOneWidget);
   });
 
   testWidgets('keeps tablature visible when notation is toggled off', (

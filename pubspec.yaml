@@ -43,6 +43,7 @@ dependencies:
   pdfrx_engine: ^0.4.6
   sqlite3: ^3.4.0
   win32: ^5.15.0
+  xml: ^7.0.1
   desktop_drop: 0.7.1
   flutter_ocr_native:
     path: third_party/flutter_ocr_native
