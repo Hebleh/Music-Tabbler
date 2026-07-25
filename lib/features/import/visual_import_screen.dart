@@ -8,7 +8,10 @@ import 'package:flutter/services.dart';
 import '../../application/app_services.dart';
 import '../../application/draft_edit_session.dart';
 import '../../application/highlight_geometry.dart';
+import '../../application/recognition_review.dart';
+import '../../application/semantic_recognition_service.dart';
 import '../../application/service_contracts.dart';
+import '../../domain/music_models.dart';
 import '../../domain/visual_chart_models.dart';
 import 'multi_row_split_dialog.dart';
 import 'rect_editor_dialog.dart';
@@ -20,10 +23,12 @@ class VisualImportScreen extends StatefulWidget {
     super.key,
     required this.services,
     this.initialDraft,
+    this.onSemanticProposalCreated,
   });
 
   final AppServices services;
   final VisualChartDraft? initialDraft;
+  final ValueChanged<SongChart>? onSemanticProposalCreated;
 
   @override
   State<VisualImportScreen> createState() => _VisualImportScreenState();
@@ -101,6 +106,63 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     _commitDraft(restored, recordUndo: false);
   }
 
+  Future<void> _recognizeSemanticProposal() async {
+    if (_busy || _draft.strips.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      final inputs = <RecognitionStripInput>[];
+      for (final strip in _draft.strips) {
+        final recognition = await widget.services.textRecognition.recognize(
+          strip,
+        );
+        inputs.add(
+          RecognitionStripInput(
+            sourceId: '${strip.assetHash}.${strip.assetExtension}',
+            regions: recognition.regions,
+          ),
+        );
+      }
+      final chartId = 'semantic-${_draft.id}';
+      final fresh = const SemanticRecognitionService().propose(
+        chartId: chartId,
+        title: _draft.title,
+        artist: _draft.artist,
+        strips: inputs,
+      );
+      final prior = await widget.services.semanticCharts.loadSemanticChart(
+        chartId,
+      );
+      final proposal = prior == null
+          ? fresh.chart
+          : mergeRecognitionRerun(prior, fresh.chart);
+      final identity = await widget.services.songVariants.identityForDraft(
+        _draft.id,
+      );
+      await widget.services.semanticCharts.saveSemanticChart(
+        proposal,
+        songId: identity?.songId ?? 'song-${_draft.id}',
+        updatedAt: DateTime.now().toUtc(),
+      );
+      if (!mounted) return;
+      widget.onSemanticProposalCreated?.call(proposal);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Created ${fresh.proposedEvents} local recognition proposal(s). '
+            '${fresh.diagnostics.length} row(s) need extra review.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Semantic recognition failed: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   void dispose() {
     _titleController.removeListener(_metadataChanged);
@@ -134,6 +196,13 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                 appBar: AppBar(
                   title: const Text('Visual chart editor'),
                   actions: [
+                    IconButton(
+                      tooltip: 'Recognize semantic proposal',
+                      onPressed: _busy || _draft.strips.isEmpty
+                          ? null
+                          : _recognizeSemanticProposal,
+                      icon: const Icon(Icons.auto_fix_high),
+                    ),
                     IconButton(
                       tooltip: _draft.provenance == null
                           ? 'Add source details'

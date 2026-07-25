@@ -16,7 +16,7 @@ void main() {
   testWidgets('opens the semantic sample chart from the song pool', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.physicalSize = const Size(1200, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -44,6 +44,7 @@ void main() {
     expect(find.text('Instrument and tuning'), findsOneWidget);
     expect(find.text('Song structure'), findsOneWidget);
     expect(find.byTooltip('MusicXML interchange'), findsOneWidget);
+    expect(find.textContaining('Recognition review:'), findsOneWidget);
   });
 
   testWidgets('keeps tablature visible when notation is toggled off', (

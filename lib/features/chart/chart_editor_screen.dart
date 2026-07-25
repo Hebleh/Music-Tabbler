@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../application/music_xml_service.dart';
+import '../../application/recognition_review.dart';
 import '../../application/semantic_edit_session.dart';
 import '../../domain/music_models.dart';
 import '../../domain/device_preferences.dart';
@@ -20,6 +21,7 @@ class ChartEditorScreen extends StatefulWidget {
     required this.pdfExporter,
     required this.chart,
     required this.songId,
+    this.sourceLibrary,
   });
 
   final DevicePreferences preferences;
@@ -28,6 +30,7 @@ class ChartEditorScreen extends StatefulWidget {
   final SemanticChartPdfExporter pdfExporter;
   final SongChart chart;
   final String songId;
+  final ChartLibrary? sourceLibrary;
 
   @override
   State<ChartEditorScreen> createState() => _ChartEditorScreenState();
@@ -92,6 +95,23 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
       }
     });
     _autosaver.schedule(prior);
+  }
+
+  void _verifyAllRecognition() {
+    _commitChart(verifyAllProposals(_chart));
+  }
+
+  void _markGigReady() {
+    try {
+      _commitChart(markChartGigReady(_chart));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Chart marked gig-ready.')));
+    } catch (error) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 
   @override
@@ -595,6 +615,21 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
             ],
           ),
           const SizedBox(height: 14),
+          _RecognitionReviewPanel(
+            chart: _chart,
+            selectedNote: selectedNote,
+            sourceLibrary: widget.sourceLibrary,
+            onVerifyAll: _verifyAllRecognition,
+            onRejectSelected:
+                selectedNote?.verification == VerificationState.proposed
+                ? () {
+                    _commitChart(rejectProposedNote(_chart, selectedNote!.id));
+                    setState(() => _selectedNoteId = null);
+                  }
+                : null,
+            onMarkGigReady: _markGigReady,
+          ),
+          const SizedBox(height: 10),
           _InstrumentEditor(
             chart: _chart,
             onTuningChanged: _applyTuning,
@@ -710,7 +745,15 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
                   note: selectedNote,
                   tuning: _chart.tuning,
                   onChanged: (note) {
-                    _commitChart(_chart.replaceNote(note));
+                    _commitChart(
+                      _chart
+                          .replaceNote(
+                            note.copyWith(
+                              verification: VerificationState.verified,
+                            ),
+                          )
+                          .copyWith(gigReady: false),
+                    );
                   },
                   onDelete: selectedNote == null
                       ? null
@@ -725,7 +768,15 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
                   onContrastChanged: (value) =>
                       setState(() => _leadVocalContrast = value),
                   onLyricChanged: (lyric) {
-                    _commitChart(_chart.replaceLyric(lyric));
+                    _commitChart(
+                      _chart
+                          .replaceLyric(
+                            lyric.copyWith(
+                              verification: VerificationState.verified,
+                            ),
+                          )
+                          .copyWith(gigReady: false),
+                    );
                   },
                 ),
               ];
@@ -746,6 +797,105 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _RecognitionReviewPanel extends StatelessWidget {
+  const _RecognitionReviewPanel({
+    required this.chart,
+    required this.selectedNote,
+    required this.sourceLibrary,
+    required this.onVerifyAll,
+    required this.onRejectSelected,
+    required this.onMarkGigReady,
+  });
+
+  final SongChart chart;
+  final TabNote? selectedNote;
+  final ChartLibrary? sourceLibrary;
+  final VoidCallback onVerifyAll;
+  final VoidCallback? onRejectSelected;
+  final VoidCallback onMarkGigReady;
+
+  @override
+  Widget build(BuildContext context) {
+    final unresolved = unresolvedProposalCount(chart);
+    final source = _sourcePath(selectedNote?.sourceMapping);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  chart.gigReady ? Icons.verified : Icons.fact_check_outlined,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    chart.gigReady
+                        ? 'Gig-ready semantic chart'
+                        : 'Recognition review: $unresolved proposal(s)',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    if (unresolved > 0)
+                      OutlinedButton(
+                        onPressed: onVerifyAll,
+                        child: const Text('Verify all'),
+                      ),
+                    if (onRejectSelected != null)
+                      OutlinedButton(
+                        onPressed: onRejectSelected,
+                        child: const Text('Reject selected'),
+                      ),
+                    FilledButton(
+                      onPressed: unresolved == 0 ? onMarkGigReady : null,
+                      child: const Text('Mark gig-ready'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (selectedNote?.verification == VerificationState.proposed) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Selected proposal confidence: '
+                '${((selectedNote!.confidence ?? 0) * 100).round()}%',
+              ),
+              if (source != null) ...[
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 170),
+                  child: Image.file(
+                    File(source),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) =>
+                        Text('Source preview is unavailable at $source'),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String? _sourcePath(SourceMapping? mapping) {
+    final library = sourceLibrary;
+    if (mapping == null || library == null) return null;
+    final dot = mapping.sourceId.lastIndexOf('.');
+    if (dot <= 0 || dot == mapping.sourceId.length - 1) return null;
+    return library.assetPath(
+      mapping.sourceId.substring(0, dot),
+      mapping.sourceId.substring(dot + 1),
     );
   }
 }

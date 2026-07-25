@@ -954,9 +954,10 @@ class SongChart {
     this.capo = 0,
     this.sections = const [],
     this.repeats = const [],
+    this.gigReady = false,
   });
 
-  static const schemaVersion = 3;
+  static const schemaVersion = 4;
 
   final String id;
   final String title;
@@ -968,6 +969,7 @@ class SongChart {
   final List<LyricSyllable> lyrics;
   final List<SongSection> sections;
   final List<RepeatRegion> repeats;
+  final bool gigReady;
 
   TabNote? noteById(String id) {
     for (final measure in measures) {
@@ -992,6 +994,7 @@ class SongChart {
       lyrics: lyrics,
       sections: sections,
       repeats: repeats,
+      gigReady: gigReady,
     );
   }
 
@@ -1104,6 +1107,7 @@ class SongChart {
       ],
       sections: sections,
       repeats: repeats,
+      gigReady: gigReady,
     );
   }
 
@@ -1118,6 +1122,7 @@ class SongChart {
     List<LyricSyllable>? lyrics,
     List<SongSection>? sections,
     List<RepeatRegion>? repeats,
+    bool? gigReady,
   }) {
     return SongChart(
       id: id ?? this.id,
@@ -1130,6 +1135,7 @@ class SongChart {
       lyrics: lyrics ?? this.lyrics,
       sections: sections ?? this.sections,
       repeats: repeats ?? this.repeats,
+      gigReady: gigReady ?? this.gigReady,
     );
   }
 
@@ -1145,6 +1151,7 @@ class SongChart {
     'lyrics': [for (final lyric in lyrics) lyric.toJson()],
     'sections': [for (final section in sections) section.toJson()],
     'repeats': [for (final repeat in repeats) repeat.toJson()],
+    'gigReady': gigReady,
   };
 
   String encode() => jsonEncode(toJson());
@@ -1197,6 +1204,7 @@ class SongChart {
                 ),
               ),
             ),
+      gigReady: version >= 4 ? json['gigReady'] as bool? ?? false : false,
     );
   }
 

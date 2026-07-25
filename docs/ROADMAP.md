@@ -159,7 +159,7 @@ documented debt unless they materially block gig preparation.
   - Editable systems, measures, strings, and fret proposals from local images.
 - [x] **MT-403 — Rhythm, technique, section, and lyric recognition**
   - Extend proposals while retaining uncertainty and source mappings.
-- [ ] **MT-404 — Side-by-side correction and gig-ready verification**
+- [x] **MT-404 — Side-by-side correction and gig-ready verification**
   - Accept/edit/reject proposals without replacing verified work.
 
 ### Sprint 6 — Musical transformations

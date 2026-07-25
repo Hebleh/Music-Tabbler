@@ -32,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   var _selectedIndex = 0;
   var _libraryRevision = 0;
   late Future<List<VisualChartDraft>> _drafts;
+  late Future<List<SongChart>> _semanticCharts;
 
   @override
   void initState() {
@@ -41,16 +42,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _reloadDrafts() {
     _drafts = widget.services.library.listDrafts();
+    _semanticCharts = widget.services.semanticCharts.listSemanticCharts();
   }
 
   Future<void> _openVisualEditor([VisualChartDraft? draft]) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            VisualImportScreen(services: widget.services, initialDraft: draft),
+    final proposal = await Navigator.of(context).push<SongChart>(
+      MaterialPageRoute<SongChart>(
+        builder: (routeContext) => VisualImportScreen(
+          services: widget.services,
+          initialDraft: draft,
+          onSemanticProposalCreated: (chart) =>
+              Navigator.of(routeContext).pop(chart),
+        ),
       ),
     );
-    if (mounted) setState(_reloadDrafts);
+    if (!mounted) return;
+    setState(_reloadDrafts);
+    if (proposal != null) {
+      await _openSemanticEditor(proposal);
+    }
   }
 
   Future<void> _deleteVisualDraft(VisualChartDraft draft) async {
@@ -326,12 +336,16 @@ class _HomeScreenState extends State<HomeScreen> {
     ).showSnackBar(SnackBar(content: Text(error.toString())));
   }
 
-  Future<void> _openSemanticEditor() async {
-    const chartId = 'semantic-foundation';
-    const songId = 'song-semantic-foundation';
+  Future<void> _openSemanticEditor([SongChart? requested]) async {
+    final chartId = requested?.id ?? 'semantic-foundation';
     final chart =
+        requested ??
         await widget.services.semanticCharts.loadSemanticChart(chartId) ??
         SongChart.foundationExample();
+    final identity = await widget.services.songVariants.identityForDraft(
+      chart.id,
+    );
+    final songId = identity?.songId ?? 'song-$chartId';
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -342,6 +356,7 @@ class _HomeScreenState extends State<HomeScreen> {
           pdfExporter: widget.services.semanticExporter,
           chart: chart,
           songId: songId,
+          sourceLibrary: widget.services.library,
         ),
       ),
     );
@@ -352,6 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final pages = [
       _SongPool(
         drafts: _drafts,
+        semanticCharts: _semanticCharts,
         onOpenVisual: _openVisualEditor,
         onDeleteVisual: _deleteVisualDraft,
         onExportPortable: widget.services.songBundles == null
@@ -469,6 +485,7 @@ class _HomeScreenState extends State<HomeScreen> {
 class _SongPool extends StatelessWidget {
   const _SongPool({
     required this.drafts,
+    required this.semanticCharts,
     required this.onOpenVisual,
     required this.onDeleteVisual,
     required this.onExportPortable,
@@ -477,11 +494,12 @@ class _SongPool extends StatelessWidget {
   });
 
   final Future<List<VisualChartDraft>> drafts;
+  final Future<List<SongChart>> semanticCharts;
   final ValueChanged<VisualChartDraft?> onOpenVisual;
   final ValueChanged<VisualChartDraft> onDeleteVisual;
   final ValueChanged<VisualChartDraft>? onExportPortable;
   final VoidCallback? onImportPortable;
-  final VoidCallback onOpenSemantic;
+  final ValueChanged<SongChart?> onOpenSemantic;
 
   @override
   Widget build(BuildContext context) {
@@ -596,6 +614,40 @@ class _SongPool extends StatelessWidget {
           },
         ),
         const SizedBox(height: 16),
+        FutureBuilder<List<SongChart>>(
+          future: semanticCharts,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const SizedBox.shrink();
+            return Column(
+              children: [
+                for (final chart in snapshot.data!)
+                  Card(
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        child: Icon(
+                          chart.gigReady ? Icons.verified : Icons.auto_fix_high,
+                        ),
+                      ),
+                      title: Text(chart.title),
+                      subtitle: Text(
+                        [
+                          if (chart.artist.trim().isNotEmpty)
+                            chart.artist.trim(),
+                          '${chart.measures.length} semantic measure(s)',
+                          chart.gigReady ? 'Gig-ready' : 'Needs review',
+                        ].join(' | '),
+                      ),
+                      trailing: FilledButton(
+                        onPressed: () => onOpenSemantic(chart),
+                        child: const Text('Open semantic'),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 16),
         Card(
           child: ListTile(
             leading: const CircleAvatar(child: Icon(Icons.music_note)),
@@ -604,7 +656,7 @@ class _SongPool extends StatelessWidget {
               'Music Tabbler - 5-string BEADG - Semantic sample',
             ),
             trailing: FilledButton(
-              onPressed: onOpenSemantic,
+              onPressed: () => onOpenSemantic(null),
               child: const Text('Open sample chart'),
             ),
           ),
