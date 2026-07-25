@@ -155,7 +155,7 @@ documented debt unless they materially block gig preparation.
 
 - [x] **MT-401 — Recognition corpus and metrics**
   - Rights-safe fixtures, annotations, confidence, and correction-cost baselines.
-- [ ] **MT-402 — Tablature structure/fret proposal engine**
+- [x] **MT-402 — Tablature structure/fret proposal engine**
   - Editable systems, measures, strings, and fret proposals from local images.
 - [ ] **MT-403 — Rhythm, technique, section, and lyric recognition**
   - Extend proposals while retaining uncertainty and source mappings.
