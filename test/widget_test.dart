@@ -733,6 +733,7 @@ Future<AppServices> _testServices({
     setlists: resolvedLibrary,
     importer: importer ?? const _UnusedImporter(),
     exporter: unusedExporter,
+    semanticExporter: unusedExporter,
     setlistExporter: setlistExporter ?? unusedExporter,
     performanceDeckBuilder: performanceDeckBuilder ?? unusedExporter,
     textRecognition: const _UnusedTextRecognition(),
@@ -1014,7 +1015,11 @@ class _UnusedTextRecognition implements TextRecognitionService {
 }
 
 class _UnusedExporter
-    implements ChartPdfExporter, SetlistPdfExporter, PerformanceDeckBuilder {
+    implements
+        ChartPdfExporter,
+        SemanticChartPdfExporter,
+        SetlistPdfExporter,
+        PerformanceDeckBuilder {
   const _UnusedExporter();
   @override
   Future<Uint8List> exportBytes(VisualChartDraft draft) =>
@@ -1022,6 +1027,22 @@ class _UnusedExporter
   @override
   Future<String?> exportWithPicker(VisualChartDraft draft) =>
       throw UnimplementedError();
+
+  @override
+  Future<Uint8List> exportSemanticBytes(
+    SongChart chart, {
+    required bool showTitle,
+    required bool showTab,
+    required bool showNotation,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<String?> exportSemanticWithPicker(
+    SongChart chart, {
+    required bool showTitle,
+    required bool showTab,
+    required bool showNotation,
+  }) => throw UnimplementedError();
 
   @override
   Future<Uint8List> exportSetlistBytes(

@@ -140,6 +140,21 @@ abstract interface class ChartPdfExporter {
   Future<String?> exportWithPicker(VisualChartDraft draft);
 }
 
+abstract interface class SemanticChartPdfExporter {
+  Future<Uint8List> exportSemanticBytes(
+    SongChart chart, {
+    required bool showTitle,
+    required bool showTab,
+    required bool showNotation,
+  });
+  Future<String?> exportSemanticWithPicker(
+    SongChart chart, {
+    required bool showTitle,
+    required bool showTab,
+    required bool showNotation,
+  });
+}
+
 abstract interface class SetlistPdfExporter {
   Future<Uint8List> exportSetlistBytes(
     LibrarySetlist setlist, {

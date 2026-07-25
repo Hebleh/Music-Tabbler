@@ -142,7 +142,7 @@ documented debt unless they materially block gig preparation.
   - Exact beats, voices, rests, tuplets, signatures, repeats, endings, sections.
 - [x] **MT-303 — Instrument, technique, lyric, and confidence schema**
   - Arbitrary tunings/string counts, techniques, lyric alignment, proposals.
-- [ ] **MT-304 — Shared screen/PDF semantic renderer**
+- [x] **MT-304 — Shared screen/PDF semantic renderer**
   - Platform-independent primitives consumed by both screen and PDF.
 - [ ] **MT-305 — Persisted core note/rest editor**
   - Direct reversible string, fret, pitch, duration, rest, beat, and measure edits.

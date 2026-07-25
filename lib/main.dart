@@ -8,6 +8,7 @@ import 'app.dart';
 import 'application/app_services.dart';
 import 'application/pdf_export_service.dart';
 import 'application/song_bundle_service.dart';
+import 'application/semantic_pdf_export_service.dart';
 import 'application/library_state_service.dart';
 import 'application/text_recognition_service.dart';
 import 'application/visual_import_service.dart';
@@ -38,6 +39,7 @@ Future<void> main() async {
           setlists: library,
           importer: VisualImportService(library),
           exporter: pdfExporter,
+          semanticExporter: const SemanticPdfExportService(),
           setlistExporter: pdfExporter,
           performanceDeckBuilder: pdfExporter,
           textRecognition: NativeTextRecognitionService(library),

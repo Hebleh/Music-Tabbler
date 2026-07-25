@@ -339,6 +339,7 @@ class _HomeScreenState extends State<HomeScreen> {
           preferences: widget.preferences,
           onPreferencesChanged: widget.onPreferencesChanged,
           repository: widget.services.semanticCharts,
+          pdfExporter: widget.services.semanticExporter,
           chart: chart,
           songId: songId,
         ),

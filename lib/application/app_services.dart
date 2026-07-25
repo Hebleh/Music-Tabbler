@@ -8,6 +8,7 @@ class AppServices {
     required this.setlists,
     required this.importer,
     required this.exporter,
+    required this.semanticExporter,
     required this.setlistExporter,
     required this.performanceDeckBuilder,
     required this.textRecognition,
@@ -24,6 +25,7 @@ class AppServices {
   final SetlistLibrary setlists;
   final VisualImporter importer;
   final ChartPdfExporter exporter;
+  final SemanticChartPdfExporter semanticExporter;
   final SetlistPdfExporter setlistExporter;
   final PerformanceDeckBuilder performanceDeckBuilder;
   final TextRecognitionService textRecognition;

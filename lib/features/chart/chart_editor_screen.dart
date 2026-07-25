@@ -11,6 +11,7 @@ class ChartEditorScreen extends StatefulWidget {
     required this.preferences,
     required this.onPreferencesChanged,
     required this.repository,
+    required this.pdfExporter,
     required this.chart,
     required this.songId,
   });
@@ -18,6 +19,7 @@ class ChartEditorScreen extends StatefulWidget {
   final DevicePreferences preferences;
   final ValueChanged<DevicePreferences> onPreferencesChanged;
   final SemanticChartLibrary repository;
+  final SemanticChartPdfExporter pdfExporter;
   final SongChart chart;
   final String songId;
 
@@ -32,6 +34,7 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
   late bool _showTab;
   late bool _showNotation;
   double _leadVocalContrast = 0.38;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -71,6 +74,34 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
     );
   }
 
+  Future<void> _exportPdf() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final path = await widget.pdfExporter.exportSemanticWithPicker(
+        _chart,
+        showTitle: _showTitle,
+        showTab: _showTab,
+        showNotation: _showNotation,
+      );
+      if (mounted && path != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Exported $path')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('The semantic PDF could not be created: $error'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final selectedNote = _selectedNoteId == null
@@ -80,6 +111,16 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
       appBar: AppBar(
         title: Text(_chart.title),
         actions: [
+          IconButton(
+            tooltip: 'Export semantic A4 PDF',
+            onPressed: _exporting ? null : _exportPdf,
+            icon: _exporting
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.picture_as_pdf),
+          ),
           IconButton(
             tooltip: widget.preferences.appTheme == AppThemePreference.dark
                 ? 'Use light theme'
