@@ -955,9 +955,11 @@ class SongChart {
     this.sections = const [],
     this.repeats = const [],
     this.gigReady = false,
+    this.derivedFromChartId,
+    this.transformationLabel,
   });
 
-  static const schemaVersion = 4;
+  static const schemaVersion = 5;
 
   final String id;
   final String title;
@@ -970,6 +972,8 @@ class SongChart {
   final List<SongSection> sections;
   final List<RepeatRegion> repeats;
   final bool gigReady;
+  final String? derivedFromChartId;
+  final String? transformationLabel;
 
   TabNote? noteById(String id) {
     for (final measure in measures) {
@@ -995,6 +999,8 @@ class SongChart {
       sections: sections,
       repeats: repeats,
       gigReady: gigReady,
+      derivedFromChartId: derivedFromChartId,
+      transformationLabel: transformationLabel,
     );
   }
 
@@ -1108,6 +1114,8 @@ class SongChart {
       sections: sections,
       repeats: repeats,
       gigReady: gigReady,
+      derivedFromChartId: derivedFromChartId,
+      transformationLabel: transformationLabel,
     );
   }
 
@@ -1123,6 +1131,10 @@ class SongChart {
     List<SongSection>? sections,
     List<RepeatRegion>? repeats,
     bool? gigReady,
+    String? derivedFromChartId,
+    bool clearDerivedFromChartId = false,
+    String? transformationLabel,
+    bool clearTransformationLabel = false,
   }) {
     return SongChart(
       id: id ?? this.id,
@@ -1136,6 +1148,12 @@ class SongChart {
       sections: sections ?? this.sections,
       repeats: repeats ?? this.repeats,
       gigReady: gigReady ?? this.gigReady,
+      derivedFromChartId: clearDerivedFromChartId
+          ? null
+          : derivedFromChartId ?? this.derivedFromChartId,
+      transformationLabel: clearTransformationLabel
+          ? null
+          : transformationLabel ?? this.transformationLabel,
     );
   }
 
@@ -1152,6 +1170,8 @@ class SongChart {
     'sections': [for (final section in sections) section.toJson()],
     'repeats': [for (final repeat in repeats) repeat.toJson()],
     'gigReady': gigReady,
+    'derivedFromChartId': ?derivedFromChartId,
+    'transformationLabel': ?transformationLabel,
   };
 
   String encode() => jsonEncode(toJson());
@@ -1205,6 +1225,12 @@ class SongChart {
               ),
             ),
       gigReady: version >= 4 ? json['gigReady'] as bool? ?? false : false,
+      derivedFromChartId: version >= 5
+          ? json['derivedFromChartId'] as String?
+          : null,
+      transformationLabel: version >= 5
+          ? json['transformationLabel'] as String?
+          : null,
     );
   }
 

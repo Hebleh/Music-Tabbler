@@ -164,7 +164,7 @@ documented debt unless they materially block gig preparation.
 
 ### Sprint 6 — Musical transformations
 
-- [ ] **MT-501 — Pitch transposition**
+- [x] **MT-501 — Pitch transposition**
   - Reversible sounding-pitch transformation preserving rhythm and lyrics.
 - [ ] **MT-502 — Same-pitch re-tabbing**
   - Adapt tuning/string count while preserving sounding pitch.

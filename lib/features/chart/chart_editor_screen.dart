@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../application/music_xml_service.dart';
+import '../../application/pitch_transposition_service.dart';
 import '../../application/recognition_review.dart';
 import '../../application/semantic_edit_session.dart';
 import '../../domain/music_models.dart';
@@ -232,6 +233,66 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('MusicXML import failed: $error')));
+    }
+  }
+
+  Future<void> _transposeChart() async {
+    final controller = TextEditingController(text: '1');
+    final semitones = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Transpose sounding pitch'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(signed: true),
+          decoration: const InputDecoration(
+            labelText: 'Semitones',
+            helperText: 'Use +1 for one semitone higher; range -24 to +24.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, int.tryParse(controller.text.trim())),
+            child: const Text('Create variant'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (semitones == null) return;
+    try {
+      final result = const PitchTranspositionService().transpose(
+        source: _chart,
+        semitones: semitones,
+        derivedChartId:
+            'semantic-transpose-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      await _saveChart(result.chart);
+      if (!mounted) return;
+      setState(() {
+        _chart = result.chart;
+        _selectedMeasureIndex = 0;
+        _selectedNoteId = result.chart.measures.first.notes.firstOrNull?.id;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Created ${result.chart.transformationLabel} as a separate '
+            'variant. ${result.movedStrings} note(s) changed string.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Transpose failed: $error')));
     }
   }
 
@@ -565,6 +626,11 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
               PopupMenuItem(value: 'export', child: Text('Export MusicXML')),
             ],
             icon: const Icon(Icons.import_export),
+          ),
+          IconButton(
+            tooltip: 'Transpose chart',
+            onPressed: _transposeChart,
+            icon: const Icon(Icons.swap_vert),
           ),
           IconButton(
             tooltip: widget.preferences.appTheme == AppThemePreference.dark

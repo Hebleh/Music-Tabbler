@@ -44,6 +44,7 @@ void main() {
     expect(find.text('Instrument and tuning'), findsOneWidget);
     expect(find.text('Song structure'), findsOneWidget);
     expect(find.byTooltip('MusicXML interchange'), findsOneWidget);
+    expect(find.byTooltip('Transpose chart'), findsOneWidget);
     expect(find.textContaining('Recognition review:'), findsOneWidget);
   });
 

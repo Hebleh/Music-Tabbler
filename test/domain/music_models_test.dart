@@ -110,7 +110,7 @@ void main() {
       expect(migrated.measures.first.notes[1].position, BeatFraction.one);
       expect(migrated.measures.first.length, BeatFraction(4));
       expect(migrated.sections, isEmpty);
-      expect(migrated.encode(), contains('"schemaVersion":4'));
+      expect(migrated.encode(), contains('"schemaVersion":5'));
     });
 
     test('measure and repeat diagnostics reject invalid structures', () {
