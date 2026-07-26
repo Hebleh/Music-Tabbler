@@ -166,7 +166,7 @@ documented debt unless they materially block gig preparation.
 
 - [x] **MT-501 — Pitch transposition**
   - Reversible sounding-pitch transformation preserving rhythm and lyrics.
-- [ ] **MT-502 — Same-pitch re-tabbing**
+- [x] **MT-502 — Same-pitch re-tabbing**
   - Adapt tuning/string count while preserving sounding pitch.
 - [ ] **MT-503 — Ranked fingerings and saved variants**
   - Explainable alternatives retained alongside the original.

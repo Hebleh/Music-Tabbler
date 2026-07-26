@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../application/music_xml_service.dart';
 import '../../application/pitch_transposition_service.dart';
 import '../../application/recognition_review.dart';
+import '../../application/retab_service.dart';
 import '../../application/semantic_edit_session.dart';
 import '../../domain/music_models.dart';
 import '../../domain/device_preferences.dart';
@@ -293,6 +294,92 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Transpose failed: $error')));
+    }
+  }
+
+  Future<void> _retabChart() async {
+    var tuning = _chart.tuning.strings.length == 5
+        ? BassTuning.eadg
+        : BassTuning.beadg;
+    var strategy = RetabStrategy.preserveShape;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Adapt tab to another tuning'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<BassTuning>(
+                initialValue: tuning,
+                decoration: const InputDecoration(labelText: 'Target tuning'),
+                items: const [
+                  DropdownMenuItem(
+                    value: BassTuning.beadg,
+                    child: Text('5-string BEADG'),
+                  ),
+                  DropdownMenuItem(
+                    value: BassTuning.eadg,
+                    child: Text('4-string EADG'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => tuning = value);
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<RetabStrategy>(
+                initialValue: strategy,
+                decoration: const InputDecoration(
+                  labelText: 'Fingering priority',
+                ),
+                items: [
+                  for (final option in RetabStrategy.values)
+                    DropdownMenuItem(value: option, child: Text(option.label)),
+                ],
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => strategy = value);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Create variant'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (accepted != true) return;
+    try {
+      final result = const RetabService().retab(
+        source: _chart,
+        targetTuning: tuning,
+        strategy: strategy,
+        derivedChartId:
+            'semantic-retab-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      await _saveChart(result.chart);
+      if (!mounted) return;
+      setState(() {
+        _chart = result.chart;
+        _selectedMeasureIndex = 0;
+        _selectedNoteId = result.chart.measures.first.notes.firstOrNull?.id;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${result.explanation} Saved as a variant.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Re-tab failed: $error')));
     }
   }
 
@@ -631,6 +718,11 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
             tooltip: 'Transpose chart',
             onPressed: _transposeChart,
             icon: const Icon(Icons.swap_vert),
+          ),
+          IconButton(
+            tooltip: 'Adapt tuning / strings',
+            onPressed: _retabChart,
+            icon: const Icon(Icons.linear_scale),
           ),
           IconButton(
             tooltip: widget.preferences.appTheme == AppThemePreference.dark
