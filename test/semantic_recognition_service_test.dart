@@ -107,4 +107,31 @@ void main() {
     expect(result.chart.lyrics.single.text, 'hello');
     expect(result.chart.lyrics.single.verification, VerificationState.proposed);
   });
+
+  test('standalone X tokens become proposed dead notes', () {
+    final result = service.propose(
+      chartId: 'dead-note-proposal',
+      title: 'Synthetic',
+      artist: '',
+      strips: const [
+        RecognitionStripInput(
+          sourceId: 'row',
+          stringCount: 4,
+          tabBand: NormalizedRect(0, 0.5, 1, 0.99),
+          regions: [
+            RecognizedTextRegion(
+              text: 'X',
+              rect: NormalizedRect(0.3, 0.61, 0.33, 0.66),
+            ),
+          ],
+        ),
+      ],
+      tuning: BassTuning.eadg,
+    );
+
+    final note = result.chart.measures.single.notes.single;
+    expect(note.fret, 0);
+    expect(note.techniques.single.kind, TechniqueKind.deadNote);
+    expect(note.verification, VerificationState.proposed);
+  });
 }

@@ -46,11 +46,13 @@ Only a verified sprint merges into `master`.
 
 ## Current checkpoint
 
-MT-107 through MT-203 are implemented and automated-check clean on their
-stacked contract commits. They intentionally remain `[~]` until one combined
-Windows and physical Android user-verification pass is completed. No sprint
-merge should occur before that report is bug-squashed. The durable checklist is
-`docs/COMBINED_USER_TEST_MT203.md`.
+MT-107 through MT-503 are implemented on stacked contract branches. The current
+Windows source passes 163 automated tests and static analysis, but the feature
+chain remains outside `master` until its consolidated hands-on Windows pass is
+completed and bug-squashed. Android testing and building are intentionally
+deferred until that Windows gate passes. The current durable checklist is
+`docs/COMBINED_USER_TEST_SPRINT6.md`; the older MT-203 checklist remains as
+historical Android/portable-transfer coverage.
 
 - [x] Preserve `mvp/v0.1.0` at the MVP checkpoint.
 - [x] Keep `master` as the stable integration branch.
@@ -168,7 +170,7 @@ documented debt unless they materially block gig preparation.
   - Reversible sounding-pitch transformation preserving rhythm and lyrics.
 - [x] **MT-502 — Same-pitch re-tabbing**
   - Adapt tuning/string count while preserving sounding pitch.
-- [ ] **MT-503 — Ranked fingerings and saved variants**
+- [x] **MT-503 — Ranked fingerings and saved variants**
   - Explainable alternatives retained alongside the original.
 
 ### Sprint 7 — Polish and platform expansion

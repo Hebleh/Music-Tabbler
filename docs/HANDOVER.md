@@ -1,6 +1,6 @@
 # Music Tabbler handover
 
-Updated: 24 July 2026
+Updated: 26 July 2026
 
 This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset user work; inspect the current branch and working tree before starting a contract.
 
@@ -11,16 +11,16 @@ order, the user-testing gate, and the reusable implementation cycle.
 
 - Repository: `C:\vibes\Music Tabbler`
 - Stable integration branch: `master`
-- Current implementation branch: `codex/mt-203-mtstate`
+- Current implementation branch: `codex/mt-503-fingering-variants`
 - Immutable MVP archive branch: `mvp/v0.1.0`
 - Release checkpoint: Windows MVP `v0.1.0`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Latest automated checkpoint: MT-203 recoverable whole-library state transfer.
-  MT-107 through MT-203 remain at one combined user/physical-tablet verification
-gate before sprint integration.
+- Latest automated checkpoint: MT-503 ranked saved fingering variants.
+  MT-107 through MT-503 remain at one consolidated Windows verification gate
+  before sprint integration; Android is intentionally deferred.
 - Near-term product target: dependable, stage-readable charts for the user's 16 August 2026 gig
-- Combined user-test sheet: `docs/COMBINED_USER_TEST_MT203.md`
+- Current user-test sheet: `docs/COMBINED_USER_TEST_SPRINT6.md`
 
 Before making changes, run:
 
@@ -137,6 +137,8 @@ The latest slice has the following verification evidence:
   performance, annotation, Android widget, and legacy workflow regressions.
 - `flutter analyze --no-pub` and `git diff --check` after MT-203 reported no
   issues.
+- `flutter test` after MT-503 passes 163/163 tests. `flutter analyze --no-pub`
+  and `git diff --check` pass.
 - Combined-test debug builds on 24/25 July 2026 succeeded:
   `build\windows\x64\runner\Debug\music_tabbler.exe` and
   `build\app\outputs\flutter-apk\app-debug.apk`. The APK SHA-256 is
@@ -160,14 +162,15 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 - Japanese title/artist detection remains unreliable on real score headings and is accepted technical debt for the MVP.
 - Master side-crop control positions do not persist reliably through every split-dialog action or reopening; saved row crops remain intact. This convenience-state limitation is accepted MVP debt.
 - Extending a lyric highlight to the tab below is geometric same-column mapping, not semantic note/lyric alignment.
-- Imported visual charts do not yet have semantic note or lyric editing.
+- Imported visual charts become editable semantic note/lyric proposals only
+  through local recognition and explicit review.
 - Direct URLs are stored only as local provenance and can be opened in the
   normal browser. Songsterr/Ultimate Guitar/YouTube adapters are not
   implemented.
-- Full semantic OMR, imported-chart note/lyric editing, transposition, and
-  re-tabbing remain future work.
-- Theme/gig display preferences and visual drafts are persisted. Semantic
-  sample-song data is not.
+- Recognition remains assistive rather than bulletproof: every proposal must be
+  corrected and verified before gig-ready use or trusted transformation.
+- Semantic variants persist. Pitch transposition, same-pitch re-tabbing, and
+  ranked fingering variants are implemented pending Windows user verification.
 - The current notation painter is a semantic prototype, not production engraving.
 - Android parity has only been build-verified, not exercised end to end on the user's physical tablet.
 
@@ -175,12 +178,12 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 
 Keep the reliable visual fallback ahead of semantic research until the gig workflow is dependable.
 
-1. Complete the single combined Windows and physical Samsung-tablet user test
-   for MT-107 through MT-203 and record every UX/behavior defect.
-2. Bug-squash that report without broadening into semantic features.
+1. Complete `docs/COMBINED_USER_TEST_SPRINT6.md` on Windows, beginning with the
+   short 9mm recognition and +1 transposition sample.
+2. Bug-squash that report without starting Sprint 7 or legally gated features.
 3. Merge the verified sprint chain into the sprint integration branch, then
    `master`, only after the manual gate passes.
-4. Start semantic persistence (MT-301) from updated `master`.
+4. Build and test Android only after the Windows workflow is accepted.
 5. Review source terms/content rights and dependency licenses before
    implementing or distributing any online adapter or making the repository
    public.
@@ -191,6 +194,8 @@ These files are user-owned references outside the repository and should not be c
 
 - `C:\Users\Gerri\OneDrive - Nanyang Technological University\Guitar shiet\9mm.pdf`
 - `C:\Users\Gerri\OneDrive - Nanyang Technological University\Guitar shiet\9mm (squeezed).pdf`
+- `C:\Users\Gerri\OneDrive\Desktop\10mm.pdf` (Music Tabbler export of 9mm,
+  renamed only for comparison)
 - `C:\Users\Gerri\OneDrive - Nanyang Technological University\Guitar shiet\Nothing's gonna change my love for you - George benson.pdf`
 - Songsterr target screenshot: `C:\Users\Gerri\AppData\Local\Temp\codex-clipboard-15ec96be-1fb5-44f5-af19-efbe5dc86e87.png`
 

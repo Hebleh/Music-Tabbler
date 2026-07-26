@@ -79,4 +79,36 @@ void main() {
       expect(first.explanation, isNotEmpty);
     }
   });
+
+  test('ranked variants are deterministic, distinct, and score ordered', () {
+    final source = SongChart.foundationExample();
+    final first = service.rankedVariants(
+      source: source,
+      targetTuning: BassTuning.eadg,
+      idPrefix: 'ranked',
+    );
+    final second = service.rankedVariants(
+      source: source,
+      targetTuning: BassTuning.eadg,
+      idPrefix: 'ranked',
+    );
+
+    expect(first, isNotEmpty);
+    expect(
+      first.map((result) => result.strategy),
+      second.map((result) => result.strategy),
+    );
+    expect(
+      first.map((result) => result.score),
+      orderedEquals([...first.map((result) => result.score)]..sort()),
+    );
+    final signatures = first.map(
+      (result) => result.chart.measures
+          .expand((measure) => measure.notes)
+          .map((note) => '${note.stringIndex}:${note.fret}')
+          .join(','),
+    );
+    expect(signatures.toSet(), hasLength(signatures.length));
+    expect(first.every((result) => result.explanation.isNotEmpty), isTrue);
+  });
 }

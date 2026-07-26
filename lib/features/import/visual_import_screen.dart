@@ -108,6 +108,8 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
 
   Future<void> _recognizeSemanticProposal() async {
     if (_busy || _draft.strips.isEmpty) return;
+    final settings = await _chooseRecognitionSettings();
+    if (settings == null || !mounted) return;
     setState(() => _busy = true);
     try {
       final inputs = <RecognitionStripInput>[];
@@ -119,6 +121,10 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
           RecognitionStripInput(
             sourceId: '${strip.assetHash}.${strip.assetExtension}',
             regions: recognition.regions,
+            stringCount: settings.tuning.strings.length,
+            tabBand: settings.combinedNotationAndTab
+                ? const NormalizedRect(0, 0.5, 1, 0.99)
+                : const NormalizedRect(0, 0.05, 1, 0.95),
           ),
         );
       }
@@ -128,6 +134,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         title: _draft.title,
         artist: _draft.artist,
         strips: inputs,
+        tuning: settings.tuning,
       );
       final prior = await widget.services.semanticCharts.loadSemanticChart(
         chartId,
@@ -161,6 +168,81 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<_RecognitionSettings?> _chooseRecognitionSettings() async {
+    var tuning = BassTuning.eadg;
+    var combinedNotationAndTab = true;
+    return showDialog<_RecognitionSettings>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Recognition source layout'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<BassTuning>(
+                initialValue: tuning,
+                decoration: const InputDecoration(
+                  labelText: 'Original source tuning',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: BassTuning.eadg,
+                    child: Text('4-string EADG'),
+                  ),
+                  DropdownMenuItem(
+                    value: BassTuning.beadg,
+                    child: Text('5-string BEADG'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => tuning = value);
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<bool>(
+                initialValue: combinedNotationAndTab,
+                decoration: const InputDecoration(labelText: 'Row layout'),
+                items: const [
+                  DropdownMenuItem(
+                    value: true,
+                    child: Text('Notation above tablature'),
+                  ),
+                  DropdownMenuItem(value: false, child: Text('Tablature only')),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => combinedNotationAndTab = value);
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Recognition creates editable proposals only. Review every '
+                'note before using transpose or gig-ready.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                context,
+                _RecognitionSettings(
+                  tuning: tuning,
+                  combinedNotationAndTab: combinedNotationAndTab,
+                ),
+              ),
+              child: const Text('Recognize'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -1187,6 +1269,16 @@ class _StripCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RecognitionSettings {
+  const _RecognitionSettings({
+    required this.tuning,
+    required this.combinedNotationAndTab,
+  });
+
+  final BassTuning tuning;
+  final bool combinedNotationAndTab;
 }
 
 class _DesktopDropRegion extends StatelessWidget {

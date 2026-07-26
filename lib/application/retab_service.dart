@@ -30,6 +30,35 @@ class RetabResult {
 class RetabService {
   const RetabService();
 
+  List<RetabResult> rankedVariants({
+    required SongChart source,
+    required BassTuning targetTuning,
+    required String idPrefix,
+  }) {
+    final distinct = <String, RetabResult>{};
+    for (final strategy in RetabStrategy.values) {
+      final result = retab(
+        source: source,
+        targetTuning: targetTuning,
+        derivedChartId: '$idPrefix-${strategy.name}',
+        strategy: strategy,
+      );
+      final signature = [
+        for (final measure in result.chart.measures)
+          for (final note in measure.notes) '${note.stringIndex}:${note.fret}',
+      ].join(',');
+      distinct.putIfAbsent(signature, () => result);
+    }
+    final ranked = distinct.values.toList()
+      ..sort((a, b) {
+        final score = a.score.compareTo(b.score);
+        return score != 0
+            ? score
+            : a.strategy.index.compareTo(b.strategy.index);
+      });
+    return List.unmodifiable(ranked);
+  }
+
   RetabResult retab({
     required SongChart source,
     required BassTuning targetTuning,

@@ -60,7 +60,8 @@ class SemanticRecognitionService {
       }
       final candidates = <_FretCandidate>[];
       for (final region in strip.regions) {
-        final value = int.tryParse(region.text.trim());
+        final token = region.text.trim().toLowerCase();
+        final value = token == 'x' ? 0 : int.tryParse(token);
         final centerY = (region.rect.top + region.rect.bottom) / 2;
         if (value == null ||
             value < 0 ||
@@ -85,7 +86,7 @@ class SemanticRecognitionService {
       candidates.sort((a, b) => a.rect.left.compareTo(b.rect.left));
       if (candidates.isEmpty) {
         diagnostics.add(
-          'Row ${measureIndex + 1}: no fret digits were proposed.',
+          'Row ${measureIndex + 1}: no fret digits or dead notes were proposed.',
         );
       } else if (candidates.length > 16) {
         diagnostics.add(

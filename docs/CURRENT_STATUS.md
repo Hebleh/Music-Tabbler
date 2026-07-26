@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 24 July 2026
+Updated: 26 July 2026
 
 ## Repository state
 
@@ -20,7 +20,7 @@ Updated: 24 July 2026
 - `flutter doctor -v` reports no issues for Windows or Android.
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
-- `flutter analyze --no-pub` passes with no issues, and the current source suite passes 125/125 tests.
+- `flutter analyze --no-pub` passes with no issues, and the current source suite passes 163/163 tests.
 - `flutter build windows --release --no-pub` produces the `v0.1.0+1` Windows runtime.
 - `tool/package_windows.ps1` produces a single-file user-level installer EXE, a portable ZIP, and SHA-256 sidecars for the Windows MVP.
 - `flutter build apk --debug` produces an installable debug APK.
@@ -51,6 +51,24 @@ Updated: 24 July 2026
   URL. Source details remain editable and are excluded from PDFs.
 - Dark/light app, gig-theme, and display preferences persist per device and are
   deliberately excluded from portable library state.
+
+### Semantic workflow through Sprint 6
+
+- Semantic charts persist as stable variants and round-trip through `.mtstate`.
+- Exact rhythm/navigation, custom instruments and tunings, techniques,
+  syllable-aligned lyrics, confidence, source mappings, and explicit
+  proposed/verified state remain independent of Flutter, SQLite, OCR, and PDF.
+- One semantic layout feeds both screen and PDF with independent
+  tablature/notation controls.
+- Notes, rests, measures, structure, tuning/capo, techniques, and lyrics are
+  directly editable with undo, autosave, validation, and MusicXML interchange.
+- Local OCR creates editable proposals with source preview, confidence,
+  reject/verify controls, and an explicit gig-ready gate.
+- Recognition settings distinguish four-string EADG from five-string BEADG and
+  combined notation-plus-tab rows from tab-only rows. Standalone `X` tokens are
+  proposed as dead notes.
+- Exact pitch transposition and same-pitch re-tabbing save separate derived
+  variants. Ranked fingering alternatives are deterministic and explained.
 
 ### Manual visual-chart workflow
 
@@ -119,13 +137,14 @@ Updated: 24 July 2026
 
 ## Current limitations
 
-- Semantic sample-song data is not persisted yet; visual-chart drafts and
-  per-device preferences are persisted.
+- OCR conversion remains a reviewable proposal rather than a bulletproof
+  transcription. The musician must correct and verify a recognized chart
+  before transposition, re-tabbing, or gig-ready use.
 - Direct URL records do not download or scrape content. Image/PDF and OCR intake
   work on Windows and Android; clipboard-image paste is currently Windows-only.
-- The notation painter is an early semantic rendering spike, not full engraving.
-- Full tab OMR/semantic conversion, source adapters, semantic lyric editing, and
-  note editing for imported visual charts remain future slices.
+- The notation painter is an early semantic renderer, not full engraving.
+- Remote source adapters remain legally gated and unimplemented. Visual imports
+  become editable notes/lyrics only through the proposal-and-review workflow.
 - Title/artist and text-region OCR are assistive proposals and must remain user-correctable. OCR is now performed on each cropped chart row with stronger upscaling so small, faint, widely spaced lyric fragments have more pixels to work with, but isolated characters may still need freeform selection. The "corresponding tab below" option is currently a geometric same-column extension, not semantic note-to-lyric alignment.
 - Japanese OCR on Windows requires the optional Japanese Windows OCR language capability to be installed. If `ja-JP` is unavailable, the plugin falls back to the installed English/profile recognizers.
 - Export whitespace detection is intentionally conservative. Tiny isolated footer marks or source page numbers can preserve trailing whitespace rather than risk deleting notation or lyrics.
@@ -159,21 +178,21 @@ Updated: 24 July 2026
 
 ### Slice 2 - semantic editor
 
-- Implement measures, rhythms, notes/rests, strings/frets, tuning presets, repeats, sections, lyrics, semantic rendering, and direct note editing.
-- Import/export MusicXML fixtures where supported.
-- Add backing-vocal edit/preview mode and combined setlist PDF export.
+- **Complete pending Windows user verification:** measures, exact rhythm,
+  notes/rests, tunings, repeats, sections, techniques, lyrics, shared
+  screen/PDF rendering, direct editing, and MusicXML interchange.
 
-### Slice 3 - Songsterr screenshot recognition
+### Slice 3 - local screenshot/PDF recognition
 
-- Build fixture annotations and accuracy metrics.
-- Recognize line/measure geometry, fret digits, rhythm, sections, and lyrics into a reviewable proposal.
-- Add side-by-side correction and explicit gig-ready verification.
+- **Complete pending Windows user verification:** rights-safe fixture metrics,
+  local fret/rhythm/technique/section/lyric proposals, source-side correction,
+  and explicit gig-ready verification.
 
 ### Slice 4 - transformations and safe transfer
 
-- Add pitch transposition, re-tabbing, ranked fingering candidates, and
-  original/adapted variants. Portable `.mtsong`/`.mtstate`, backups, conflicts,
-  and restore are implemented pending combined user verification.
+- **Complete pending Windows user verification:** pitch transposition,
+  same-pitch re-tabbing, ranked fingerings, separate derived variants, portable
+  `.mtsong`/`.mtstate`, backups, conflicts, and restore.
 
 ### Slice 5 - Android parity and gig hardening
 

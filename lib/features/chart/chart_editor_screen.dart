@@ -383,6 +383,58 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
     }
   }
 
+  Future<void> _compareFingerings() async {
+    final target = _chart.tuning.strings.length == 5
+        ? BassTuning.eadg
+        : BassTuning.beadg;
+    try {
+      final variants = const RetabService().rankedVariants(
+        source: _chart,
+        targetTuning: target,
+        idPrefix: 'semantic-fingering-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      if (!mounted) return;
+      final selected = await showDialog<RetabResult>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: Text('Fingerings for ${target.name}'),
+          children: [
+            for (var index = 0; index < variants.length; index += 1)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, variants[index]),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(child: Text('${index + 1}')),
+                  title: Text(variants[index].strategy.label),
+                  subtitle: Text(variants[index].explanation),
+                ),
+              ),
+          ],
+        ),
+      );
+      if (selected == null) return;
+      await _saveChart(selected.chart);
+      if (!mounted) return;
+      setState(() {
+        _chart = selected.chart;
+        _selectedMeasureIndex = 0;
+        _selectedNoteId = selected.chart.measures.first.notes.firstOrNull?.id;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Saved ${selected.strategy.label} as a separate variant.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Fingering comparison failed: $error')),
+      );
+    }
+  }
+
   String _safeFileName(String value) {
     final cleaned = value.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
     return cleaned.isEmpty ? 'music-tabbler-chart' : cleaned;
@@ -723,6 +775,11 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
             tooltip: 'Adapt tuning / strings',
             onPressed: _retabChart,
             icon: const Icon(Icons.linear_scale),
+          ),
+          IconButton(
+            tooltip: 'Compare fingerings',
+            onPressed: _compareFingerings,
+            icon: const Icon(Icons.alt_route),
           ),
           IconButton(
             tooltip: widget.preferences.appTheme == AppThemePreference.dark
