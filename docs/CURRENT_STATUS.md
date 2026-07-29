@@ -27,8 +27,10 @@ Updated: 29 July 2026
   source-spaced semantic proposals, per-proposal review, recognition intake,
   and context-specific density dialogs. The complete Windows Computer Use gate
   is queued in `docs/COMPUTER_USE_FULL_APP_ROUND.md`.
-- The current release checkpoint is versioned `v0.2.0-beta.1+2`; Windows and
-  Android artifacts are produced only after the release gates pass.
+- The current release checkpoint is versioned `v0.2.0-beta.1+2`. The Windows
+  installer/portable runtime and Android test APK passed archive-integrity and
+  Windows startup smoke checks. Exact artifacts and hashes are recorded in
+  `docs/releases/v0.2.0-beta.1.md`.
 - `tool/package_windows.ps1` produces a single-file user-level installer EXE, a portable ZIP, and SHA-256 sidecars for the Windows MVP.
 - `flutter build apk --debug` produces an installable debug APK.
 
