@@ -8,7 +8,8 @@ import 'package:image/image.dart' as img;
 import '../domain/visual_chart_models.dart';
 import 'service_contracts.dart';
 
-class NativeTextRecognitionService implements TextRecognitionService {
+class NativeTextRecognitionService
+    implements TextRecognitionService, PreparedTextRecognitionService {
   NativeTextRecognitionService(this.library);
 
   final ChartLibrary library;
@@ -28,6 +29,19 @@ class NativeTextRecognitionService implements TextRecognitionService {
       library.assetPath(strip.assetHash, strip.assetExtension),
       strip.crop,
     );
+    return _readPrepared(prepared);
+  }
+
+  @override
+  Future<MetadataSuggestion> recognizePreparedImage(Uint8List bytes) async {
+    final image = img.decodeImage(bytes);
+    if (image == null) {
+      throw const FormatException('Prepared OCR image is invalid.');
+    }
+    return _readPrepared(_PreparedOcrImage(bytes, image.width, image.height));
+  }
+
+  Future<MetadataSuggestion> _readPrepared(_PreparedOcrImage prepared) async {
     final result = await _reader.readFromBytes(prepared.bytes);
     final lines = [for (final block in result.blocks) ...block.lines]
       ..sort((a, b) => a.boundingBox.top.compareTo(b.boundingBox.top));

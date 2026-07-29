@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
+import '../../application/visual_deskew.dart';
 import '../../domain/visual_chart_models.dart';
 import 'resizable_rect_overlay.dart';
 
@@ -15,6 +16,7 @@ class RectEditorDialog extends StatefulWidget {
     required this.title,
     required this.initialRect,
     this.viewportRect = const NormalizedRect.full(),
+    this.deskewDegrees = 0,
   });
 
   final String imagePath;
@@ -22,6 +24,7 @@ class RectEditorDialog extends StatefulWidget {
   final String title;
   final NormalizedRect initialRect;
   final NormalizedRect viewportRect;
+  final double deskewDegrees;
 
   @override
   State<RectEditorDialog> createState() => _RectEditorDialogState();
@@ -38,6 +41,7 @@ class _RectEditorDialogState extends State<RectEditorDialog> {
     _imageBytes = compute(_cropDialogImage, {
       'path': widget.imagePath,
       'crop': widget.viewportRect.toJson(),
+      'deskewDegrees': widget.deskewDegrees,
     });
   }
 
@@ -190,6 +194,10 @@ Uint8List _cropDialogImage(Map<String, Object> request) {
     throw const FormatException('Stored chart image is invalid.');
   }
   image = img.bakeOrientation(image);
+  image = applyDeskewRotation(
+    image,
+    (request['deskewDegrees'] as num?)?.toDouble() ?? 0,
+  );
   final crop = NormalizedRect.fromJson(
     (request['crop']! as Map).cast<String, Object?>(),
   );

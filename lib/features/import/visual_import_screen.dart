@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,12 +12,18 @@ import '../../application/highlight_geometry.dart';
 import '../../application/recognition_review.dart';
 import '../../application/semantic_recognition_service.dart';
 import '../../application/service_contracts.dart';
+import '../../application/visual_tab_analysis_service.dart';
+import '../../application/visual_tab_transform_service.dart';
 import '../../domain/music_models.dart';
 import '../../domain/visual_chart_models.dart';
+import '../../domain/visual_tab_transform_models.dart';
 import 'multi_row_split_dialog.dart';
 import 'rect_editor_dialog.dart';
 import 'text_highlighter_dialog.dart';
+import 'visual_tab_analysis_dialog.dart';
+import 'visual_tab_transform_dialog.dart';
 import 'visual_strip_preview.dart';
+import 'visual_deskew_dialog.dart';
 
 class VisualImportScreen extends StatefulWidget {
   const VisualImportScreen({
@@ -170,6 +177,177 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     }
   }
 
+  Future<void> _reviewVisualTabAnalysis({
+    List<VisualStrip>? stripsOverride,
+  }) async {
+    final strips = stripsOverride ?? _draft.strips;
+    if (_busy || strips.isEmpty) return;
+    final sourceStringCount = await _chooseSourceStringCount();
+    if (sourceStringCount == null || !mounted) return;
+    final result = await showVisualTabAnalysisReview(
+      context: context,
+      library: widget.services.library,
+      analyzer: VisualTabAnalysisService(
+        library: widget.services.library,
+        textRecognition: widget.services.textRecognition,
+      ),
+      strips: strips,
+      sourceStringCount: sourceStringCount,
+    );
+    if (result == null || !mounted) return;
+    final configuration = await showVisualTabTransformDialog(
+      context: context,
+      sourceStringCount: sourceStringCount,
+    );
+    if (configuration == null || !mounted) return;
+    await _applyVisualTabTransform(result, configuration);
+  }
+
+  Future<void> _applyVisualTabTransform(
+    List<VisualTabAnalysis> analyses,
+    VisualTabTransformConfiguration configuration,
+  ) async {
+    setState(() => _busy = true);
+    try {
+      final transformed = await VisualTabTransformService(
+        widget.services.library,
+      ).apply(draft: _draft, analyses: analyses, configuration: configuration);
+      if (!mounted) return;
+      _commitDraft(transformed);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Transformed ${analyses.fold<int>(0, (total, item) => total + item.enabledFretTokenCount)} '
+            'reviewed fret/dead-note token(s). Ctrl+Z restores the prior chart.',
+          ),
+        ),
+      );
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _editOrRemoveVisualTransform() async {
+    final record = _draft.visualTabTransform;
+    if (record == null) {
+      await _reviewVisualTabAnalysis();
+      return;
+    }
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit transform settings'),
+              subtitle: const Text('Reapply from the immutable original rows.'),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.fact_check_outlined),
+              title: const Text('Review detections again'),
+              subtitle: const Text(
+                'Return to the original rows and rerun PDF/OCR analysis.',
+              ),
+              onTap: () => Navigator.pop(context, 'review'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.restore),
+              title: const Text('Remove visual transform'),
+              subtitle: const Text('Restore all original visual rows.'),
+              onTap: () => Navigator.pop(context, 'remove'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    if (action == 'remove') {
+      final restored = VisualTabTransformService(
+        widget.services.library,
+      ).remove(_draft);
+      _commitDraft(restored);
+      return;
+    }
+    if (action == 'review') {
+      await _reviewVisualTabAnalysis(stripsOverride: record.baseStrips);
+      return;
+    }
+    final analyses = record.analyses
+        .map(VisualTabAnalysis.fromJson)
+        .toList(growable: false);
+    final initial = VisualTabTransformConfiguration.fromJson(
+      record.configuration,
+    );
+    final configuration = await showVisualTabTransformDialog(
+      context: context,
+      sourceStringCount: initial.sourceLabels.length,
+      initialValue: initial,
+    );
+    if (configuration != null && mounted) {
+      await _applyVisualTabTransform(analyses, configuration);
+    }
+  }
+
+  Future<int?> _chooseSourceStringCount() async {
+    final controller = TextEditingController(text: '4');
+    String? error;
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Confirm source tab strings'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Source string count',
+                    errorText: error,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Music Tabbler will detect string lines and propose fret '
+                  'tokens. It will not silently verify the source tuning.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = int.tryParse(controller.text.trim());
+                if (value == null || value < 2 || value > 12) {
+                  setDialogState(() => error = 'Enter 2 to 12 strings.');
+                  return;
+                }
+                Navigator.pop(context, value);
+              },
+              child: const Text('Analyze'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
   Future<_RecognitionSettings?> _chooseRecognitionSettings() async {
     var tuning = BassTuning.eadg;
     var combinedNotationAndTab = true;
@@ -278,6 +456,19 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                 appBar: AppBar(
                   title: const Text('Visual chart editor'),
                   actions: [
+                    IconButton(
+                      tooltip: _draft.visualTabTransform == null
+                          ? 'Analyze visual tab for transform'
+                          : 'Edit or remove visual tab transform',
+                      onPressed: _busy || _draft.strips.isEmpty
+                          ? null
+                          : _editOrRemoveVisualTransform,
+                      icon: Icon(
+                        _draft.visualTabTransform == null
+                            ? Icons.alt_route
+                            : Icons.transform,
+                      ),
+                    ),
                     IconButton(
                       tooltip: 'Recognize semantic proposal',
                       onPressed: _busy || _draft.strips.isEmpty
@@ -550,30 +741,54 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                           : Scrollbar(
                               controller: _editorScrollController,
                               thumbVisibility: true,
-                              child: ReorderableListView.builder(
-                                scrollController: _editorScrollController,
-                                primary: false,
-                                physics: const ClampingScrollPhysics(),
-                                padding: const EdgeInsets.all(16),
-                                itemCount: _draft.strips.length,
-                                onReorderItem: _reorder,
-                                itemBuilder: (context, index) {
-                                  final strip = _draft.strips[index];
-                                  return _StripCard(
-                                    key: ValueKey(strip.id),
-                                    index: index,
-                                    strip: strip,
-                                    sourceLabel: _sourceLabelAt(index),
-                                    globalTreatment: _draft.globalTreatment,
-                                    services: widget.services,
-                                    onChanged: (value) =>
-                                        _replaceStrip(index, value),
-                                    onSplit: () => _splitRow(index),
-                                    onCrop: () => _editCrop(index),
-                                    onDuplicate: () => _duplicate(index),
-                                    onDelete: () => _delete(index),
-                                  );
+                              child: Listener(
+                                onPointerSignal: (event) {
+                                  if (event is! PointerScrollEvent ||
+                                      !_editorScrollController.hasClients) {
+                                    return;
+                                  }
+                                  GestureBinding.instance.pointerSignalResolver
+                                      .register(event, (resolvedEvent) {
+                                        final scroll =
+                                            resolvedEvent as PointerScrollEvent;
+                                        final position =
+                                            _editorScrollController.position;
+                                        _editorScrollController.jumpTo(
+                                          (position.pixels +
+                                                  scroll.scrollDelta.dy)
+                                              .clamp(
+                                                position.minScrollExtent,
+                                                position.maxScrollExtent,
+                                              ),
+                                        );
+                                      });
                                 },
+                                child: ReorderableListView.builder(
+                                  scrollController: _editorScrollController,
+                                  primary: false,
+                                  physics: const ClampingScrollPhysics(),
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount: _draft.strips.length,
+                                  onReorderItem: _reorder,
+                                  itemBuilder: (context, index) {
+                                    final strip = _draft.strips[index];
+                                    return _StripCard(
+                                      key: ValueKey(strip.id),
+                                      index: index,
+                                      strip: strip,
+                                      sourceLabel: _sourceLabelAt(index),
+                                      globalTreatment: _draft.globalTreatment,
+                                      services: widget.services,
+                                      onChanged: (value) =>
+                                          _replaceStrip(index, value),
+                                      onSplit: () => _splitRow(index),
+                                      onCrop: () => _editCrop(index),
+                                      onDeskew: () => _editDeskew(index),
+                                      onDuplicate: () => _duplicate(index),
+                                      onDelete: () => _delete(index),
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                     ),
@@ -733,9 +948,10 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
           strip.assetHash,
           strip.assetExtension,
         ),
-        imageAspectRatio: strip.pixelWidth / strip.pixelHeight,
+        imageAspectRatio: strip.deskewedPixelWidth / strip.deskewedPixelHeight,
         sourceRect: const NormalizedRect.full(),
         initialRows: [for (final sibling in siblings) sibling.crop],
+        deskewDegrees: strip.deskewDegrees,
       ),
     );
     if (rows == null || rows.isEmpty) return;
@@ -759,7 +975,9 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   }
 
   bool _sameSourcePage(VisualStrip left, VisualStrip right) =>
-      left.assetHash == right.assetHash && left.sourcePage == right.sourcePage;
+      left.assetHash == right.assetHash &&
+      left.sourcePage == right.sourcePage &&
+      (left.deskewDegrees - right.deskewDegrees).abs() < 0.0001;
 
   VisualStrip _resplitStrip(NormalizedRect crop, List<VisualStrip> siblings) {
     final template = siblings.reduce((best, candidate) {
@@ -785,6 +1003,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       lyricBand: template.lyricBand,
       lyricContrast: template.lyricContrast,
       highlights: highlights,
+      deskewDegrees: template.deskewDegrees,
     );
   }
 
@@ -813,6 +1032,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         title: 'Crop tab row',
         initialRect: const NormalizedRect.full(),
         viewportRect: strip.crop,
+        deskewDegrees: strip.deskewDegrees,
       ),
     );
     if (value != null) {
@@ -821,6 +1041,22 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         strip.copyWith(crop: cropLocalRectToAsset(value, strip.crop)),
       );
     }
+  }
+
+  Future<void> _editDeskew(int index) async {
+    final strip = _draft.strips[index];
+    final value = await showDialog<VisualStrip>(
+      context: context,
+      builder: (_) => VisualDeskewDialog(
+        library: widget.services.library,
+        strip: strip,
+        globalTreatment: _draft.globalTreatment,
+      ),
+    );
+    if (value != null) _replaceStrip(index, value);
+    // Dialog controls can retain the primary focus on Windows after closing,
+    // which prevents the editor-level Ctrl+Z shortcut from seeing the key.
+    _shortcutFocusNode.requestFocus();
   }
 
   Future<void> _openChartHighlighter() async {
@@ -1162,6 +1398,7 @@ class _StripCard extends StatelessWidget {
     required this.onChanged,
     required this.onSplit,
     required this.onCrop,
+    required this.onDeskew,
     required this.onDuplicate,
     required this.onDelete,
   });
@@ -1174,6 +1411,7 @@ class _StripCard extends StatelessWidget {
   final ValueChanged<VisualStrip> onChanged;
   final VoidCallback onSplit;
   final VoidCallback onCrop;
+  final VoidCallback onDeskew;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
@@ -1244,15 +1482,30 @@ class _StripCard extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 FilledButton.tonalIcon(
-                  onPressed: onSplit,
+                  onPressed: strip.deskewDegrees.abs() < 0.0001
+                      ? onSplit
+                      : null,
                   icon: const Icon(Icons.call_split),
                   label: const Text('Split into rows'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: onCrop,
+                  onPressed: strip.deskewDegrees.abs() < 0.0001 ? onCrop : null,
                   icon: const Icon(Icons.crop),
                   label: const Text('Crop row'),
                 ),
+                OutlinedButton.icon(
+                  onPressed: onDeskew,
+                  icon: const Icon(Icons.rotate_left),
+                  label: Text(
+                    strip.deskewDegrees.abs() < 0.0001
+                        ? 'Deskew'
+                        : 'Deskew ${strip.deskewDegrees.toStringAsFixed(1)}°',
+                  ),
+                ),
+                if (strip.deskewDegrees.abs() >= 0.0001)
+                  const Text(
+                    'Reset deskew before splitting or cropping again.',
+                  ),
                 if (strip.highlights.isNotEmpty)
                   ActionChip(
                     avatar: const Icon(Icons.layers_clear_outlined, size: 18),

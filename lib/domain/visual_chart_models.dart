@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 enum VisualTreatment {
   original,
@@ -214,6 +215,54 @@ class VisualAnnotationStroke {
   }
 }
 
+class VisualDeskewBaseGeometry {
+  const VisualDeskewBaseGeometry({
+    required this.crop,
+    this.lyricBand,
+    this.highlights = const [],
+    this.annotations = const [],
+  });
+
+  final NormalizedRect crop;
+  final NormalizedRect? lyricBand;
+  final List<VisualHighlight> highlights;
+  final List<VisualAnnotationStroke> annotations;
+
+  Map<String, Object?> toJson() => {
+    'crop': crop.toJson(),
+    'lyricBand': lyricBand?.toJson(),
+    'highlights': highlights.map((item) => item.toJson()).toList(),
+    'annotations': annotations.map((item) => item.toJson()).toList(),
+  };
+
+  factory VisualDeskewBaseGeometry.fromJson(Map<String, Object?> json) {
+    final lyricBandJson = json['lyricBand'];
+    return VisualDeskewBaseGeometry(
+      crop: NormalizedRect.fromJson(
+        (json['crop']! as Map).cast<String, Object?>(),
+      ),
+      lyricBand: lyricBandJson == null
+          ? null
+          : NormalizedRect.fromJson(
+              (lyricBandJson as Map).cast<String, Object?>(),
+            ),
+      highlights: ((json['highlights'] as List?) ?? const [])
+          .map(
+            (item) =>
+                VisualHighlight.fromJson((item as Map).cast<String, Object?>()),
+          )
+          .toList(growable: false),
+      annotations: ((json['annotations'] as List?) ?? const [])
+          .map(
+            (item) => VisualAnnotationStroke.fromJson(
+              (item as Map).cast<String, Object?>(),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
 class VisualStrip {
   const VisualStrip({
     required this.id,
@@ -231,6 +280,8 @@ class VisualStrip {
     this.annotations = const [],
     this.annotationsVisible = true,
     this.includeAnnotationsInPdf = false,
+    this.deskewDegrees = 0,
+    this.deskewBaseGeometry,
   });
 
   final String id;
@@ -248,9 +299,23 @@ class VisualStrip {
   final List<VisualAnnotationStroke> annotations;
   final bool annotationsVisible;
   final bool includeAnnotationsInPdf;
+  final double deskewDegrees;
+  final VisualDeskewBaseGeometry? deskewBaseGeometry;
+
+  double get deskewedPixelWidth {
+    final radians = deskewDegrees * math.pi / 180;
+    return (pixelWidth * math.cos(radians)).abs() +
+        (pixelHeight * math.sin(radians)).abs();
+  }
+
+  double get deskewedPixelHeight {
+    final radians = deskewDegrees * math.pi / 180;
+    return (pixelWidth * math.sin(radians)).abs() +
+        (pixelHeight * math.cos(radians)).abs();
+  }
 
   double get croppedAspectRatio =>
-      (pixelWidth * crop.width) / (pixelHeight * crop.height);
+      (deskewedPixelWidth * crop.width) / (deskewedPixelHeight * crop.height);
 
   VisualStrip copyWith({
     NormalizedRect? crop,
@@ -262,6 +327,9 @@ class VisualStrip {
     List<VisualAnnotationStroke>? annotations,
     bool? annotationsVisible,
     bool? includeAnnotationsInPdf,
+    double? deskewDegrees,
+    VisualDeskewBaseGeometry? deskewBaseGeometry,
+    bool clearDeskewBaseGeometry = false,
   }) {
     return VisualStrip(
       id: id,
@@ -280,6 +348,10 @@ class VisualStrip {
       annotationsVisible: annotationsVisible ?? this.annotationsVisible,
       includeAnnotationsInPdf:
           includeAnnotationsInPdf ?? this.includeAnnotationsInPdf,
+      deskewDegrees: deskewDegrees ?? this.deskewDegrees,
+      deskewBaseGeometry: clearDeskewBaseGeometry
+          ? null
+          : deskewBaseGeometry ?? this.deskewBaseGeometry,
     );
   }
 
@@ -299,6 +371,8 @@ class VisualStrip {
     'annotations': annotations.map((item) => item.toJson()).toList(),
     'annotationsVisible': annotationsVisible,
     'includeAnnotationsInPdf': includeAnnotationsInPdf,
+    'deskewDegrees': deskewDegrees,
+    'deskewBaseGeometry': deskewBaseGeometry?.toJson(),
   };
 
   factory VisualStrip.fromJson(Map<String, Object?> json) {
@@ -337,6 +411,59 @@ class VisualStrip {
       annotationsVisible: json['annotationsVisible'] as bool? ?? true,
       includeAnnotationsInPdf:
           json['includeAnnotationsInPdf'] as bool? ?? false,
+      deskewDegrees: (json['deskewDegrees'] as num?)?.toDouble() ?? 0,
+      deskewBaseGeometry: json['deskewBaseGeometry'] == null
+          ? null
+          : VisualDeskewBaseGeometry.fromJson(
+              (json['deskewBaseGeometry']! as Map).cast<String, Object?>(),
+            ),
+    );
+  }
+}
+
+class VisualTabTransformRecord {
+  const VisualTabTransformRecord({
+    required this.id,
+    required this.appliedAt,
+    required this.baseStrips,
+    required this.configuration,
+    required this.analyses,
+    this.audit = const [],
+  });
+
+  final String id;
+  final DateTime appliedAt;
+  final List<VisualStrip> baseStrips;
+  final Map<String, Object?> configuration;
+  final List<Map<String, Object?>> analyses;
+  final List<String> audit;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'appliedAt': appliedAt.toIso8601String(),
+    'baseStrips': baseStrips.map((strip) => strip.toJson()).toList(),
+    'configuration': configuration,
+    'analyses': analyses,
+    'audit': audit,
+  };
+
+  factory VisualTabTransformRecord.fromJson(Map<String, Object?> json) {
+    return VisualTabTransformRecord(
+      id: json['id']! as String,
+      appliedAt: DateTime.parse(json['appliedAt']! as String),
+      baseStrips: ((json['baseStrips'] as List?) ?? const [])
+          .map(
+            (value) =>
+                VisualStrip.fromJson((value as Map).cast<String, Object?>()),
+          )
+          .toList(growable: false),
+      configuration: (json['configuration']! as Map).cast<String, Object?>(),
+      analyses: ((json['analyses'] as List?) ?? const [])
+          .map((value) => (value as Map).cast<String, Object?>())
+          .toList(growable: false),
+      audit: ((json['audit'] as List?) ?? const []).cast<String>().toList(
+        growable: false,
+      ),
     );
   }
 }
@@ -352,6 +479,7 @@ class VisualChartDraft {
     this.exportDensity = VisualExportDensity.original,
     this.globalTreatment,
     this.provenance,
+    this.visualTabTransform,
     this.strips = const [],
   });
 
@@ -364,7 +492,14 @@ class VisualChartDraft {
   final VisualExportDensity exportDensity;
   final VisualTreatment? globalTreatment;
   final SourceProvenance? provenance;
+  final VisualTabTransformRecord? visualTabTransform;
   final List<VisualStrip> strips;
+
+  Iterable<VisualStrip> get allReferencedStrips sync* {
+    yield* strips;
+    final transform = visualTabTransform;
+    if (transform != null) yield* transform.baseStrips;
+  }
 
   VisualChartDraft copyWith({
     String? id,
@@ -376,6 +511,8 @@ class VisualChartDraft {
     bool clearGlobalTreatment = false,
     SourceProvenance? provenance,
     bool clearProvenance = false,
+    VisualTabTransformRecord? visualTabTransform,
+    bool clearVisualTabTransform = false,
     List<VisualStrip>? strips,
     DateTime? updatedAt,
   }) {
@@ -391,6 +528,9 @@ class VisualChartDraft {
           ? null
           : globalTreatment ?? this.globalTreatment,
       provenance: clearProvenance ? null : provenance ?? this.provenance,
+      visualTabTransform: clearVisualTabTransform
+          ? null
+          : visualTabTransform ?? this.visualTabTransform,
       strips: strips ?? this.strips,
     );
   }
@@ -398,7 +538,7 @@ class VisualChartDraft {
   String encode() => jsonEncode(toJson());
 
   Map<String, Object?> toJson() => {
-    'schemaVersion': 1,
+    'schemaVersion': 2,
     'id': id,
     'title': title,
     'artist': artist,
@@ -408,6 +548,7 @@ class VisualChartDraft {
     'exportDensity': exportDensity.name,
     'globalTreatment': globalTreatment?.name,
     'provenance': provenance?.toJson(),
+    'visualTabTransform': visualTabTransform?.toJson(),
     'strips': strips.map((strip) => strip.toJson()).toList(),
   };
 
@@ -418,12 +559,14 @@ class VisualChartDraft {
   }
 
   factory VisualChartDraft.fromJson(Map<String, Object?> json) {
-    if (json['schemaVersion'] != 1) {
+    final schemaVersion = json['schemaVersion'] as int?;
+    if (schemaVersion != 1 && schemaVersion != 2) {
       throw const FormatException('Unsupported visual chart schema.');
     }
     final treatment = json['globalTreatment'] as String?;
     final densityName = json['exportDensity'] as String?;
     final provenance = json['provenance'];
+    final visualTabTransform = json['visualTabTransform'];
     return VisualChartDraft(
       id: json['id']! as String,
       title: json['title']! as String,
@@ -441,6 +584,11 @@ class VisualChartDraft {
           ? null
           : SourceProvenance.fromJson(
               (provenance as Map).cast<String, Object?>(),
+            ),
+      visualTabTransform: visualTabTransform == null
+          ? null
+          : VisualTabTransformRecord.fromJson(
+              (visualTabTransform as Map).cast<String, Object?>(),
             ),
       strips: (json['strips']! as List)
           .map(

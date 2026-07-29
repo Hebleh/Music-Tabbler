@@ -67,6 +67,7 @@ abstract interface class LibraryStateTransfer {
 
 abstract interface class ChartLibrary {
   String assetPath(String hash, String extension);
+  Future<StoredAsset> storeAsset(List<int> bytes, String extension);
   Future<void> saveDraft(VisualChartDraft draft);
   Future<void> deleteDraft(String id);
   Future<void> deleteDraftAndRemoveSetlistReferences(
@@ -75,6 +76,18 @@ abstract interface class ChartLibrary {
   });
   Future<List<VisualChartDraft>> listDrafts();
   Future<VisualChartDraft?> loadDraft(String id);
+}
+
+class StoredAsset {
+  const StoredAsset({
+    required this.hash,
+    required this.extension,
+    required this.path,
+  });
+
+  final String hash;
+  final String extension;
+  final String path;
 }
 
 abstract interface class SongVariantLibrary {
@@ -117,10 +130,15 @@ abstract interface class VisualImporter {
 }
 
 class RecognizedTextRegion {
-  const RecognizedTextRegion({required this.text, required this.rect});
+  const RecognizedTextRegion({
+    required this.text,
+    required this.rect,
+    this.confidence = 1,
+  });
 
   final String text;
   final NormalizedRect rect;
+  final double confidence;
 }
 
 class MetadataSuggestion {
@@ -133,6 +151,12 @@ class MetadataSuggestion {
 
 abstract interface class TextRecognitionService {
   Future<MetadataSuggestion> recognize(VisualStrip strip);
+}
+
+/// Optional capability for OCR callers that need purpose-specific image
+/// preprocessing without first installing a temporary library asset.
+abstract interface class PreparedTextRecognitionService {
+  Future<MetadataSuggestion> recognizePreparedImage(Uint8List bytes);
 }
 
 abstract interface class ChartPdfExporter {

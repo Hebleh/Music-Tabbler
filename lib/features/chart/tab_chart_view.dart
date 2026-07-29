@@ -177,7 +177,14 @@ class _SemanticPlanPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
       maxLines: 1,
     )..layout();
-    painter.paint(canvas, Offset(primitive.x, primitive.y));
+    final centered = primitive.role == SemanticTextRole.fret;
+    painter.paint(
+      canvas,
+      Offset(
+        centered ? primitive.x - painter.width / 2 : primitive.x,
+        primitive.y,
+      ),
+    );
   }
 
   @override

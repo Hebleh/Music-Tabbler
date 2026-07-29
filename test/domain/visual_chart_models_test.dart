@@ -84,18 +84,71 @@ void main() {
 
   test('schema-v1 drafts without export density retain MVP behavior', () {
     final now = DateTime.utc(2026, 7, 20);
-    final json = VisualChartDraft(
-      id: 'legacy',
-      title: 'Legacy',
-      artist: '',
-      createdAt: now,
-      updatedAt: now,
-    ).toJson()..remove('exportDensity');
+    final json =
+        VisualChartDraft(
+            id: 'legacy',
+            title: 'Legacy',
+            artist: '',
+            createdAt: now,
+            updatedAt: now,
+          ).toJson()
+          ..['schemaVersion'] = 1
+          ..remove('exportDensity')
+          ..remove('visualTabTransform');
 
     expect(
       VisualChartDraft.fromJson(json).exportDensity,
       VisualExportDensity.original,
     );
+  });
+
+  test('visual transform record preserves immutable base strips and audit', () {
+    final now = DateTime.utc(2026, 7, 28);
+    final draft = VisualChartDraft(
+      id: 'transformed',
+      title: 'Song',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      strips: const [
+        VisualStrip(
+          id: 'output',
+          assetHash: 'output-hash',
+          assetExtension: 'png',
+          pixelWidth: 200,
+          pixelHeight: 50,
+        ),
+      ],
+      visualTabTransform: VisualTabTransformRecord(
+        id: 'transform',
+        appliedAt: now,
+        baseStrips: const [
+          VisualStrip(
+            id: 'base',
+            assetHash: 'base-hash',
+            assetExtension: 'png',
+            pixelWidth: 200,
+            pixelHeight: 40,
+          ),
+        ],
+        configuration: const {
+          'sourceLabels': ['E', 'A', 'D', 'G'],
+        },
+        analyses: const [
+          {'stripId': 'base'},
+        ],
+        audit: const ['Applied +1.'],
+      ),
+    );
+
+    final restored = VisualChartDraft.decode(draft.encode());
+
+    expect(restored.visualTabTransform!.baseStrips.single.id, 'base');
+    expect(restored.visualTabTransform!.audit.single, 'Applied +1.');
+    expect(restored.allReferencedStrips.map((strip) => strip.id), [
+      'output',
+      'base',
+    ]);
   });
 
   test('schema-v1 strips without annotations retain safe defaults', () {

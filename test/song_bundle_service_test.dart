@@ -28,6 +28,12 @@ void main() {
       final image = img.Image(width: 100, height: 50)
         ..clear(img.ColorRgb8(255, 255, 255));
       final asset = await source.storeAsset(img.encodePng(image), 'png');
+      final baseImage = img.Image(width: 100, height: 40)
+        ..clear(img.ColorRgb8(20, 20, 20));
+      final baseAsset = await source.storeAsset(
+        img.encodePng(baseImage),
+        'png',
+      );
       final now = DateTime.utc(2026, 7, 24);
       VisualChartDraft draft(String id, String version) => VisualChartDraft(
         id: id,
@@ -39,6 +45,22 @@ void main() {
           url: 'https://example.com/$version',
           provider: 'Example',
           versionName: version,
+        ),
+        visualTabTransform: VisualTabTransformRecord(
+          id: 'transform-$id',
+          appliedAt: now,
+          baseStrips: [
+            VisualStrip(
+              id: 'base-$id',
+              assetHash: baseAsset.hash,
+              assetExtension: baseAsset.extension,
+              pixelWidth: 100,
+              pixelHeight: 40,
+            ),
+          ],
+          configuration: const {'globalPitchChange': 1},
+          analyses: const [],
+          audit: const ['fixture'],
         ),
         strips: [
           VisualStrip(
@@ -85,6 +107,14 @@ void main() {
       expect(
         await File(target.assetPath(asset.hash, asset.extension)).readAsBytes(),
         await File(source.assetPath(asset.hash, asset.extension)).readAsBytes(),
+      );
+      expect(
+        await File(
+          target.assetPath(baseAsset.hash, baseAsset.extension),
+        ).readAsBytes(),
+        await File(
+          source.assetPath(baseAsset.hash, baseAsset.extension),
+        ).readAsBytes(),
       );
     },
   );

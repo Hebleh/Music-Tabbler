@@ -57,7 +57,7 @@ class LibraryStateService implements LibraryStateTransfer {
           'kind': identity.kind.name,
           'draftPath': draftPath,
         });
-        for (final strip in draft.strips) {
+        for (final strip in draft.allReferencedStrips) {
           assets.add('${strip.assetHash}.${strip.assetExtension}');
           final sourceHash = strip.sourceAssetHash;
           if (sourceHash != null) {
@@ -201,7 +201,7 @@ class LibraryStateService implements LibraryStateTransfer {
           'State variant payload identity does not match: $id.',
         );
       }
-      for (final strip in draft.strips) {
+      for (final strip in draft.allReferencedStrips) {
         final name = '${strip.assetHash}.${strip.assetExtension}';
         if (!assetFiles.containsKey(name)) {
           throw PortableContainerException(

@@ -84,6 +84,15 @@ class SemanticRecognitionService {
         );
       }
       candidates.sort((a, b) => a.rect.left.compareTo(b.rect.left));
+      final likelyMeasureNumbers = _likelyMeasureNumberCandidates(candidates);
+      if (likelyMeasureNumbers.isNotEmpty) {
+        candidates.removeWhere(likelyMeasureNumbers.contains);
+        diagnostics.add(
+          'Row ${measureIndex + 1}: ignored '
+          '${likelyMeasureNumbers.length} sequential measure-number '
+          'candidate(s).',
+        );
+      }
       if (candidates.isEmpty) {
         diagnostics.add(
           'Row ${measureIndex + 1}: no fret digits or dead notes were proposed.',
@@ -97,10 +106,15 @@ class SemanticRecognitionService {
       final notes = <TabNote>[];
       for (final (ordinal, candidate) in candidates.take(16).indexed) {
         final noteId = 'proposal-${measureIndex + 1}-$ordinal';
+        final centerX = (candidate.rect.left + candidate.rect.right) / 2;
+        final relativeX = centerX.clamp(0.0, 0.9999);
         notes.add(
           TabNote.exact(
             id: noteId,
-            position: BeatFraction(ordinal % 16, 4),
+            // Preserve the source row's horizontal geometry. The earlier
+            // ordinal grid squeezed every 16-token row into adjacent labels
+            // and made real OCR proposals appear as concatenated fret text.
+            position: BeatFraction((relativeX * 4000).round(), 1000),
             stringIndex: candidate.stringIndex.clamp(
               0,
               tuning.strings.length - 1,
@@ -166,6 +180,34 @@ class SemanticRecognitionService {
       proposedEvents: total,
     );
   }
+
+  Set<_FretCandidate> _likelyMeasureNumberCandidates(
+    List<_FretCandidate> candidates,
+  ) {
+    final rejected = <_FretCandidate>{};
+    for (var start = 0; start < candidates.length; start += 1) {
+      final first = candidates[start];
+      // Keep ordinary consecutive fret phrases reviewable. Runs in the
+      // measure-number range seen above real systems (20-36) are the narrow
+      // legacy false-positive case this repair targets.
+      if (first.fret < 20) continue;
+      final run = <_FretCandidate>[first];
+      for (var index = start + 1; index < candidates.length; index += 1) {
+        final previous = run.last;
+        final next = candidates[index];
+        if (next.fret != previous.fret + 1 ||
+            (_centerY(next) - _centerY(previous)).abs() > 0.025) {
+          break;
+        }
+        run.add(next);
+      }
+      if (run.length >= 3) rejected.addAll(run);
+    }
+    return rejected;
+  }
+
+  double _centerY(_FretCandidate candidate) =>
+      (candidate.rect.top + candidate.rect.bottom) / 2;
 
   double _confidence(_FretCandidate candidate, RecognitionStripInput strip) {
     final centerY = (candidate.rect.top + candidate.rect.bottom) / 2;

@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -226,12 +228,57 @@ class SetlistA4Layout {
       usedHeight += (current.length == 1 ? 0 : gap) + element.height;
     }
 
+    bool compressCurrentPageToInclude(PlannedSetlistElement next) {
+      if (minimumRowHeight <= 0) return false;
+      final candidates = [...current, next];
+      final fixedHeight = candidates
+          .where((element) => element.kind != PlannedSetlistElementKind.strip)
+          .fold<double>(0, (sum, element) => sum + element.height);
+      final strips = candidates
+          .where((element) => element.kind == PlannedSetlistElementKind.strip)
+          .toList(growable: false);
+      final naturalStripHeight = strips.fold<double>(
+        0,
+        (sum, element) => sum + element.height,
+      );
+      if (naturalStripHeight <= 0) return false;
+      final gapHeight = gap * math.max(0, candidates.length - 1);
+      final scale =
+          (availableHeight - fixedHeight - gapHeight) / naturalStripHeight;
+      if (scale <= 0 || scale >= 1) return false;
+      final floor = minimumRowHeight * minimumRowHeightTolerance;
+      if (strips.any((element) => element.height * scale < floor)) {
+        return false;
+      }
+      current = [
+        for (final element in candidates)
+          element.kind == PlannedSetlistElementKind.strip
+              ? PlannedSetlistElement(
+                  kind: element.kind,
+                  entryIndex: element.entryIndex,
+                  rowIndex: element.rowIndex,
+                  width: element.width * scale,
+                  height: element.height * scale,
+                )
+              : element,
+      ];
+      usedHeight =
+          fixedHeight +
+          gapHeight +
+          current
+              .where(
+                (element) => element.kind == PlannedSetlistElementKind.strip,
+              )
+              .fold<double>(0, (sum, element) => sum + element.height);
+      return true;
+    }
+
     for (final entry in entries) {
       if (entry.isPlaceholder) {
-        if (current.isNotEmpty &&
-            usedHeight + gap + placeholderHeight > availableHeight) {
-          finishPage();
-        }
+        // Placeholders are setlist navigation boundaries just like songs.
+        // Starting them on a clean page keeps PDF, preview, and Gig mode
+        // page ownership unambiguous.
+        finishPage();
         addElement(
           PlannedSetlistElement(
             kind: PlannedSetlistElementKind.placeholder,
@@ -308,18 +355,37 @@ class SetlistA4Layout {
           entryIndex: entry.entryIndex,
           rowIndex: rowIndex,
         );
-        if (usedHeight + gap + height > availableHeight) {
+        if (usedHeight + gap + height > availableHeight &&
+            !compressCurrentPageToInclude(
+              PlannedSetlistElement(
+                kind: PlannedSetlistElementKind.strip,
+                entryIndex: entry.entryIndex,
+                rowIndex: rowIndex,
+                width: width,
+                height: height,
+              ),
+            )) {
           finishPage();
+          addElement(
+            PlannedSetlistElement(
+              kind: PlannedSetlistElementKind.strip,
+              entryIndex: entry.entryIndex,
+              rowIndex: rowIndex,
+              width: width,
+              height: height,
+            ),
+          );
+        } else if (usedHeight + gap + height <= availableHeight) {
+          addElement(
+            PlannedSetlistElement(
+              kind: PlannedSetlistElementKind.strip,
+              entryIndex: entry.entryIndex,
+              rowIndex: rowIndex,
+              width: width,
+              height: height,
+            ),
+          );
         }
-        addElement(
-          PlannedSetlistElement(
-            kind: PlannedSetlistElementKind.strip,
-            entryIndex: entry.entryIndex,
-            rowIndex: rowIndex,
-            width: width,
-            height: height,
-          ),
-        );
       }
     }
     finishPage();
@@ -353,6 +419,19 @@ bool _meetsReadableRowFloor(
 ) {
   if (minimumRowHeight <= 0) return true;
   return height >= minimumRowHeight * tolerance;
+}
+
+String pdfSafeMetadata(String value) {
+  return value
+      .replaceAll('â€”', '-')
+      .replaceAll('â€“', '-')
+      .replaceAll('—', '-')
+      .replaceAll('–', '-')
+      .replaceAll('’', "'")
+      .replaceAll('‘', "'")
+      .replaceAll('“', '"')
+      .replaceAll('”', '"')
+      .replaceAll('…', '...');
 }
 
 class StagedPdfFileWriter {
@@ -403,6 +482,9 @@ class PdfExportService
   final VisualImageProcessor processor;
   final A4StripLayout layout;
   final StagedPdfFileWriter fileWriter;
+  final Map<String, Future<PerformanceDeck>> _performanceDeckCache = {};
+
+  static const _maximumCachedDecks = 3;
 
   @override
   Future<Uint8List> exportBytes(VisualChartDraft draft) async {
@@ -445,16 +527,21 @@ class PdfExportService
           ? stripOrder
           : (left['rowIndex']! as int).compareTo(right['rowIndex']! as int);
     });
+    final transformMetadata = _visualTransformMetadata(draft);
+    final headerHeight = transformMetadata == null || !draft.showHeader
+        ? exportLayout.headerHeight
+        : math.max(exportLayout.headerHeight, 34.0);
 
     return compute(_buildPdfInBackground, {
       'processed': processed,
       'title': draft.title,
       'artist': draft.artist,
+      'transformMetadata': transformMetadata,
       'showHeader': draft.showHeader,
       'pageWidth': exportLayout.pageWidth,
       'pageHeight': exportLayout.pageHeight,
       'margin': exportLayout.margin,
-      'headerHeight': exportLayout.headerHeight,
+      'headerHeight': headerHeight,
       'gap': exportLayout.gap,
       'minimumRowHeight': exportLayout.minimumRowHeight,
       'minimumRowHeightTolerance': exportLayout.minimumRowHeightTolerance,
@@ -485,14 +572,9 @@ class PdfExportService
     LibrarySetlist setlist, {
     required VisualExportDensity density,
   }) async {
-    final items = await _collectSetlistItems(setlist);
     try {
-      return await compute(_buildSetlistPdfInBackground, {
-        'setlistId': setlist.id,
-        'setlistName': setlist.name,
-        'density': density.name,
-        'items': items,
-      });
+      final deck = await buildPerformanceDeck(setlist, density: density);
+      return await compute(_renderPerformanceDeckPdfMessage, deck.toMessage());
     } on SetlistPdfExportException {
       rethrow;
     } catch (error) {
@@ -508,6 +590,38 @@ class PdfExportService
     required VisualExportDensity density,
   }) async {
     final items = await _collectSetlistItems(setlist);
+    final cacheKey = await _performanceDeckCacheKey(setlist, density, items);
+    final cached = _performanceDeckCache.remove(cacheKey);
+    if (cached != null) {
+      _performanceDeckCache[cacheKey] = cached;
+      return cached;
+    }
+    final future = _createPerformanceDeck(setlist, density, items);
+    _performanceDeckCache[cacheKey] = future;
+    while (_performanceDeckCache.length > _maximumCachedDecks) {
+      _performanceDeckCache.remove(_performanceDeckCache.keys.first);
+    }
+    future.catchError((Object _) {
+      _performanceDeckCache.remove(cacheKey);
+      return PerformanceDeck(
+        setlistId: setlist.id,
+        setlistName: setlist.name,
+        density: density,
+        pageWidth: 0,
+        pageHeight: 0,
+        margin: 0,
+        gap: 0,
+        pages: const [],
+      );
+    });
+    return future;
+  }
+
+  Future<PerformanceDeck> _createPerformanceDeck(
+    LibrarySetlist setlist,
+    VisualExportDensity density,
+    List<Map<String, Object?>> items,
+  ) async {
     try {
       final message = await compute(_buildPerformanceDeckMessage, {
         'setlistId': setlist.id,
@@ -523,6 +637,49 @@ class PdfExportService
         'The performance pages could not be prepared: $error',
       );
     }
+  }
+
+  Future<String> _performanceDeckCacheKey(
+    LibrarySetlist setlist,
+    VisualExportDensity density,
+    List<Map<String, Object?>> items,
+  ) async {
+    final assets = <String, Object?>{};
+    for (final item in items) {
+      final paths = (item['assetPaths'] as Map?)?.cast<String, String>();
+      if (paths == null) continue;
+      for (final entry in paths.entries) {
+        final file = File(entry.value);
+        try {
+          final stat = await file.stat();
+          assets[entry.key] = {
+            'size': stat.size,
+            'modified': stat.modified.toUtc().toIso8601String(),
+          };
+        } catch (_) {
+          assets[entry.key] = 'missing';
+        }
+      }
+    }
+    return jsonEncode({
+      'setlist': {
+        'id': setlist.id,
+        'name': setlist.name,
+        'updatedAt': setlist.updatedAt.toUtc().toIso8601String(),
+        'entries': [
+          for (final entry in setlist.entries)
+            {
+              'id': entry.id,
+              'kind': entry.kind.name,
+              'chartVariantId': entry.chartVariantId,
+              'placeholderTitle': entry.placeholderTitle,
+            },
+        ],
+      },
+      'density': density.name,
+      'items': items,
+      'assets': assets,
+    });
   }
 
   Future<List<Map<String, Object?>>> _collectSetlistItems(
@@ -613,6 +770,30 @@ String _safePdfName(String value, {required String fallback}) {
   );
 }
 
+String? _visualTransformMetadata(VisualChartDraft draft) {
+  final configuration = draft.visualTabTransform?.configuration;
+  if (configuration == null) return null;
+  final labels = (configuration['targetLabels'] as List?)
+      ?.whereType<String>()
+      .toList(growable: false);
+  if (labels == null || labels.isEmpty) return null;
+  final target = labels.reversed.join('-');
+  final capo = configuration['targetCapo'] as int? ?? 0;
+  final pitch = configuration['globalPitchChange'] as int? ?? 0;
+  final selected =
+      (configuration['selectedStringPitchChanges'] as Map?) ?? const {};
+  final selectedLabel = selected.isEmpty
+      ? ''
+      : ' | selected strings: ${selected.entries.map((entry) {
+          final parsedString = int.tryParse('${entry.key}');
+          final stringNumber = parsedString == null ? '${entry.key}' : '${parsedString + 1}';
+          final value = entry.value as int;
+          return '$stringNumber:${value >= 0 ? "+" : ""}$value';
+        }).join(", ")}';
+  return 'Target: $target | Capo: $capo | '
+      'Pitch: ${pitch >= 0 ? "+" : ""}$pitch$selectedLabel';
+}
+
 List<Map<String, Object>> _processAssetForExport(Map<String, Object?> request) {
   final strips = [
     for (final value in request['strips']! as List)
@@ -676,8 +857,12 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
   final pages = layout.plan([
     for (final item in processed) item['aspectRatio']! as double,
   ], includeFirstPageHeader: showHeader);
-  final title = request['title']! as String;
-  final artist = request['artist']! as String;
+  final title = pdfSafeMetadata(request['title']! as String);
+  final artist = pdfSafeMetadata(request['artist']! as String);
+  final rawTransformMetadata = request['transformMetadata'] as String?;
+  final transformMetadata = rawTransformMetadata == null
+      ? null
+      : pdfSafeMetadata(rawTransformMetadata);
   final document = pw.Document(
     title: title,
     author: artist,
@@ -710,6 +895,11 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
                             pw.Text(
                               artist,
                               style: const pw.TextStyle(fontSize: 8),
+                            ),
+                          if (transformMetadata != null)
+                            pw.Text(
+                              transformMetadata,
+                              style: const pw.TextStyle(fontSize: 7),
                             ),
                         ],
                       )
@@ -745,12 +935,10 @@ Future<Uint8List> _buildPdfInBackground(Map<String, Object?> request) async {
   return Uint8List.fromList(await document.save());
 }
 
-Future<Uint8List> _buildSetlistPdfInBackground(
-  Map<String, Object?> request,
-) async {
-  return _renderPerformanceDeckPdf(
-    PerformanceDeck.fromMessage(_buildPerformanceDeckMessage(request)),
-  );
+Future<Uint8List> _renderPerformanceDeckPdfMessage(
+  Map<String, Object?> message,
+) {
+  return _renderPerformanceDeckPdf(PerformanceDeck.fromMessage(message));
 }
 
 Map<String, Object?> _buildPerformanceDeckMessage(
@@ -935,7 +1123,7 @@ pw.Widget _buildPerformanceDeckPdfElement(PerformanceDeckElement element) {
               alignment: pw.Alignment.centerLeft,
               fit: pw.BoxFit.scaleDown,
               child: pw.Text(
-                element.title ?? 'Untitled chart',
+                pdfSafeMetadata(element.title ?? 'Untitled chart'),
                 style: pw.TextStyle(
                   fontSize: 11,
                   fontWeight: pw.FontWeight.bold,
@@ -950,7 +1138,7 @@ pw.Widget _buildPerformanceDeckPdfElement(PerformanceDeckElement element) {
                 alignment: pw.Alignment.centerLeft,
                 fit: pw.BoxFit.scaleDown,
                 child: pw.Text(
-                  element.artist!,
+                  pdfSafeMetadata(element.artist!),
                   style: const pw.TextStyle(fontSize: 8),
                 ),
               ),
@@ -977,7 +1165,7 @@ pw.Widget _buildPerformanceDeckPdfElement(PerformanceDeckElement element) {
         padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         alignment: pw.Alignment.centerLeft,
         child: pw.Text(
-          'Not playing - ${element.title}',
+          pdfSafeMetadata('Not playing - ${element.title}'),
           style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
         ),
       ),

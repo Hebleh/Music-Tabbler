@@ -545,9 +545,32 @@ class _GigModeScreenState extends State<GigModeScreen>
           }
           final deck = snapshot.data;
           if (deck == null) {
-            return const Scaffold(
-              backgroundColor: Colors.black,
-              body: Center(child: CircularProgressIndicator()),
+            return Scaffold(
+              backgroundColor: background,
+              appBar: AppBar(
+                title: const Text('Gig mode'),
+                leading: IconButton(
+                  tooltip: 'Exit gig mode',
+                  onPressed: _exit,
+                  icon: const Icon(Icons.arrow_back),
+                ),
+              ),
+              body: Center(
+                child: Semantics(
+                  liveRegion: true,
+                  label: 'Preparing performance pages',
+                  child: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 18),
+                      Text('Preparing performance pages...'),
+                      SizedBox(height: 6),
+                      Text('You can exit safely while the set is loading.'),
+                    ],
+                  ),
+                ),
+              ),
             );
           }
           final page = deck.pages[_pageIndex.clamp(0, deck.pages.length - 1)];

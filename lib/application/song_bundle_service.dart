@@ -55,7 +55,7 @@ class SongBundleService implements SongBundleTransfer {
         'updatedAt': variant.updatedAt.toIso8601String(),
         'draftPath': draftPath,
       });
-      for (final strip in draft.strips) {
+      for (final strip in draft.allReferencedStrips) {
         assets.add('${strip.assetHash}.${strip.assetExtension}');
         final sourceHash = strip.sourceAssetHash;
         if (sourceHash != null) {
@@ -181,7 +181,7 @@ class SongBundleService implements SongBundleTransfer {
           'Song bundle variant identity does not match: $originalId.',
         );
       }
-      for (final strip in imported.strips) {
+      for (final strip in imported.allReferencedStrips) {
         final assetName = '${strip.assetHash}.${strip.assetExtension}';
         if (!assetFiles.containsKey(assetName)) {
           throw PortableContainerException(

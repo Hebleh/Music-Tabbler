@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../application/app_services.dart';
+import '../../application/recognition_review.dart';
 import '../../application/service_contracts.dart';
 import '../../domain/library_models.dart';
 import '../../domain/device_preferences.dart';
@@ -42,7 +43,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _reloadDrafts() {
     _drafts = widget.services.library.listDrafts();
-    _semanticCharts = widget.services.semanticCharts.listSemanticCharts();
+    _semanticCharts = widget.services.semanticCharts.listSemanticCharts().then(
+      (charts) => [
+        for (final chart in charts) normalizeRecognitionProposals(chart),
+      ],
+    );
   }
 
   Future<void> _openVisualEditor([VisualChartDraft? draft]) async {
@@ -342,10 +347,11 @@ class _HomeScreenState extends State<HomeScreen> {
         requested ??
         await widget.services.semanticCharts.loadSemanticChart(chartId) ??
         SongChart.foundationExample();
+    final reviewChart = normalizeRecognitionProposals(chart);
     final identity = await widget.services.songVariants.identityForDraft(
-      chart.id,
+      reviewChart.id,
     );
-    final songId = identity?.songId ?? 'song-$chartId';
+    final songId = identity?.songId ?? 'song-${reviewChart.id}';
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -354,7 +360,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onPreferencesChanged: widget.onPreferencesChanged,
           repository: widget.services.semanticCharts,
           pdfExporter: widget.services.semanticExporter,
-          chart: chart,
+          chart: reviewChart,
           songId: songId,
           sourceLibrary: widget.services.library,
         ),
@@ -1145,11 +1151,11 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
     }
   }
 
-  Future<VisualExportDensity?> _chooseExportDensity() {
+  Future<VisualExportDensity?> _chooseExportDensity(String title) {
     return showDialog<VisualExportDensity>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('Setlist PDF density'),
+        title: Text(title),
         children: [
           for (final density in VisualExportDensity.values)
             SimpleDialogOption(
@@ -1178,7 +1184,7 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
   }
 
   Future<void> _exportSetlist() async {
-    final density = await _chooseExportDensity();
+    final density = await _chooseExportDensity('Setlist PDF density');
     if (density == null || !mounted) return;
     setState(() => _exporting = true);
     try {
@@ -1202,7 +1208,7 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
   }
 
   Future<void> _openPerformancePreview() async {
-    final density = await _chooseExportDensity();
+    final density = await _chooseExportDensity('Performance preview density');
     if (density == null || !mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -1217,7 +1223,7 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
   }
 
   Future<void> _startGigMode() async {
-    final density = await _chooseExportDensity();
+    final density = await _chooseExportDensity('Gig display density');
     if (density == null || !mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -1400,11 +1406,14 @@ class _ImportSourceState extends State<_ImportSource> {
               buttonLabel: 'Start',
               onPressed: () => widget.onStartVisual(null),
             ),
-            const _ImportCard(
+            _ImportCard(
               icon: Icons.auto_fix_high_outlined,
               title: 'Semantic recognition',
               detail:
-                  'OCR and note conversion will build on saved source assets later.',
+                  'Start a visual chart, import and crop its rows, then use '
+                  'Recognize semantic proposal in the editor toolbar.',
+              buttonLabel: 'Start visual source',
+              onPressed: () => widget.onStartVisual(null),
             ),
             const _ImportCard(
               icon: Icons.search,

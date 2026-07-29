@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 
 import '../../domain/visual_chart_models.dart';
 import '../../application/horizontal_row_detector.dart';
+import '../../application/visual_deskew.dart';
 import 'resizable_rect_overlay.dart';
 
 class MultiRowSplitDialog extends StatefulWidget {
@@ -16,12 +18,14 @@ class MultiRowSplitDialog extends StatefulWidget {
     required this.imageAspectRatio,
     required this.sourceRect,
     this.initialRows = const [],
+    this.deskewDegrees = 0,
   });
 
   final String imagePath;
   final double imageAspectRatio;
   final NormalizedRect sourceRect;
   final List<NormalizedRect> initialRows;
+  final double deskewDegrees;
 
   @override
   State<MultiRowSplitDialog> createState() => _MultiRowSplitDialogState();
@@ -34,6 +38,7 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
   bool _detecting = false;
   late double _masterLeft;
   late double _masterRight;
+  late final Future<Uint8List> _imageBytes;
   final Set<int> _leftCaught = {};
   final Set<int> _rightCaught = {};
   _MasterSide? _activeMaster;
@@ -49,6 +54,10 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
     _selected = _selected.clamp(0, _rows.length - 1);
     _masterLeft = widget.sourceRect.left;
     _masterRight = widget.sourceRect.right;
+    _imageBytes = compute(_prepareSplitImage, {
+      'path': widget.imagePath,
+      'deskewDegrees': widget.deskewDegrees,
+    });
   }
 
   @override
@@ -224,9 +233,27 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
                                             return Stack(
                                               fit: StackFit.expand,
                                               children: [
-                                                Image.file(
-                                                  File(widget.imagePath),
-                                                  fit: BoxFit.fill,
+                                                FutureBuilder<Uint8List>(
+                                                  future: _imageBytes,
+                                                  builder: (context, snapshot) {
+                                                    if (snapshot.hasError) {
+                                                      return const Center(
+                                                        child: Text(
+                                                          'Split preview unavailable',
+                                                        ),
+                                                      );
+                                                    }
+                                                    if (!snapshot.hasData) {
+                                                      return const Center(
+                                                        child:
+                                                            CircularProgressIndicator(),
+                                                      );
+                                                    }
+                                                    return Image.memory(
+                                                      snapshot.data!,
+                                                      fit: BoxFit.fill,
+                                                    );
+                                                  },
                                                 ),
                                                 for (final index in _paintOrder)
                                                   ResizableRectOverlay(
@@ -409,7 +436,7 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
   Future<void> _detectRows() async {
     setState(() => _detecting = true);
     try {
-      final bytes = await File(widget.imagePath).readAsBytes();
+      final bytes = await _imageBytes;
       final detected = await compute(_detectRowsInBackground, {
         'bytes': bytes,
         'sourceRect': widget.sourceRect.toJson(),
@@ -512,6 +539,21 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
 }
 
 enum _MasterSide { left, right }
+
+Uint8List _prepareSplitImage(Map<String, Object> request) {
+  var image = img.decodeImage(
+    File(request['path']! as String).readAsBytesSync(),
+  );
+  if (image == null) {
+    throw const FormatException('Stored chart image is invalid.');
+  }
+  image = img.bakeOrientation(image);
+  image = applyDeskewRotation(
+    image,
+    (request['deskewDegrees'] as num?)?.toDouble() ?? 0,
+  );
+  return Uint8List.fromList(img.encodePng(image, level: 3));
+}
 
 List<Map<String, Object>> _detectRowsInBackground(Map<String, Object> request) {
   final sourceRect = NormalizedRect.fromJson(

@@ -17,6 +17,76 @@ int unresolvedProposalCount(SongChart chart) {
   return count;
 }
 
+/// Repairs proposal geometry created by older recognition builds.
+///
+/// Verified user edits are never changed. Proposed notes with source geometry
+/// are re-positioned from that geometry, and obvious consecutive measure-label
+/// runs are removed from the in-memory review chart.
+SongChart normalizeRecognitionProposals(SongChart chart) {
+  return chart.copyWith(
+    measures: [
+      for (final measure in chart.measures)
+        _normalizeRecognitionMeasure(measure),
+    ],
+  );
+}
+
+ChartMeasure _normalizeRecognitionMeasure(ChartMeasure measure) {
+  final proposed =
+      measure.notes
+          .where(
+            (note) =>
+                note.verification == VerificationState.proposed &&
+                note.sourceMapping != null,
+          )
+          .toList()
+        ..sort(
+          (a, b) => a.sourceMapping!.left.compareTo(b.sourceMapping!.left),
+        );
+  final rejected = <String>{};
+  for (var start = 0; start < proposed.length; start += 1) {
+    final first = proposed[start];
+    // Do not guess that ordinary consecutive frets are labels. The legacy
+    // charts being repaired admitted printed system measure numbers in the
+    // 20-36 range.
+    if (first.fret < 20) continue;
+    final run = <TabNote>[first];
+    for (var index = start + 1; index < proposed.length; index += 1) {
+      final previous = run.last;
+      final next = proposed[index];
+      if (next.fret != previous.fret + 1 ||
+          (_sourceCenterY(next) - _sourceCenterY(previous)).abs() > 0.025) {
+        break;
+      }
+      run.add(next);
+    }
+    if (run.length >= 3) rejected.addAll(run.map((note) => note.id));
+  }
+  return measure.copyWith(
+    notes: [
+      for (final note in measure.notes)
+        if (!rejected.contains(note.id))
+          note.verification == VerificationState.proposed &&
+                  note.sourceMapping != null
+              ? note.copyWith(
+                  position: BeatFraction(
+                    (((note.sourceMapping!.left + note.sourceMapping!.right) /
+                                    2)
+                                .clamp(0.0, 0.9999) *
+                            measure.length.value *
+                            1000)
+                        .round(),
+                    1000,
+                  ),
+                )
+              : note,
+    ],
+  );
+}
+
+double _sourceCenterY(TabNote note) =>
+    (note.sourceMapping!.top + note.sourceMapping!.bottom) / 2;
+
 SongChart verifyAllProposals(SongChart chart) {
   return chart.copyWith(
     gigReady: false,
@@ -72,6 +142,17 @@ SongChart rejectProposedNote(SongChart chart, String noteId) {
     throw StateError('Verified notes cannot be rejected as proposals.');
   }
   return chart.removeNote(noteId).copyWith(gigReady: false);
+}
+
+SongChart verifyProposedNote(SongChart chart, String noteId) {
+  final note = chart.noteById(noteId);
+  if (note == null) throw StateError('The proposed note no longer exists.');
+  if (note.verification != VerificationState.proposed) {
+    throw StateError('Only proposed notes can be verified here.');
+  }
+  return chart
+      .replaceNote(note.copyWith(verification: VerificationState.verified))
+      .copyWith(gigReady: false);
 }
 
 /// Keeps user-verified note/lyric corrections when recognition is rerun.

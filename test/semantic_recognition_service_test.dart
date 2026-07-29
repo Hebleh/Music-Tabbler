@@ -134,4 +134,139 @@ void main() {
     expect(note.techniques.single.kind, TechniqueKind.deadNote);
     expect(note.verification, VerificationState.proposed);
   });
+
+  test('proposal beat positions preserve source horizontal spacing', () {
+    final result = service.propose(
+      chartId: 'spaced-proposal',
+      title: 'Synthetic',
+      artist: '',
+      strips: const [
+        RecognitionStripInput(
+          sourceId: 'row',
+          regions: [
+            RecognizedTextRegion(
+              text: '11',
+              rect: NormalizedRect(0.10, 0.2, 0.13, 0.25),
+            ),
+            RecognizedTextRegion(
+              text: '12',
+              rect: NormalizedRect(0.80, 0.2, 0.83, 0.25),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final notes = result.chart.measures.single.notes;
+    expect(notes[0].position.value, closeTo(0.46, 0.01));
+    expect(notes[1].position.value, closeTo(3.26, 0.01));
+  });
+
+  test('sequential measure labels are not proposed as frets', () {
+    final result = service.propose(
+      chartId: 'measure-labels',
+      title: 'Synthetic',
+      artist: '',
+      strips: const [
+        RecognitionStripInput(
+          sourceId: 'row',
+          regions: [
+            RecognizedTextRegion(
+              text: '31',
+              rect: NormalizedRect(0.10, 0.20, 0.13, 0.24),
+            ),
+            RecognizedTextRegion(
+              text: '32',
+              rect: NormalizedRect(0.25, 0.20, 0.28, 0.24),
+            ),
+            RecognizedTextRegion(
+              text: '33',
+              rect: NormalizedRect(0.40, 0.20, 0.43, 0.24),
+            ),
+            RecognizedTextRegion(
+              text: '34',
+              rect: NormalizedRect(0.55, 0.20, 0.58, 0.24),
+            ),
+            RecognizedTextRegion(
+              text: '7',
+              rect: NormalizedRect(0.72, 0.50, 0.75, 0.55),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    expect(result.chart.measures.single.notes, hasLength(1));
+    expect(result.chart.measures.single.notes.single.fret, 7);
+    expect(
+      result.diagnostics,
+      contains('Row 1: ignored 4 sequential measure-number candidate(s).'),
+    );
+  });
+
+  test('non-sequential high frets remain reviewable proposals', () {
+    final result = service.propose(
+      chartId: 'high-frets',
+      title: 'Synthetic',
+      artist: '',
+      strips: const [
+        RecognitionStripInput(
+          sourceId: 'row',
+          regions: [
+            RecognizedTextRegion(
+              text: '12',
+              rect: NormalizedRect(0.10, 0.20, 0.13, 0.24),
+            ),
+            RecognizedTextRegion(
+              text: '15',
+              rect: NormalizedRect(0.25, 0.20, 0.28, 0.24),
+            ),
+            RecognizedTextRegion(
+              text: '17',
+              rect: NormalizedRect(0.40, 0.20, 0.43, 0.24),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    expect(result.chart.measures.single.notes.map((note) => note.fret), [
+      12,
+      15,
+      17,
+    ]);
+  });
+
+  test('ordinary consecutive frets remain reviewable proposals', () {
+    final result = service.propose(
+      chartId: 'consecutive-frets',
+      title: 'Synthetic',
+      artist: '',
+      strips: const [
+        RecognitionStripInput(
+          sourceId: 'row',
+          regions: [
+            RecognizedTextRegion(
+              text: '12',
+              rect: NormalizedRect(0.10, 0.50, 0.13, 0.54),
+            ),
+            RecognizedTextRegion(
+              text: '13',
+              rect: NormalizedRect(0.25, 0.50, 0.28, 0.54),
+            ),
+            RecognizedTextRegion(
+              text: '14',
+              rect: NormalizedRect(0.40, 0.50, 0.43, 0.54),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    expect(result.chart.measures.single.notes.map((note) => note.fret), [
+      12,
+      13,
+      14,
+    ]);
+  });
 }

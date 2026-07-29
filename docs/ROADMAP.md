@@ -46,13 +46,14 @@ Only a verified sprint merges into `master`.
 
 ## Current checkpoint
 
-MT-107 through MT-503 are implemented on stacked contract branches. The current
-Windows source passes 163 automated tests and static analysis, but the feature
-chain remains outside `master` until its consolidated hands-on Windows pass is
-completed and bug-squashed. Android testing and building are intentionally
-deferred until that Windows gate passes. The current durable checklist is
-`docs/COMBINED_USER_TEST_SPRINT6.md`; the older MT-203 checklist remains as
-historical Android/portable-transfer coverage.
+MT-107 through MT-601 (except the hardware-gated MT-602 Apple feasibility
+checkpoint) are implemented on stacked contract branches. The current Windows
+source passes 201 automated tests and static analysis. The consolidated Windows
+Computer Use pass confirmed the primary visual, setlist, preview, gig,
+recognition-review, and local provenance flows. The long-chart wheel path and
+Gig loading/cache fixes have also passed focused Computer Use regression. The
+current checkpoint is
+`v0.2.0-beta.1+2`; Android hardware verification remains required.
 
 - [x] Preserve `mvp/v0.1.0` at the MVP checkpoint.
 - [x] Keep `master` as the stable integration branch.
@@ -173,12 +174,35 @@ documented debt unless they materially block gig preparation.
 - [x] **MT-503 — Ranked fingerings and saved variants**
   - Explainable alternatives retained alongside the original.
 
+### Visual transformation extension
+
+- [x] **MT-504 — Unified PDF/screenshot tab analysis**
+  - Positioned-PDF geometry and local raster/OCR produce one reviewable system,
+    string, bar-line, and fret/dead-note proposal model.
+  - Real `9mm.pdf` validation currently yields 29 tab systems, 760 safe fret
+    tokens, 62 dead notes, and no included measure labels.
+  - Screenshot OCR and sparse positioned-PDF fallback still require the
+    consolidated Windows UI pass.
+- [x] **MT-505 — Reversible visual string routing**
+  - Apply global or selected-string fret offsets and monotonic four-to-five
+    string routing to compact tab-only output without altering source assets.
+  - Save immutable base strips, transform parameters, reviewed analysis, and
+    audit data; edit/remove is persistent and Apply remains one undo step.
+  - Connected components crossing an internal insertion seam are highlighted
+    in review and must be assigned to the upper or lower string region before
+    Apply; the renderer moves the reviewed component as one piece.
+- [x] **MT-506 — Semantic string routing**
+  - Compose pitch change, tuning/capo routing, sounding-pitch verification, and
+    derived variants for arbitrary confirmed tunings.
+
 ### Sprint 7 — Polish and platform expansion
 
-- [ ] **MT-601 — Reversible visual deskew**
+- [x] **MT-601 — Reversible visual deskew**
   - Preview/apply/reset geometry without modifying original assets.
-- [ ] **MT-602 — macOS/iOS feasibility checkpoint**
+- [!] **MT-602 — macOS/iOS feasibility checkpoint**
   - Evidence-based supported/deferred decision on actual Apple hardware.
+  - Blocked until the MacBook Air is available for an actual build and
+    import/edit/export workflow run; Windows inspection alone cannot pass it.
 
 ## Legal and open-source boundary
 

@@ -73,19 +73,21 @@ void main() {
       );
       final pages = await VisualImportService(library).importPdf(bytes);
       expect(pages, isNotEmpty);
-      final rendered = img.decodePng(
-        await File(
-          library.assetPath(pages.first.assetHash, pages.first.assetExtension),
-        ).readAsBytes(),
-      )!;
       var redPixels = 0;
-      for (final pixel in rendered) {
-        if (pixel.r > 225 &&
-            pixel.g > 150 &&
-            pixel.g < 235 &&
-            pixel.b > 160 &&
-            pixel.r > pixel.g + 15) {
-          redPixels += 1;
+      for (final page in pages) {
+        final rendered = img.decodePng(
+          await File(
+            library.assetPath(page.assetHash, page.assetExtension),
+          ).readAsBytes(),
+        )!;
+        for (final pixel in rendered) {
+          if (pixel.r > 225 &&
+              pixel.g > 150 &&
+              pixel.g < 235 &&
+              pixel.b > 160 &&
+              pixel.r > pixel.g + 15) {
+            redPixels += 1;
+          }
         }
       }
       expect(redPixels, greaterThan(100));
@@ -240,6 +242,65 @@ void main() {
           allOf(contains('Set item 1'), contains('"Broken source"')),
         ),
       ),
+    );
+  });
+
+  test('performance decks are reused until chart content changes', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_performance_cache_',
+    );
+    final library = await LocalLibrary.forTesting(directory);
+    addTearDown(() {
+      library.close();
+      directory.deleteSync(recursive: true);
+    });
+    final chart = await _saveChart(
+      library,
+      id: 'cached-chart',
+      title: 'Cached song',
+      artist: 'Artist',
+      showHeader: true,
+    );
+    final now = DateTime.utc(2026, 7, 29);
+    final setlist = LibrarySetlist(
+      id: 'cached-set',
+      name: 'Cached gig',
+      createdAt: now,
+      updatedAt: now,
+      entries: [LibrarySetlistEntry(id: 'entry', chartVariantId: chart.id)],
+    );
+    final exporter = PdfExportService(library);
+
+    final first = await exporter.buildPerformanceDeck(
+      setlist,
+      density: VisualExportDensity.stageReadable,
+    );
+    final second = await exporter.buildPerformanceDeck(
+      setlist,
+      density: VisualExportDensity.stageReadable,
+    );
+
+    expect(identical(second, first), isTrue);
+
+    await library.saveDraft(
+      chart.copyWith(
+        artist: 'Changed artist',
+        updatedAt: now.add(const Duration(seconds: 1)),
+      ),
+    );
+    final changed = await exporter.buildPerformanceDeck(
+      setlist,
+      density: VisualExportDensity.stageReadable,
+    );
+
+    expect(identical(changed, first), isFalse);
+    expect(
+      changed.pages
+          .expand((page) => page.elements)
+          .where((element) => element.kind == PerformanceElementKind.header)
+          .single
+          .artist,
+      'Changed artist',
     );
   });
 

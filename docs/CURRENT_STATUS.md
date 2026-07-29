@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 26 July 2026
+Updated: 29 July 2026
 
 ## Repository state
 
@@ -20,8 +20,15 @@ Updated: 26 July 2026
 - `flutter doctor -v` reports no issues for Windows or Android.
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
-- `flutter analyze --no-pub` passes with no issues, and the current source suite passes 163/163 tests.
-- `flutter build windows --release --no-pub` produces the `v0.1.0+1` Windows runtime.
+- `flutter analyze` passes with no issues, and the current source suite passes
+  201/201 tests.
+- The post-MT-504 Medium repair pass has automated coverage for fresh-page
+  setlist boundaries, density-floor compaction, duplicate `.mtsong` identities,
+  source-spaced semantic proposals, per-proposal review, recognition intake,
+  and context-specific density dialogs. The complete Windows Computer Use gate
+  is queued in `docs/COMPUTER_USE_FULL_APP_ROUND.md`.
+- The current release checkpoint is versioned `v0.2.0-beta.1+2`; Windows and
+  Android artifacts are produced only after the release gates pass.
 - `tool/package_windows.ps1` produces a single-file user-level installer EXE, a portable ZIP, and SHA-256 sidecars for the Windows MVP.
 - `flutter build apk --debug` produces an installable debug APK.
 
@@ -69,6 +76,27 @@ Updated: 26 July 2026
   proposed as dead notes.
 - Exact pitch transposition and same-pitch re-tabbing save separate derived
   variants. Ranked fingering alternatives are deterministic and explained.
+
+### Visual tab analysis and routing
+
+- Positioned-PDF text and local raster/OCR feed one review screen for detected
+  tab systems, string lines, bar lines, frets, dead notes, ambiguous numbers,
+  confidence, and source warnings. Every proposal remains editable.
+- The current real `9mm.pdf` analysis identifies 29 safe tab systems, 760 fret
+  tokens, and 62 dead notes while excluding measure numbers. A compact +1
+  visual transform has been exported and visually inspected locally.
+- Visual transforms support global and selected-string pitch offsets, arbitrary
+  confirmed tunings/capos, monotonic same-count or one-added-string routing,
+  frets 0 to 36, immutable base strips, persistent edit/remove, and one-step
+  undo. Source assets remain unchanged.
+- Components crossing an internal added-string seam are highlighted during
+  analysis and require an explicit upper/lower assignment; unresolved relevant
+  components block the transform instead of being silently split.
+- Semantic routing composes pitch change, tuning/capo adaptation, route
+  constraints, and final sounding-MIDI verification into a derived variant.
+- Visual deskew previews and persists plus or minus seven degrees, rotates
+  before crop/render/analysis, and stores exact pre-deskew overlay geometry so
+  Reset restores the prior crop, highlights, lyric band, and annotations.
 
 ### Manual visual-chart workflow
 
@@ -148,7 +176,14 @@ Updated: 26 July 2026
 - Title/artist and text-region OCR are assistive proposals and must remain user-correctable. OCR is now performed on each cropped chart row with stronger upscaling so small, faint, widely spaced lyric fragments have more pixels to work with, but isolated characters may still need freeform selection. The "corresponding tab below" option is currently a geometric same-column extension, not semantic note-to-lyric alignment.
 - Japanese OCR on Windows requires the optional Japanese Windows OCR language capability to be installed. If `ja-JP` is unavailable, the plugin falls back to the installed English/profile recognizers.
 - Export whitespace detection is intentionally conservative. Tiny isolated footer marks or source page numbers can preserve trailing whitespace rather than risk deleting notation or lyrics.
-- The reported 43-row upward wheel-scroll stall is covered by a regression test after stabilizing preview heights. It still needs user confirmation with the real saved chart through `dev.bat`.
+- The visual editor now owns desktop wheel deltas explicitly. The 43-row
+  regression and Windows Computer Use both reach Row 43 and return to Row 1
+  without the former upward stall; a final physical-wheel user check remains
+  useful.
+- Gig mode shows a cancellable loading shell immediately and reuses unchanged
+  performance decks across Preview, Gig, and setlist PDF work. On the real
+  four-item Windows fixture, a cached Stage-readable reopen reached page 1 in
+  246 ms.
 - Performance preview, Android parity, S Pen behavior, and portable state are
   implemented but still await the combined physical-device/user verification
   gate recorded in `docs/ROADMAP.md`.

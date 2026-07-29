@@ -5,6 +5,7 @@ import 'package:image/image.dart' as img;
 import '../domain/visual_chart_models.dart';
 import 'highlight_geometry.dart';
 import 'horizontal_row_detector.dart';
+import 'visual_deskew.dart';
 
 class VisualImageProcessor {
   const VisualImageProcessor();
@@ -20,6 +21,7 @@ class VisualImageProcessor {
       throw const FormatException('Stored chart image is invalid.');
     }
     decoded = img.bakeOrientation(decoded);
+    decoded = applyDeskewRotation(decoded, strip.deskewDegrees);
     final image = _processDecoded(
       decoded,
       strip,
@@ -44,7 +46,11 @@ class VisualImageProcessor {
     return [
       for (final strip in strips)
         _compactImage(
-          _processDecoded(decoded, strip, globalTreatment: globalTreatment),
+          _processDecoded(
+            applyDeskewRotation(decoded, strip.deskewDegrees),
+            strip,
+            globalTreatment: globalTreatment,
+          ),
           splitDetectedRowsBelowAspectRatio: splitDetectedRowsBelowAspectRatio,
           maximumRowAspectRatio: maximumRowAspectRatio,
         ),

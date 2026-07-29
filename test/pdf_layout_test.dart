@@ -173,6 +173,19 @@ void main() {
     expect(elements.first.kind, PlannedSetlistElementKind.boundary);
     expect(elements[2].kind, PlannedSetlistElementKind.placeholder);
     expect(elements[3].kind, PlannedSetlistElementKind.header);
+    expect(pages, hasLength(3));
+    expect(
+      pages[1].elements.single.kind,
+      PlannedSetlistElementKind.placeholder,
+    );
+    expect(pages[1].elements.single.entryIndex, 1);
+  });
+
+  test('common metadata punctuation has a built-in PDF-safe fallback', () {
+    expect(
+      pdfSafeMetadata('Bass Guitar â€” finger… “stage”'),
+      'Bass Guitar - finger... "stage"',
+    );
   });
 
   test('setlist readability errors name the set item and row', () {
@@ -224,4 +237,32 @@ void main() {
 
     expect(row.height, closeTo(45.83, 0.1));
   });
+
+  test(
+    'density floor permits compacting a song to avoid a sparse tail page',
+    () {
+      const layout = SetlistA4Layout(
+        pageWidth: 595.28,
+        pageHeight: 260,
+        margin: 5,
+        songHeaderHeight: 24,
+        minimumRowHeight: 34,
+      );
+
+      final pages = layout.plan(const [
+        SetlistLayoutEntry.chart(
+          entryIndex: 0,
+          aspectRatios: [6, 6, 6],
+          showHeader: true,
+        ),
+      ]);
+
+      expect(pages, hasLength(1));
+      final rows = pages.single.elements.where(
+        (element) => element.kind == PlannedSetlistElementKind.strip,
+      );
+      expect(rows, hasLength(3));
+      expect(rows.every((row) => row.height >= 34 * 0.9), isTrue);
+    },
+  );
 }

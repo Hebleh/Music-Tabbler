@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -7,12 +9,93 @@ import 'package:music_tabbler/app.dart';
 import 'package:music_tabbler/application/app_services.dart';
 import 'package:music_tabbler/application/performance_deck.dart';
 import 'package:music_tabbler/application/service_contracts.dart';
+import 'package:music_tabbler/application/visual_tab_analysis_service.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 import 'package:music_tabbler/domain/library_models.dart';
 import 'package:music_tabbler/domain/device_preferences.dart';
 import 'package:music_tabbler/domain/music_models.dart';
+import 'package:music_tabbler/domain/visual_tab_transform_models.dart';
+import 'package:music_tabbler/features/import/visual_tab_analysis_dialog.dart';
 
 void main() {
+  testWidgets(
+    'visual tab analysis review is a keyboard-dismissible page route',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final services = await _testServices();
+      List<VisualTabAnalysis>? outcome;
+      var returned = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                onPressed: () async {
+                  outcome = await showVisualTabAnalysisReview(
+                    context: context,
+                    library: services.library,
+                    analyzer: VisualTabAnalysisService(
+                      library: services.library,
+                      textRecognition: services.textRecognition,
+                    ),
+                    strips: const [],
+                    sourceStringCount: 4,
+                  );
+                  returned = true;
+                },
+                child: const Text('Open review'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open review'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Review visual tab analysis'), findsOneWidget);
+      expect(find.byType(Dialog), findsNothing);
+
+      await tester.tap(find.text('Use reviewed analysis'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(returned, isTrue);
+      expect(outcome, isEmpty);
+
+      returned = false;
+      outcome = null;
+      await tester.tap(find.text('Open review'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byTooltip('Cancel'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 800));
+
+      expect(returned, isTrue);
+      expect(outcome, isNull);
+      expect(find.text('Review visual tab analysis'), findsNothing);
+
+      returned = false;
+      await tester.tap(find.text('Open review'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 800));
+
+      expect(returned, isTrue);
+      expect(outcome, isNull);
+      expect(find.text('Review visual tab analysis'), findsNothing);
+    },
+  );
+
   testWidgets('opens the semantic sample chart from the song pool', (
     tester,
   ) async {
@@ -189,6 +272,31 @@ void main() {
     );
     expect(find.text('Music Tabbler never fetches the link.'), findsNothing);
   });
+
+  testWidgets(
+    'semantic recognition intake explains and opens its source flow',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(MusicTabblerApp(services: await _testServices()));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New / Import'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('Recognize semantic proposal'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Start visual source'));
+      await tester.tap(find.text('Start visual source'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Visual chart editor'), findsOneWidget);
+      expect(find.byTooltip('Recognize semantic proposal'), findsOneWidget);
+    },
+  );
 
   testWidgets('library transfer exposes export merge replace and restore', (
     tester,
@@ -587,6 +695,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Export setlist A4 PDF'));
     await tester.pumpAndSettle();
+    expect(find.text('Setlist PDF density'), findsOneWidget);
     await tester.tap(find.text('Stage readable'));
     await tester.pumpAndSettle();
 
@@ -619,6 +728,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Open performance preview'));
     await tester.pumpAndSettle();
+    expect(find.text('Performance preview density'), findsOneWidget);
     await tester.tap(find.text('Stage readable'));
     await tester.pumpAndSettle();
 
@@ -660,11 +770,18 @@ void main() {
 
     await tester.tap(find.byTooltip('Start gig mode'));
     await tester.pumpAndSettle();
+    expect(find.text('Gig display density'), findsOneWidget);
     await tester.tap(find.text('Stage readable'));
     await tester.pumpAndSettle();
 
     expect(performanceMode.values, contains(true));
     expect(find.text('1 / 2'), findsOneWidget);
+    expect(find.byTooltip('Open setlist sidebar'), findsOneWidget);
+    expect(find.byTooltip('Draw annotations'), findsOneWidget);
+    expect(find.byTooltip('Highlight performance notes'), findsOneWidget);
+    expect(find.byTooltip('Erase annotations'), findsOneWidget);
+    expect(find.byTooltip('Undo annotation'), findsOneWidget);
+    expect(find.byTooltip('Clear all performance notes'), findsOneWidget);
     await tester.tap(find.byTooltip('Next page'));
     await tester.pumpAndSettle();
     expect(find.text('2 / 2'), findsOneWidget);
@@ -673,6 +790,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(performanceMode.values.last, isFalse);
     expect(find.text('Gig'), findsWidgets);
+  });
+
+  testWidgets('gig mode exposes a safe exit while pages are preparing', (
+    tester,
+  ) async {
+    final library = _FakeLibrary()..setlists.add(_setlist('set-1', 'Gig'));
+    final deckBuilder = _DelayedPerformanceDeckBuilder();
+    final performanceMode = _RecordingPerformanceModeController();
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MusicTabblerApp(
+        services: await _testServices(
+          library: library,
+          performanceDeckBuilder: deckBuilder,
+          performanceMode: performanceMode,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openGigs(tester);
+    await tester.tap(find.text('Gig'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Start gig mode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stage readable'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Preparing performance pages...'), findsOneWidget);
+    expect(find.byTooltip('Exit gig mode'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Exit gig mode'));
+    await tester.pumpAndSettle();
+    expect(performanceMode.values.last, isFalse);
+    expect(find.text('Gig'), findsWidgets);
+    deckBuilder.complete();
   });
 
   testWidgets('setlist cards and actions fit a narrow tablet layout', (
@@ -875,6 +1032,11 @@ class _FakeLibrary
 
   @override
   String assetPath(String hash, String extension) => '';
+
+  @override
+  Future<StoredAsset> storeAsset(List<int> bytes, String extension) {
+    throw UnimplementedError();
+  }
 
   @override
   Future<void> deleteDraft(String id) async {
@@ -1153,6 +1315,55 @@ class _RecordingPerformanceDeckBuilder implements PerformanceDeckBuilder {
       margin: 5,
       gap: 0,
       pages: [page(0, 'First break'), page(1, 'Second break')],
+    );
+  }
+}
+
+class _DelayedPerformanceDeckBuilder implements PerformanceDeckBuilder {
+  final _completer = Completer<PerformanceDeck>();
+  LibrarySetlist? _setlist;
+  VisualExportDensity? _density;
+
+  @override
+  Future<PerformanceDeck> buildPerformanceDeck(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) {
+    _setlist = setlist;
+    _density = density;
+    return _completer.future;
+  }
+
+  void complete() {
+    if (_completer.isCompleted) return;
+    final setlist = _setlist!;
+    final density = _density!;
+    _completer.complete(
+      PerformanceDeck(
+        setlistId: setlist.id,
+        setlistName: setlist.name,
+        density: density,
+        pageWidth: 841.89,
+        pageHeight: 595.28,
+        margin: 5,
+        gap: 0,
+        pages: const [
+          PerformanceDeckPage(
+            id: 'delayed-page',
+            index: 0,
+            elements: [
+              PerformanceDeckElement(
+                kind: PerformanceElementKind.placeholder,
+                entryIndex: 0,
+                entryId: 'entry-0',
+                title: 'Ready',
+                width: 831.89,
+                height: 22,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

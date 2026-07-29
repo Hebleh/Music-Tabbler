@@ -60,8 +60,9 @@ before continuing.
 - [ ] Save, close, and reopen the chart. Confirm its source details persist and
   its exported PDF contains none of them.
 - [ ] From Song Pool, export that song as `.mtsong`.
-- [ ] Import the `.mtsong` into the same library. An identical import should not
-  duplicate the existing variant.
+- [ ] Import the `.mtsong` into the same library. An identical import should
+  create a separate, independently deletable chart identity without changing
+  existing setlist references.
 - [ ] Make an edit, export again, and import into the other device later.
   Confirm the divergent version is retained as a separate variant rather than
   overwriting the existing one.

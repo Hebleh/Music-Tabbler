@@ -24,3 +24,21 @@ This file records accepted limitations that are intentionally deferred beyond th
 - A future fix should bundle a license-compatible Unicode font after the
   open-source dependency/asset audit, use it in both single-chart and setlist
   PDF headers, and add Latin/Japanese rendered-PDF fixtures.
+
+## Visual transformation limitations
+
+- Visual string insertion preserves and shifts pixels around the chosen seam,
+  adds the new line, extends detected bar lines, and redraws reviewed frets.
+  Connected-component detection is intentionally conservative: unusual marks
+  crossing an internal seam may require a musician to choose whether the whole
+  highlighted component moves with the upper or lower string region.
+- Positioned-PDF visual analysis deliberately rejects notation staves that
+  contain no reviewed fret/dead-note tokens. Sparse PDFs and screenshots fall
+  back to local raster/OCR, whose missed or fragmented digits remain editable
+  proposals.
+- Visual deskew is limited to plus or minus seven degrees. It stores immutable
+  pre-deskew crop/overlay geometry so Reset is exact; split and crop controls
+  are disabled while deskew is active, requiring users to reset first before
+  changing those boundaries.
+- macOS/iOS feasibility cannot be concluded from the Windows checkout. MT-602
+  requires an actual build and workflow run on the user's MacBook Air.

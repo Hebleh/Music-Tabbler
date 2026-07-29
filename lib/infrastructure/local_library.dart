@@ -10,18 +10,6 @@ import '../domain/library_models.dart';
 import '../domain/music_models.dart';
 import '../domain/visual_chart_models.dart';
 
-class StoredAsset {
-  const StoredAsset({
-    required this.hash,
-    required this.extension,
-    required this.path,
-  });
-
-  final String hash;
-  final String extension;
-  final String path;
-}
-
 class LocalLibrary
     implements
         ChartLibrary,
@@ -37,6 +25,10 @@ class LocalLibrary
   final Database _database;
 
   static Future<LocalLibrary> open() async {
+    const configuredRoot = String.fromEnvironment('MUSIC_TABBLER_LIBRARY_ROOT');
+    if (configuredRoot.trim().isNotEmpty) {
+      return _openAtRoot(Directory(configuredRoot), inMemory: false);
+    }
     final support = await getApplicationSupportDirectory();
     final root = Directory(p.join(support.path, 'Music Tabbler'));
     return _openAtRoot(root, inMemory: false);
@@ -294,6 +286,7 @@ class LocalLibrary
     ''');
   }
 
+  @override
   Future<StoredAsset> storeAsset(List<int> bytes, String extension) async {
     final normalizedExtension = extension.toLowerCase().replaceFirst('.', '');
     final hash = sha256.convert(bytes).toString();

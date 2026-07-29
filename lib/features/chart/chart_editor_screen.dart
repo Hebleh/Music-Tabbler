@@ -8,11 +8,14 @@ import '../../application/music_xml_service.dart';
 import '../../application/pitch_transposition_service.dart';
 import '../../application/recognition_review.dart';
 import '../../application/retab_service.dart';
+import '../../application/semantic_string_routing_service.dart';
 import '../../application/semantic_edit_session.dart';
 import '../../domain/music_models.dart';
+import '../../domain/visual_tab_transform_models.dart';
 import '../../domain/device_preferences.dart';
 import '../../application/service_contracts.dart';
 import 'tab_chart_view.dart';
+import '../import/visual_tab_transform_dialog.dart';
 
 class ChartEditorScreen extends StatefulWidget {
   const ChartEditorScreen({
@@ -435,6 +438,129 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
     }
   }
 
+  Future<void> _routeStringsAndPitch() async {
+    final sourceLowToHigh = _chart.tuning.strings.reversed.toList();
+    final targetLowToHigh = _chart.tuning.strings.length == 4
+        ? BassTuning.beadg.strings.reversed.toList()
+        : sourceLowToHigh;
+    final targetIndexes = <int>[];
+    for (final source in sourceLowToHigh) {
+      final exact = targetLowToHigh.indexWhere(
+        (target) =>
+            target.midiPitch == source.midiPitch && target.name == source.name,
+      );
+      targetIndexes.add(
+        exact >= 0
+            ? exact
+            : targetIndexes.length.clamp(0, targetLowToHigh.length - 1),
+      );
+    }
+    final initial = VisualTabTransformConfiguration(
+      sourceLabels: [for (final string in sourceLowToHigh) string.name],
+      sourceOpenMidis: [for (final string in sourceLowToHigh) string.midiPitch],
+      sourceCapo: _chart.capo,
+      targetLabels: [for (final string in targetLowToHigh) string.name],
+      targetOpenMidis: [for (final string in targetLowToHigh) string.midiPitch],
+      targetCapo: _chart.capo,
+      globalPitchChange: 0,
+      routes: [
+        for (var index = 0; index < sourceLowToHigh.length; index += 1)
+          VisualStringRoute(
+            sourceString: index,
+            targetString: targetIndexes[index],
+            fretOffset: calculateVisualRouteFretOffset(
+              sourceOpenMidi: sourceLowToHigh[index].midiPitch,
+              sourceCapo: _chart.capo,
+              desiredPitchChange: 0,
+              targetOpenMidi: targetLowToHigh[targetIndexes[index]].midiPitch,
+              targetCapo: _chart.capo,
+            ),
+          ),
+      ],
+    );
+    final configuration = await showVisualTabTransformDialog(
+      context: context,
+      sourceStringCount: sourceLowToHigh.length,
+      initialValue: initial,
+      showCompactOption: false,
+    );
+    if (configuration == null || !mounted) return;
+    try {
+      final sourceTuning = BassTuning(
+        name: 'Source ${configuration.sourceLabels.join()}',
+        strings: [
+          for (
+            var index = configuration.sourceLabels.length - 1;
+            index >= 0;
+            index -= 1
+          )
+            StringTuning(
+              name: configuration.sourceLabels[index],
+              midiPitch: configuration.sourceOpenMidis[index],
+            ),
+        ],
+      );
+      final targetTuning = BassTuning(
+        name: 'Target ${configuration.targetLabels.join()}',
+        strings: [
+          for (
+            var index = configuration.targetLabels.length - 1;
+            index >= 0;
+            index -= 1
+          )
+            StringTuning(
+              name: configuration.targetLabels[index],
+              midiPitch: configuration.targetOpenMidis[index],
+            ),
+        ],
+      );
+      final sourceCount = configuration.sourceLabels.length;
+      final targetCount = configuration.targetLabels.length;
+      final selected = <int, int>{
+        for (final entry in configuration.selectedStringPitchChanges.entries)
+          sourceCount - 1 - entry.key: entry.value,
+      };
+      final constraints = <int, int>{
+        for (final route in configuration.routes)
+          sourceCount - 1 - route.sourceString:
+              targetCount - 1 - route.targetString,
+      };
+      final result = const SemanticStringRoutingService().transform(
+        source: _chart.copyWith(
+          tuning: sourceTuning,
+          capo: configuration.sourceCapo,
+        ),
+        targetTuning: targetTuning,
+        targetCapo: configuration.targetCapo,
+        globalPitchChange: configuration.globalPitchChange,
+        selectedStringPitchChanges: selected,
+        routeConstraints: constraints,
+        derivedChartId:
+            'semantic-route-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      await _saveChart(result.chart);
+      if (!mounted) return;
+      setState(() {
+        _chart = result.chart;
+        _selectedMeasureIndex = 0;
+        _selectedNoteId = result.chart.measures.first.notes.firstOrNull?.id;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Saved routed variant. ${result.routedNotes} note(s) moved '
+            'string; ${result.pitchChangedNotes} changed pitch.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('String routing failed: $error')));
+    }
+  }
+
   String _safeFileName(String value) {
     final cleaned = value.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
     return cleaned.isEmpty ? 'music-tabbler-chart' : cleaned;
@@ -782,6 +908,11 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
             icon: const Icon(Icons.alt_route),
           ),
           IconButton(
+            tooltip: 'Route strings, capo, and selected pitch',
+            onPressed: _routeStringsAndPitch,
+            icon: const Icon(Icons.route),
+          ),
+          IconButton(
             tooltip: widget.preferences.appTheme == AppThemePreference.dark
                 ? 'Use light theme'
                 : 'Use dark theme',
@@ -835,6 +966,11 @@ class _ChartEditorScreenState extends State<ChartEditorScreen> {
             selectedNote: selectedNote,
             sourceLibrary: widget.sourceLibrary,
             onVerifyAll: _verifyAllRecognition,
+            onVerifySelected:
+                selectedNote?.verification == VerificationState.proposed
+                ? () =>
+                      _commitChart(verifyProposedNote(_chart, selectedNote!.id))
+                : null,
             onRejectSelected:
                 selectedNote?.verification == VerificationState.proposed
                 ? () {
@@ -1022,6 +1158,7 @@ class _RecognitionReviewPanel extends StatelessWidget {
     required this.selectedNote,
     required this.sourceLibrary,
     required this.onVerifyAll,
+    required this.onVerifySelected,
     required this.onRejectSelected,
     required this.onMarkGigReady,
   });
@@ -1030,6 +1167,7 @@ class _RecognitionReviewPanel extends StatelessWidget {
   final TabNote? selectedNote;
   final ChartLibrary? sourceLibrary;
   final VoidCallback onVerifyAll;
+  final VoidCallback? onVerifySelected;
   final VoidCallback? onRejectSelected;
   final VoidCallback onMarkGigReady;
 
@@ -1084,19 +1222,63 @@ class _RecognitionReviewPanel extends StatelessWidget {
                 'Selected proposal confidence: '
                 '${((selectedNote!.confidence ?? 0) * 100).round()}%',
               ),
-              if (source != null) ...[
-                const SizedBox(height: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 170),
-                  child: Image.file(
-                    File(source),
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) =>
-                        Text('Source preview is unavailable at $source'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  FilledButton.tonal(
+                    onPressed: onVerifySelected,
+                    child: const Text('Accept selected'),
                   ),
-                ),
-              ],
+                  OutlinedButton(
+                    onPressed: onRejectSelected,
+                    child: const Text('Reject selected'),
+                  ),
+                ],
+              ),
             ],
+            const SizedBox(height: 10),
+            Text(
+              'Source comparison',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const SizedBox(height: 6),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 170,
+                child: source == null
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text(
+                            'Select a proposed fret in the chart to show its '
+                            'source row here.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      )
+                    : Image.file(
+                        File(source),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              'Source preview is unavailable at $source',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
           ],
         ),
       ),
