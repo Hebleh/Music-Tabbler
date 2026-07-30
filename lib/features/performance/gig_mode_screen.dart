@@ -398,28 +398,45 @@ class _GigModeScreenState extends State<GigModeScreen>
     if (mounted) setState(() => _lastAnnotation = null);
   }
 
-  Future<void> _toggleAnnotationVisibility(
-    PerformanceDeckElement element,
-  ) async {
-    await _saveAnnotatedDraft(
-      element,
-      (strip) => strip.copyWith(annotationsVisible: !strip.annotationsVisible),
-      (deckElement) => deckElement.copyWith(
-        annotationsVisible: !deckElement.annotationsVisible,
-      ),
-    );
+  Future<void> _setPageAnnotationVisibility(
+    List<PerformanceDeckElement> elements, {
+    required bool visible,
+  }) async {
+    for (final element in elements) {
+      await _saveAnnotatedDraft(
+        element,
+        (strip) => strip.copyWith(annotationsVisible: visible),
+        (deckElement) => deckElement.copyWith(annotationsVisible: visible),
+      );
+    }
   }
 
-  Future<void> _toggleAnnotationPdf(PerformanceDeckElement element) async {
-    await _saveAnnotatedDraft(
-      element,
-      (strip) => strip.copyWith(
-        includeAnnotationsInPdf: !strip.includeAnnotationsInPdf,
-      ),
-      (deckElement) => deckElement.copyWith(
-        includeAnnotationsInPdf: !deckElement.includeAnnotationsInPdf,
-      ),
-    );
+  Future<void> _setPageAnnotationPdfInclusion(
+    List<PerformanceDeckElement> elements, {
+    required bool included,
+  }) async {
+    for (final element in elements) {
+      await _saveAnnotatedDraft(
+        element,
+        (strip) => strip.copyWith(includeAnnotationsInPdf: included),
+        (deckElement) =>
+            deckElement.copyWith(includeAnnotationsInPdf: included),
+      );
+    }
+  }
+
+  PerformanceDeckElement? _undoElementForPage(
+    List<PerformanceDeckElement> elements,
+  ) {
+    final undo = _lastAnnotation;
+    if (undo == null) return null;
+    for (final element in elements) {
+      if (element.chartVariantId == undo.chartVariantId &&
+          element.sourceStripId == undo.stripId) {
+        return element;
+      }
+    }
+    return null;
   }
 
   Future<void> _clearAllPerformanceNotes() async {
@@ -578,9 +595,28 @@ class _GigModeScreenState extends State<GigModeScreen>
           final annotationElements = page.elements
               .where((element) => element.kind == PerformanceElementKind.strip)
               .toList(growable: false);
+          final annotationTargets = <PerformanceDeckElement>[];
+          final annotationTargetIds = <String>{};
+          for (final element in annotationElements) {
+            final variantId = element.chartVariantId;
+            final stripId = element.sourceStripId;
+            if (variantId == null || stripId == null) continue;
+            if (annotationTargetIds.add('$variantId\u0000$stripId')) {
+              annotationTargets.add(element);
+            }
+          }
           final annotationElement = annotationElements.isEmpty
               ? null
               : annotationElements.first;
+          final undoElement = _undoElementForPage(annotationTargets);
+          final pageAnnotationsVisible =
+              annotationTargets.isNotEmpty &&
+              annotationTargets.every((element) => element.annotationsVisible);
+          final pageAnnotationsIncludedInPdf =
+              annotationTargets.isNotEmpty &&
+              annotationTargets.every(
+                (element) => element.includeAnnotationsInPdf,
+              );
           return Scaffold(
             key: _scaffoldKey,
             backgroundColor: background,
@@ -735,44 +771,40 @@ class _GigModeScreenState extends State<GigModeScreen>
                             ),
                             IconButton(
                               tooltip: 'Undo annotation',
-                              onPressed:
-                                  annotationElement == null ||
-                                      _lastAnnotation == null
+                              onPressed: undoElement == null
                                   ? null
-                                  : () => _undoAnnotation(annotationElement),
+                                  : () => _undoAnnotation(undoElement),
                               color: Colors.white,
                               icon: const Icon(Icons.undo),
                             ),
                             IconButton(
-                              tooltip:
-                                  annotationElement?.annotationsVisible == true
+                              tooltip: pageAnnotationsVisible
                                   ? 'Hide annotations'
                                   : 'Show annotations',
-                              onPressed: annotationElement == null
+                              onPressed: annotationTargets.isEmpty
                                   ? null
-                                  : () => _toggleAnnotationVisibility(
-                                      annotationElement,
+                                  : () => _setPageAnnotationVisibility(
+                                      annotationTargets,
+                                      visible: !pageAnnotationsVisible,
                                     ),
                               color: Colors.white,
                               icon: Icon(
-                                annotationElement?.annotationsVisible == true
+                                pageAnnotationsVisible
                                     ? Icons.visibility
                                     : Icons.visibility_off,
                               ),
                             ),
                             IconButton(
-                              tooltip:
-                                  annotationElement?.includeAnnotationsInPdf ==
-                                      true
+                              tooltip: pageAnnotationsIncludedInPdf
                                   ? 'Exclude annotations from PDF'
                                   : 'Include annotations in PDF',
-                              onPressed: annotationElement == null
+                              onPressed: annotationTargets.isEmpty
                                   ? null
-                                  : () =>
-                                        _toggleAnnotationPdf(annotationElement),
-                              color:
-                                  annotationElement?.includeAnnotationsInPdf ==
-                                      true
+                                  : () => _setPageAnnotationPdfInclusion(
+                                      annotationTargets,
+                                      included: !pageAnnotationsIncludedInPdf,
+                                    ),
+                              color: pageAnnotationsIncludedInPdf
                                   ? Colors.amber
                                   : Colors.white,
                               icon: const Icon(Icons.picture_as_pdf_outlined),

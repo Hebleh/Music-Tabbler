@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -811,6 +812,127 @@ void main() {
     expect(find.text('Gig'), findsWidgets);
   });
 
+  testWidgets(
+    'gig annotation controls target every strip and undo the drawn strip',
+    (tester) async {
+      final now = DateTime.utc(2026, 7, 30);
+      final library = _FakeLibrary()
+        ..drafts.add(
+          VisualChartDraft(
+            id: 'multi-strip',
+            title: 'Multi-strip chart',
+            artist: '',
+            createdAt: now,
+            updatedAt: now,
+            strips: const [
+              VisualStrip(
+                id: 'strip-a',
+                assetHash: 'asset-a',
+                assetExtension: 'png',
+                pixelWidth: 100,
+                pixelHeight: 40,
+              ),
+              VisualStrip(
+                id: 'strip-b',
+                assetHash: 'asset-b',
+                assetExtension: 'png',
+                pixelWidth: 100,
+                pixelHeight: 40,
+              ),
+            ],
+          ),
+        )
+        ..setlists.add(
+          _setlist(
+            'set-1',
+            'Gig',
+            entries: const [
+              LibrarySetlistEntry(
+                id: 'entry-0',
+                chartVariantId: 'variant-multi-strip',
+              ),
+            ],
+          ),
+        );
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MusicTabblerApp(
+          services: await _testServices(
+            library: library,
+            performanceDeckBuilder: _MultiStripPerformanceDeckBuilder(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _openGigs(tester);
+      await tester.tap(find.text('Gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Start gig mode'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Stage readable'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Hide annotations'));
+      await tester.pumpAndSettle();
+      expect(
+        library.drafts.single.strips.every(
+          (strip) => !strip.annotationsVisible,
+        ),
+        isTrue,
+      );
+      expect(find.byTooltip('Show annotations'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Show annotations'));
+      await tester.pumpAndSettle();
+      expect(
+        library.drafts.single.strips.every((strip) => strip.annotationsVisible),
+        isTrue,
+      );
+
+      await tester.tap(find.byTooltip('Include annotations in PDF'));
+      await tester.pumpAndSettle();
+      expect(
+        library.drafts.single.strips.every(
+          (strip) => strip.includeAnnotationsInPdf,
+        ),
+        isTrue,
+      );
+
+      await tester.tap(find.byTooltip('Draw annotations'));
+      await tester.pump();
+      final secondStrip = find.byType(Image).at(1);
+      final start = tester.getCenter(secondStrip) - const Offset(30, 0);
+      final gesture = await tester.startGesture(start);
+      await gesture.moveBy(const Offset(60, 0));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(
+        library.drafts.single.strips
+            .firstWhere((strip) => strip.id == 'strip-a')
+            .annotations,
+        isEmpty,
+      );
+      expect(
+        library.drafts.single.strips
+            .firstWhere((strip) => strip.id == 'strip-b')
+            .annotations,
+        hasLength(1),
+      );
+
+      await tester.tap(find.byTooltip('Undo annotation'));
+      await tester.pumpAndSettle();
+      expect(
+        library.drafts.single.strips
+            .firstWhere((strip) => strip.id == 'strip-b')
+            .annotations,
+        isEmpty,
+      );
+    },
+  );
+
   testWidgets('gig mode exposes a safe exit while pages are preparing', (
     tester,
   ) async {
@@ -1336,6 +1458,48 @@ class _RecordingPerformanceDeckBuilder implements PerformanceDeckBuilder {
       pages: [page(0, 'First break'), page(1, 'Second break')],
     );
   }
+}
+
+class _MultiStripPerformanceDeckBuilder implements PerformanceDeckBuilder {
+  static final _pixel = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+    '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  );
+
+  @override
+  Future<PerformanceDeck> buildPerformanceDeck(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) async => PerformanceDeck(
+    setlistId: setlist.id,
+    setlistName: setlist.name,
+    density: density,
+    pageWidth: 200,
+    pageHeight: 100,
+    margin: 5,
+    gap: 2,
+    pages: [
+      PerformanceDeckPage(
+        id: 'multi-strip-page',
+        index: 0,
+        elements: [
+          for (var index = 0; index < 2; index += 1)
+            PerformanceDeckElement(
+              kind: PerformanceElementKind.strip,
+              entryIndex: 0,
+              entryId: 'entry-0',
+              chartVariantId: 'variant-multi-strip',
+              sourceStripId: 'strip-${index == 0 ? 'a' : 'b'}',
+              sourceRowRect: const NormalizedRect(0, 0, 1, 1),
+              rowIndex: index,
+              width: 190,
+              height: 44,
+              imageBytes: _pixel,
+            ),
+        ],
+      ),
+    ],
+  );
 }
 
 class _DelayedPerformanceDeckBuilder implements PerformanceDeckBuilder {
