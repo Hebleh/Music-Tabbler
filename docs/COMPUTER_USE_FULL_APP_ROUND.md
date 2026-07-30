@@ -16,6 +16,7 @@ an installer, package a release, or enter `LG-001` through `LG-006`.
    - `docs/BUGS_MT504_VALIDATION.md`
    - `docs/COMBINED_USER_TEST_MT203.md`
    - `docs/COMBINED_USER_TEST_SPRINT6.md`
+   - `docs/COMPUTER_USE_SEMANTIC_DETECTION_ROUND.md`
    - this document
 2. Use the primary checkout at `C:\vibes\Music Tabbler`.
 3. Launch the current source with `dev.bat`; do not use an older packaged or
@@ -132,6 +133,9 @@ Complete these checks before resuming the broader matrix:
 
 ## 6. Semantic recognition, review, editing, and transforms
 
+- [ ] Complete the dedicated per-chart recognition matrix in
+  `docs/COMPUTER_USE_SEMANTIC_DETECTION_ROUND.md` before attempting broad
+  semantic transforms.
 - [ ] From New / Import, use `Start visual source`, import/crop a short source,
   then use the `Recognize semantic proposal` toolbar action.
 - [ ] Confirm proposed frets are separate, centered on their strings, and

@@ -42,3 +42,57 @@ This file records accepted limitations that are intentionally deferred beyond th
   changing those boundaries.
 - macOS/iOS feasibility cannot be concluded from the Windows checkout. MT-602
   requires an actual build and workflow run on the user's MacBook Air.
+
+## Semantic recognition on real full-song charts
+
+- **The current semantic proposal produced from the real `9mm` chart is not
+  usable.** The visual chart remains the reliable source and must not be
+  replaced, transposed, or marked gig-ready from that semantic result.
+- Treat this as a recognition and review-pipeline limitation, not evidence that
+  the source PDF or the manual visual workflow is invalid.
+- A future fix must begin with a read-only Computer Use comparison across every
+  saved Song Pool example and the known local PDF/screenshot fixtures. Record
+  whether each failure comes from row/system detection, token recognition,
+  string assignment, beat placement, measure-number filtering, or semantic
+  rendering before changing code.
+- The acceptance target is a separately selectable, source-aligned proposal for
+  every playable fret/dead note, with uncertainty left visibly unverified.
+  Until then, visual transforms remain the supported route for real gig charts.
+
+## Visual analysis review density
+
+- **Visual tab analysis should display all detected tab rows together in one
+  scrollable review surface.** Reviewing one row or a partial subset at a time
+  makes full-song omissions and inconsistent string detection difficult to
+  notice.
+- The combined review must preserve usable zoom, selection, correction, and
+  before/after visibility. It must not eagerly decode every full-resolution
+  source image on the UI thread or reintroduce the long-chart scrolling stall.
+- A future implementation should use stable row placeholders and bounded image
+  caching while allowing the user to see the complete detected-row inventory,
+  confidence, and unresolved ambiguities before applying a transform.
+
+## Visual transform preset naming
+
+- **Presets must describe reusable tuning/routing operations rather than song
+  names.** The existing `Motion Sickness` and `Rock With You` labels are useful
+  fixtures but are not appropriate product-facing preset names.
+- Preferred descriptive labels and subtitles are:
+  - `Drop-D 4-string -> BEADG 5-string`
+    (`DADG -> BEADG`, unused E, low D routed to B at +3).
+  - `Half-step-down 4-string -> BEADG 5-string`
+    (`D#G#C#F# -> BEADG`, song pitch -2, target capo 2, unused high G).
+- Fixture/song names may remain in tests and documentation only.
+
+## Per-string tuning offset controls
+
+- Replace free-form tuning entry as the primary path with one row per string:
+  the base/open note, decrement button, signed integer semitone field, increment
+  button, and the calculated final open note.
+- Example: `E  [-]  -2  [+]  -> D`. Repeat independently for every source and
+  target string, while retaining an Advanced path for arbitrary confirmed
+  tunings and octaves.
+- The derived note must update immediately, preserve explicit string order, and
+  make the distinction between tuning change, global song transposition, target
+  capo, and selected-string pitch change clear. No tuning may be silently
+  inferred from a song-specific preset.

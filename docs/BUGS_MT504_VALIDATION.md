@@ -285,6 +285,40 @@ test unless explicitly marked non-blocking.
   1.5-second check, and reopening the unchanged set reached page 1 in 246 ms
   from the density click.
 
+## VT-015 - Real 9mm semantic detection does not produce a usable chart
+
+- **State:** User-reported after the v0.2.0-beta.1 checkpoint. No diagnosis or
+  source patch has been attempted. Queue the dedicated Terra Light read-only
+  matrix in `docs/COMPUTER_USE_SEMANTIC_DETECTION_ROUND.md`.
+- **Severity:** Critical for semantic editing, transposition, and re-tabbing;
+  non-blocking for the preserved visual screenshot/PDF workflow.
+- **Fixture:** The user's real `9mm` visual chart and its local original,
+  manually squeezed, Music Tabbler exported, and screenshot-rendered forms.
+- **Observed:** Opening/using semantic detection for the real 9mm song chart
+  does not produce a usable semantic result. The exact first failing stage has
+  not yet been classified.
+- **Expected:** Every playable fret/dead note becomes a separate, source-aligned
+  proposal on the correct string and measure, with uncertain events left
+  visibly unverified and correctable beside their source row.
+- **Safety constraint:** Do not use the unreviewed result for full-chart
+  transpose/re-tab, do not bulk-verify it, and do not alter or replace the
+  useful visual chart. Visual `+1` remains the supported fallback.
+- **Required diagnosis:** Test all visible saved Song Pool examples and known
+  local fixtures. For each, separate row/system detection, token OCR, string
+  assignment, beat placement, measure-number filtering, source mapping,
+  persistence, and renderer failures.
+- **Acceptance:** The current 9mm forms and representative PDF/screenshot
+  fixtures produce individually selectable proposals with correct source
+  mapping; save/reopen is stable; a short fully reviewed sample can transpose
+  exactly without changing rhythm/lyrics; the visual originals remain
+  unchanged.
+
+### VT-015 Terra evidence table
+
+| Chart/source | Input kind | Visible rows | Detected rows | Token quality | String/beat alignment | Review mapping | Save/reopen | Primary failure | Screenshot |
+|---|---|---:|---:|---|---|---|---|---|---|
+| 9mm | Pending |  |  | Pending Terra pass | Pending | Pending | Pending | Unclassified |  |
+
 ## Windows Computer Use queue
 
 ### Completed in this pass
