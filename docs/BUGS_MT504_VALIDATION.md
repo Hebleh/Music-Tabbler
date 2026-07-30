@@ -484,6 +484,60 @@ proposal is trusted.
   same end-to-end round trip. The source-page renders were separately inspected
   in five contact sheets; no fixture or render is tracked.
 
+## VT-023 - Gig annotation controls target the first strip on a multi-strip page
+
+- **State:** Reproduced in the exact macOS release app on the stage-readable
+  `RITN` page containing 9mm on 30 July 2026; repaired and visibly retested in
+  the same pass.
+- **Severity:** High performance-annotation correctness defect.
+- **Observed:** A pen stroke drawn on a lower strip persisted correctly, but
+  **Hide annotations**, **Include annotations in PDF**, and **Undo annotation**
+  operated on the page's first strip instead of the strip that received the
+  stroke. The eye icon changed to hidden while the stroke remained visible.
+  The disposable SQLite payload confirmed that the first strip became hidden
+  while a different strip retained the annotation.
+- **Expected:** Page-level visibility and PDF-inclusion controls apply
+  consistently to every unique strip displayed on the current page. Undo
+  targets the strip containing the last stroke.
+- **Repair:** Deduplicate every current-page annotation target by visual variant
+  and source-strip identity, apply page controls to the full target set, and
+  resolve Undo against the recorded last-stroke identity.
+- **Verification:** A focused two-strip widget regression draws on the second
+  strip, verifies both page-wide flags, and undoes only the second-strip stroke.
+  In the rebuilt release app, Hide removed the real lower-strip stroke, Undo
+  removed a newly drawn lower stroke while retaining the earlier one, Clear All
+  removed the disposable notes, and PDF inclusion changed all 12 strips on the
+  current page together. The final 9mm payload contains zero annotations, zero
+  hidden strips, and zero PDF-included strips. Screenshot:
+  `tmp/apple-validation/screenshots/VT-023-hidden-annotation-still-visible.jpeg`.
+
+## VT-024 - Mixed visual and semantic songs cannot export as `.mtsong`
+
+- **State:** Reproduced from the 9mm Song Pool card in the exact macOS release
+  app on 30 July 2026; repaired and visibly retested in the same pass.
+- **Severity:** High portable-song export blocker.
+- **Observed:** Exporting 9mm failed before the native save picker with
+  `Chart variant semantic-chart_… has no visual payload.` A visual-only Rock
+  With You export reached the picker, isolating the failure to songs containing
+  both visual and semantic variants.
+- **Expected:** A portable song preserves every visual and semantic variant
+  belonging to that song. Importing an identical bundle retains new copies as
+  separate variants.
+- **Repair:** Advanced `.mtsong` to schema 2, preserving the schema-1 import
+  path. Visual payloads and their assets remain under `variants/` and `assets/`;
+  semantic payloads are stored under `semantic/` with stable identity and
+  update metadata. Import stages both kinds into one atomic library operation
+  and remaps conflicting identities.
+- **Verification:** Four focused bundle tests pass, including mixed
+  visual/semantic round trip, identical/divergent retention, schema-1
+  compatibility, and corrupt-bundle rejection. The rebuilt release app exported
+  a real 855 KiB 9mm bundle (SHA-256
+  `7405ce9648eb6db28159e28808d70164e395672a9feb86206a48665f11100bc5`)
+  and imported it back as two retained variants. The disposable database moved
+  from 6 visual charts / 9 total variants to 7 / 11 without changing its four
+  setlists or five entries. The bundle remains ignored under
+  `tmp/apple-validation/input/9mm.mtsong`.
+
 ## Apple baseline observations completed on 30 July 2026
 
 - The imported Windows state remained read-only at its original path and was

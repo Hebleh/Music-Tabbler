@@ -13,8 +13,8 @@ order, the user-testing gate, and the reusable implementation cycle.
 - Mac repository: `/Users/guh/Vibes/Codex/Music Tabbler`
 - Stable integration branch: `master`
 - Current Apple validation branch: `codex/mt-602-apple-full-validation`
-- Apple validation history is pushed through handover commit `5e1a8f1`;
-  inspect the branch head for the final real-fixture regression update
+- Apple validation history is pushed; inspect the branch head for the final
+  real-fixture and exact-release UI regression updates
 - Immutable MVP archive branch: `mvp/v0.1.0`
 - Release checkpoint: Windows MVP `v0.1.0`
 - Git remote: private `Hebleh/Music-Tabbler`
@@ -47,16 +47,20 @@ Do not use `git reset --hard`, `git checkout --`, or otherwise discard user work
   validation documentation.
 - Flutter 3.44.8 / Dart 3.12.2, Xcode 26.6, CocoaPods 1.17.0, and iOS 26.5
   Simulator were used. `flutter analyze` reports no issues and the complete
-  suite passes 205/205.
+  suite passes 207/207.
 - macOS debug and release builds succeed. The exact release app is a universal
   x86_64/arm64 bundle with bundle ID `com.gerri.musicTabbler`; `codesign
   --verify --deep --strict` passes with an ad-hoc signature. It is not
   Developer-ID signed or notarized.
-- The local portable ZIP is
-  `tmp/apple-validation/release/Music-Tabbler-macOS-universal-mt602.zip`,
-  29,452,373 bytes, SHA-256
-  `d3116bdc1fc460272e8ab2787350439e8b614029e31c023fe9257f4b179d2b74`.
-  It is evidence only and is intentionally ignored/unpublished.
+- The current local portable ZIP is
+  `tmp/apple-validation/release/Music-Tabbler-macOS-universal-mt602-vt024.zip`,
+  29,457,337 bytes, SHA-256
+  `39ecd4e000a5f0b7eea10dcb3c0d3653022c89c3aebd6b4d7b927a9a2a8a8ae9`.
+  It was made from a clean release build after the VT-023/VT-024 repairs,
+  extracted again, checked as universal x86_64/arm64, passed strict deep
+  signature verification, and launched to the populated Song Pool. It is
+  evidence only and is intentionally ignored/unpublished. The older
+  `Music-Tabbler-macOS-universal-mt602.zip` is superseded.
 - iPhone 17 and iPad Air 11-inch Simulator builds launch. Portrait and
   landscape Song Pool layouts are readable after the responsive repair.
   Physical iPhone signing/device behavior remains unverified.
@@ -82,6 +86,19 @@ Do not use `git reset --hard`, `git checkout --`, or otherwise discard user work
   the x86_64 PDFium dylib by path ordering on an arm64 host. The bootstrap now
   selects `mac-arm64` or `mac-x64` from `Abi.current()`; the formerly hanging
   real two-page round trip passes in about three seconds including test startup.
+- Restored Mac window ownership enabled a second exact-release UI pass. The
+  Windows state merged through the native picker as 8 variants and 4 setlists;
+  a corrupt `.mtstate` was rejected while database counts stayed unchanged, and
+  picker cancellation was non-mutating. Stage-readable Gig mode rendered 12
+  pages with sidebar jumps, duplicate entries, a dedicated placeholder page,
+  next/previous navigation, explicit Exit, drawing, hide/show, Undo, PDF
+  inclusion, and Clear All. Performance Preview used its own density title,
+  rendered the same 12-page plan, navigated, and exited explicitly.
+- That pass found and repaired VT-023, where multi-strip Gig controls targeted
+  only the first strip, and VT-024, where a song containing a semantic variant
+  could not export as `.mtsong`. The rebuilt release app passed both real 9mm
+  retests. `.mtsong` schema 2 now preserves mixed visual/semantic variants while
+  retaining schema-1 import compatibility.
 - Do not merge, tag, bump the version, or publish `v0.2.0-beta.2` yet. Required
   remaining gates include the Windows/Android shared regression, physical
   iPhone/hardware checks, the deferred complete fixture/UI matrix items listed
