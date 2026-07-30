@@ -462,6 +462,28 @@ proposal is trusted.
   seconds. The rebuilt sandboxed macOS app also imported, rendered, saved, and
   reopened a real four-page PDF as a four-row disposable visual chart.
 
+## VT-022 - macOS PDF tests select the wrong PDFium architecture
+
+- **State:** Reproduced on Apple Silicon during the complete real-PDF fixture
+  pass on 30 July 2026; repaired and regression-tested in the same pass.
+- **Severity:** Medium test-infrastructure blocker; application bundles were not
+  affected.
+- **Observed:** `test/flutter_test_config.dart` sorted every generated
+  `libpdfium.dylib` path and selected the last one. Because `mac-x64` sorts after
+  `mac-arm64`, an arm64 Flutter test tried to load the x86_64 binary. PDFium
+  reported an incompatible architecture from its worker isolate, and the test
+  then remained open until its two-minute timeout.
+- **Expected:** The test process loads the PDFium dylib matching its current
+  macOS ABI.
+- **Repair:** Select the generated `mac-arm64` or `mac-x64` directory from
+  `Abi.current()` before configuring `Pdfrx.pdfiumModulePath`.
+- **Verification:** The same real two-page fixture imports in 0.42 seconds in
+  the isolated diagnostic and completes the production import/crop/A4-export
+  round trip in about three seconds including Flutter test startup. All 16
+  external PDF fixtures, representing 42 source pages, subsequently passed the
+  same end-to-end round trip. The source-page renders were separately inspected
+  in five contact sheets; no fixture or render is tracked.
+
 ## Apple baseline observations completed on 30 July 2026
 
 - The imported Windows state remained read-only at its original path and was

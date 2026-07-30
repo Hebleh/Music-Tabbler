@@ -13,7 +13,8 @@ order, the user-testing gate, and the reusable implementation cycle.
 - Mac repository: `/Users/guh/Vibes/Codex/Music Tabbler`
 - Stable integration branch: `master`
 - Current Apple validation branch: `codex/mt-602-apple-full-validation`
-- Apple validation head: `4ecf919` before this handover update
+- Apple validation history is pushed through handover commit `5e1a8f1`;
+  inspect the branch head for the final real-fixture regression update
 - Immutable MVP archive branch: `mvp/v0.1.0`
 - Release checkpoint: Windows MVP `v0.1.0`
 - Git remote: private `Hebleh/Music-Tabbler`
@@ -71,6 +72,16 @@ Do not use `git reset --hard`, `git checkout --`, or otherwise discard user work
 - A real four-page PDF imported, rendered, saved, and reopened in the sandboxed
   macOS app. PDF tests that previously timed out now complete through
   `pdfium_flutter`.
+- All 16 usable PDFs under the external `Guitar shiet` fixture folder were
+  imported and exported through the deterministic A4 round-trip test: 42/42
+  source pages passed. Poppler renders of all source pages were also inspected
+  in five contact sheets. The set includes portrait, landscape, sparse,
+  highlighted, dense single-page, and eight-page inputs. No source or rendered
+  fixture was added to Git.
+- The real-fixture run exposed VT-022: the macOS Flutter test bootstrap selected
+  the x86_64 PDFium dylib by path ordering on an arm64 host. The bootstrap now
+  selects `mac-arm64` or `mac-x64` from `Abi.current()`; the formerly hanging
+  real two-page round trip passes in about three seconds including test startup.
 - Do not merge, tag, bump the version, or publish `v0.2.0-beta.2` yet. Required
   remaining gates include the Windows/Android shared regression, physical
   iPhone/hardware checks, the deferred complete fixture/UI matrix items listed

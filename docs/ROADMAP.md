@@ -200,9 +200,13 @@ documented debt unless they materially block gig preparation.
 - [x] **MT-601 — Reversible visual deskew**
   - Preview/apply/reset geometry without modifying original assets.
 - [!] **MT-602 — macOS/iOS feasibility checkpoint**
-  - Evidence-based supported/deferred decision on actual Apple hardware.
-  - Blocked until the MacBook Air is available for an actual build and
-    import/edit/export workflow run; Windows inspection alone cannot pass it.
+  - macOS and iOS Simulator feasibility is established on the MacBook Air:
+    builds launch, the disposable Windows library survives import/reopen, real
+    PDFs import/export, semantic review works, and representative iPhone/iPad
+    layouts have been inspected.
+  - Integration remains gated on the consolidated Windows/Android regression,
+    physical iPhone/signing behavior, and the deferred manual/hardware items;
+    Simulator evidence is not an installable iPhone release.
 
 ## Legal and open-source boundary
 
