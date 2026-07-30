@@ -1,6 +1,6 @@
 # Music Tabbler handover
 
-Updated: 26 July 2026
+Updated: 30 July 2026
 
 This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset user work; inspect the current branch and working tree before starting a contract.
 
@@ -9,16 +9,19 @@ order, the user-testing gate, and the reusable implementation cycle.
 
 ## Immediate state
 
-- Repository: `C:\vibes\Music Tabbler`
+- Windows repository: `C:\vibes\Music Tabbler`
+- Mac repository: `/Users/guh/Vibes/Codex/Music Tabbler`
 - Stable integration branch: `master`
-- Current implementation branch: `codex/mt-503-fingering-variants`
+- Current Apple validation branch: `codex/mt-602-apple-full-validation`
+- Apple validation head: `4ecf919` before this handover update
 - Immutable MVP archive branch: `mvp/v0.1.0`
 - Release checkpoint: Windows MVP `v0.1.0`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Latest automated checkpoint: MT-503 ranked saved fingering variants.
-  MT-107 through MT-503 remain at one consolidated Windows verification gate
-  before sprint integration; Android is intentionally deferred.
+- Latest automated checkpoint: MT-602 Apple validation, semantic proposal
+  repair, all-row review, tuning controls, and responsive iPhone layout.
+  Shared behavior still requires a consolidated Windows/Android regression
+  before integration or prerelease.
 - Near-term product target: dependable, stage-readable charts for the user's 16 August 2026 gig
 - Current user-test sheet: `docs/COMBINED_USER_TEST_SPRINT6.md`
 
@@ -34,6 +37,46 @@ flutter test
 For normal app iteration, launch with `dev.bat`. It wraps `dev.ps1`, defaults to Windows `flutter run`, supports hot reload, and deliberately does not produce a release package. Use `dev.bat -Device <flutter-device-id>` for another connected Flutter target.
 
 Do not use `git reset --hard`, `git checkout --`, or otherwise discard user work.
+
+## MT-602 Apple validation checkpoint
+
+- Branch `codex/mt-602-apple-full-validation` was created from `7cb75c9` and
+  pushed to the private origin. Focused commits add Apple runners, Apple PDFium
+  deployment, semantic/all-row review repairs, responsive Song Pool cards, and
+  validation documentation.
+- Flutter 3.44.8 / Dart 3.12.2, Xcode 26.6, CocoaPods 1.17.0, and iOS 26.5
+  Simulator were used. `flutter analyze` reports no issues and the complete
+  suite passes 205/205.
+- macOS debug and release builds succeed. The exact release app is a universal
+  x86_64/arm64 bundle with bundle ID `com.gerri.musicTabbler`; `codesign
+  --verify --deep --strict` passes with an ad-hoc signature. It is not
+  Developer-ID signed or notarized.
+- The local portable ZIP is
+  `tmp/apple-validation/release/Music-Tabbler-macOS-universal-mt602.zip`,
+  29,452,373 bytes, SHA-256
+  `d3116bdc1fc460272e8ab2787350439e8b614029e31c023fe9257f4b179d2b74`.
+  It is evidence only and is intentionally ignored/unpublished.
+- iPhone 17 and iPad Air 11-inch Simulator builds launch. Portrait and
+  landscape Song Pool layouts are readable after the responsive repair.
+  Physical iPhone signing/device behavior remains unverified.
+- The Windows-exported `music-tabbler-library.mtstate` remains untracked and
+  unchanged. Its SHA-256 and the isolated validation copy both equal
+  `e8c6b9d5d7d112b0cd3688a6173bb810535a48b28c860dab49b9f41978332cc9`.
+- The disposable macOS library imported 8 variants and 4 setlists. The real
+  29-row `9mm` review retained 822 fret/dead-note tokens, including 88 on row
+  27. Semantic recognition created 29 proposed measures containing 822
+  source-aligned note proposals in 5-string BEADG. One note was accepted and
+  persisted across quit/reopen; the chart was never bulk-verified or marked
+  gig-ready.
+- A real four-page PDF imported, rendered, saved, and reopened in the sandboxed
+  macOS app. PDF tests that previously timed out now complete through
+  `pdfium_flutter`.
+- Do not merge, tag, bump the version, or publish `v0.2.0-beta.2` yet. Required
+  remaining gates include the Windows/Android shared regression, physical
+  iPhone/hardware checks, the deferred complete fixture/UI matrix items listed
+  in `docs/BUGS_MT504_VALIDATION.md`, and the Unicode PDF-header font decision.
+- Existing `master`, `v0.1.0`, `mvp/v0.1.0`, `v0.2.0-beta.1`, and its release
+  remain unchanged.
 
 ## Product intent and fixed decisions
 
@@ -160,7 +203,9 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 - Title/artist OCR and detected lyric words are assistive, user-correctable proposals. They are not guaranteed complete.
 - Japanese OCR depends on the optional Japanese Windows OCR language capability. The app tries `ja-JP`, English, and profile recognizers and falls back safely when a language engine is unavailable.
 - Japanese title/artist detection remains unreliable on real score headings and is accepted technical debt for the MVP.
-- Master side-crop control positions do not persist reliably through every split-dialog action or reopening; saved row crops remain intact. This convenience-state limitation is accepted MVP debt.
+- Master side-crop control positions now persist explicitly through the saved
+  visual-strip schema and JSON round trips. The full mixed-width interaction
+  matrix still needs Windows UI confirmation.
 - Extending a lyric highlight to the tab below is geometric same-column mapping, not semantic note/lyric alignment.
 - Imported visual charts become editable semantic note/lyric proposals only
   through local recognition and explicit review.
@@ -178,12 +223,14 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 
 Keep the reliable visual fallback ahead of semantic research until the gig workflow is dependable.
 
-1. Complete `docs/COMBINED_USER_TEST_SPRINT6.md` on Windows, beginning with the
-   short 9mm recognition and +1 transposition sample.
-2. Bug-squash that report without starting Sprint 7 or legally gated features.
-3. Merge the verified sprint chain into the sprint integration branch, then
-   `master`, only after the manual gate passes.
-4. Build and test Android only after the Windows workflow is accepted.
+1. Fetch `codex/mt-602-apple-full-validation` in the Windows checkout and run
+   the complete shared regression before merging.
+2. Confirm the 9mm visual +1 fallback, transformed semantic proposal review,
+   split master-crop reopen, long-chart scrolling, PDFs, setlists, Preview, and
+   Gig mode on Windows.
+3. Build and exercise Android after the Windows workflow is accepted.
+4. Merge to `master` and prepare `v0.2.0-beta.2` only when those gates and the
+   remaining manual/hardware checks are truthfully documented.
 5. Review source terms/content rights and dependency licenses before
    implementing or distributing any online adapter or making the repository
    public.
