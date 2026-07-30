@@ -512,26 +512,25 @@ class _SongPool extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Song Pool',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Saved visual charts and semantic song variants.',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ],
-              ),
-            ),
-            Wrap(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final heading = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Song Pool',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Saved visual charts and semantic song variants.',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ],
+            );
+            final actions = Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: [
                 if (onImportPortable != null)
                   OutlinedButton.icon(
@@ -545,8 +544,21 @@ class _SongPool extends StatelessWidget {
                   label: const Text('New visual chart'),
                 ),
               ],
-            ),
-          ],
+            );
+            if (constraints.maxWidth < 620) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [heading, const SizedBox(height: 16), actions],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: heading),
+                const SizedBox(width: 16),
+                actions,
+              ],
+            );
+          },
         ),
         const SizedBox(height: 24),
         FutureBuilder<List<VisualChartDraft>>(
@@ -579,40 +591,36 @@ class _SongPool extends StatelessWidget {
             return Column(
               children: [
                 for (final draft in items)
-                  Card(
-                    child: ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.view_stream),
-                      ),
-                      title: Text(_displayTitle(draft)),
-                      subtitle: Text(
-                        [
-                          if (_displayArtist(draft).isNotEmpty)
-                            _displayArtist(draft),
-                          '${draft.strips.length} row(s)',
-                          'Last edited ${_formatEditedDate(draft.updatedAt)}',
-                        ].join(' | '),
-                      ),
-                      trailing: Wrap(
-                        spacing: 8,
-                        children: [
-                          if (onExportPortable != null)
-                            IconButton(
-                              tooltip: 'Export portable song',
-                              onPressed: () => onExportPortable!(draft),
-                              icon: const Icon(Icons.archive_outlined),
-                            ),
+                  _ResponsiveSongCard(
+                    leading: const CircleAvatar(child: Icon(Icons.view_stream)),
+                    title: _displayTitle(draft),
+                    subtitle: [
+                      if (_displayArtist(draft).isNotEmpty)
+                        _displayArtist(draft),
+                      '${draft.strips.length} row(s)',
+                      'Last edited ${_formatEditedDate(draft.updatedAt)}',
+                    ].join(' | '),
+                    actions: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        if (onExportPortable != null)
                           IconButton(
-                            tooltip: 'Delete saved chart',
-                            onPressed: () => onDeleteVisual(draft),
-                            icon: const Icon(Icons.delete_outline),
+                            tooltip: 'Export portable song',
+                            onPressed: () => onExportPortable!(draft),
+                            icon: const Icon(Icons.archive_outlined),
                           ),
-                          FilledButton(
-                            onPressed: () => onOpenVisual(draft),
-                            child: const Text('Open'),
-                          ),
-                        ],
-                      ),
+                        IconButton(
+                          tooltip: 'Delete saved chart',
+                          onPressed: () => onDeleteVisual(draft),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                        FilledButton(
+                          onPressed: () => onOpenVisual(draft),
+                          child: const Text('Open'),
+                        ),
+                      ],
                     ),
                   ),
               ],
@@ -627,26 +635,21 @@ class _SongPool extends StatelessWidget {
             return Column(
               children: [
                 for (final chart in snapshot.data!)
-                  Card(
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        child: Icon(
-                          chart.gigReady ? Icons.verified : Icons.auto_fix_high,
-                        ),
+                  _ResponsiveSongCard(
+                    leading: CircleAvatar(
+                      child: Icon(
+                        chart.gigReady ? Icons.verified : Icons.auto_fix_high,
                       ),
-                      title: Text(chart.title),
-                      subtitle: Text(
-                        [
-                          if (chart.artist.trim().isNotEmpty)
-                            chart.artist.trim(),
-                          '${chart.measures.length} semantic measure(s)',
-                          chart.gigReady ? 'Gig-ready' : 'Needs review',
-                        ].join(' | '),
-                      ),
-                      trailing: FilledButton(
-                        onPressed: () => onOpenSemantic(chart),
-                        child: const Text('Open semantic'),
-                      ),
+                    ),
+                    title: chart.title,
+                    subtitle: [
+                      if (chart.artist.trim().isNotEmpty) chart.artist.trim(),
+                      '${chart.measures.length} semantic measure(s)',
+                      chart.gigReady ? 'Gig-ready' : 'Needs review',
+                    ].join(' | '),
+                    actions: FilledButton(
+                      onPressed: () => onOpenSemantic(chart),
+                      child: const Text('Open semantic'),
                     ),
                   ),
               ],
@@ -654,20 +657,81 @@ class _SongPool extends StatelessWidget {
           },
         ),
         const SizedBox(height: 16),
-        Card(
-          child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.music_note)),
-            title: const Text('Foundation Groove'),
-            subtitle: const Text(
-              'Music Tabbler - 5-string BEADG - Semantic sample',
-            ),
-            trailing: FilledButton(
-              onPressed: () => onOpenSemantic(null),
-              child: const Text('Open sample chart'),
-            ),
+        _ResponsiveSongCard(
+          leading: const CircleAvatar(child: Icon(Icons.music_note)),
+          title: 'Foundation Groove',
+          subtitle: 'Music Tabbler - 5-string BEADG - Semantic sample',
+          actions: FilledButton(
+            onPressed: () => onOpenSemantic(null),
+            child: const Text('Open sample chart'),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ResponsiveSongCard extends StatelessWidget {
+  const _ResponsiveSongCard({
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    required this.actions,
+  });
+
+  final Widget leading;
+  final String title;
+  final String subtitle;
+  final Widget actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >= 520) {
+            return ListTile(
+              leading: leading,
+              title: Text(title),
+              subtitle: Text(subtitle),
+              trailing: actions,
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    leading,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerRight, child: actions),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

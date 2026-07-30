@@ -133,6 +133,25 @@ void main() {
     expect(find.textContaining('Recognition review:'), findsOneWidget);
   });
 
+  testWidgets('Song Pool fits a portrait iPhone viewport', (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MusicTabblerApp(services: await _testServices()));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Song Pool'), findsWidgets);
+    expect(find.text('New visual chart'), findsOneWidget);
+    expect(
+      tester.getSize(find.text('Foundation Groove')).width,
+      greaterThan(100),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('keeps tablature visible when notation is toggled off', (
     tester,
   ) async {
