@@ -41,6 +41,7 @@ dependencies:
   path_provider: ^2.1.6
   pdf: ^3.13.0
   pdfrx_engine: ^0.4.6
+  pdfium_flutter: ^0.2.3
   sqlite3: ^3.4.0
   win32: ^5.15.0
   xml: ^7.0.1
