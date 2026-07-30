@@ -13,6 +13,11 @@ This file records accepted limitations that are intentionally deferred beyond th
 - **Master side-crop positions do not persist reliably through all split-dialog actions or reopenings.** The row crops themselves remain saved; the convenience master-control position is the deferred part.
 - Do not infer the master position from saved row edges until mixed-width and individually adjusted rows have a defined behavior.
 - A future fix should persist explicit per-source master-control state and add widget coverage for detect, evenly divide, add, delete, reopen, and cancel/apply flows.
+- **MT-602 implementation pending verification:** `VisualStrip` now persists
+  explicit `splitMasterLeft`/`splitMasterRight` values, sibling rows inherit
+  the applied values, and reopening restores those controls without inferring
+  them from row edges. JSON round-trip coverage was added; the interaction
+  matrix remains open until the updated Flutter build can run.
 
 ## Unicode PDF headers
 
@@ -40,14 +45,17 @@ This file records accepted limitations that are intentionally deferred beyond th
   pre-deskew crop/overlay geometry so Reset is exact; split and crop controls
   are disabled while deskew is active, requiring users to reset first before
   changing those boundaries.
-- macOS/iOS feasibility cannot be concluded from the Windows checkout. MT-602
-  requires an actual build and workflow run on the user's MacBook Air.
+- macOS and iOS Simulator feasibility was established on the user's MacBook Air
+  during MT-602: both debug bundles build, launch, and complete representative
+  library, PDF, semantic-review, iPhone, and iPad workflows. Physical iPhone
+  signing/device behavior remains a separate hardware gate.
 
 ## Semantic recognition on real full-song charts
 
-- **The current semantic proposal produced from the real `9mm` chart is not
-  usable.** The visual chart remains the reliable source and must not be
-  replaced, transposed, or marked gig-ready from that semantic result.
+- **The real `9mm` semantic proposal is now source-aligned and editable, but it
+  is still not musician-verified.** The visual chart remains the reliable
+  performance fallback; the semantic result must not be marked gig-ready until
+  its proposals are reviewed.
 - Treat this as a recognition and review-pipeline limitation, not evidence that
   the source PDF or the manual visual workflow is invalid.
 - A future fix must begin with a read-only Computer Use comparison across every
@@ -58,6 +66,16 @@ This file records accepted limitations that are intentionally deferred beyond th
 - The acceptance target is a separately selectable, source-aligned proposal for
   every playable fret/dead note, with uncertainty left visibly unverified.
   Until then, visual transforms remain the supported route for real gig charts.
+- **MT-602 implementation verified on the disposable `9mm` copy:** When a visual transform has
+  musician-reviewed analysis, semantic recognition now consumes its enabled
+  fret/dead-note tokens, applies the reviewed string route and fret offset,
+  preserves source-asset geometry, and retains up to 128 separately selectable
+  events per row. Unreviewed charts still use conservative local OCR. Legacy
+  zero-confidence empty rows reopen as proposed rather than silently verified.
+  The real fixture produced 29 proposed measures with 822 note proposals in
+  5-string BEADG; row 27 retained all 88 candidates. One accepted note and its
+  source comparison persisted after quit/reopen. Full musical verification is
+  intentionally left to the musician.
 
 ## Visual analysis review density
 
@@ -71,6 +89,11 @@ This file records accepted limitations that are intentionally deferred beyond th
 - A future implementation should use stable row placeholders and bounded image
   caching while allowing the user to see the complete detected-row inventory,
   confidence, and unresolved ambiguities before applying a transform.
+- **MT-602 implementation verified:** Results now appear
+  incrementally in one lazy scrollable list with stable placeholders and
+  per-row confidence, system/token inventory, and unresolved counts. Row
+  canvases remain selectable/editable and decode only as list children become
+  active. The macOS run exposed all 29 real rows and the 88-token maximum row.
 
 ## Visual transform preset naming
 
@@ -83,6 +106,9 @@ This file records accepted limitations that are intentionally deferred beyond th
   - `Half-step-down 4-string -> BEADG 5-string`
     (`D#G#C#F# -> BEADG`, song pitch -2, target capo 2, unused high G).
 - Fixture/song names may remain in tests and documentation only.
+- **MT-602 implementation:** Product-facing preset labels now use the two
+  descriptive operation names above. Song names remain only in tests and
+  validation documentation.
 
 ## Per-string tuning offset controls
 
@@ -96,3 +122,9 @@ This file records accepted limitations that are intentionally deferred beyond th
   make the distinction between tuning change, global song transposition, target
   capo, and selected-string pitch change clear. No tuning may be silently
   inferred from a song-specific preset.
+- **MT-602 implementation verified on macOS:** Source and target tunings now
+  present one low-to-high row per string with base note, decrement, signed
+  semitone field, increment, and immediate calculated note/MIDI result.
+  Separate controls and explanatory text retain global pitch, source/target
+  capo, selected-string override, and an Advanced `label:MIDI` path. The live
+  control check changed target B (MIDI 23) to C (MIDI 24) and back immediately.

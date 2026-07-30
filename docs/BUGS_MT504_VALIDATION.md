@@ -317,7 +317,170 @@ test unless explicitly marked non-blocking.
 
 | Chart/source | Input kind | Visible rows | Detected rows | Token quality | String/beat alignment | Review mapping | Save/reopen | Primary failure | Screenshot |
 |---|---|---:|---:|---|---|---|---|---|---|
-| 9mm | Pending |  |  | Pending Terra pass | Pending | Pending | Pending | Unclassified |  |
+| 9mm saved visual + semantic | Imported Windows `.mtstate`; positioned-PDF visual analysis | 29 | 29 saved visual analyses; 29 empty semantic measures | Saved visual transform contains 822 enabled fret/dead-note tokens; saved semantic chart contains 0 notes/rests/proposals | No semantic events exist to align; every empty measure is nevertheless stored as `verified` | Four source pages survive, but only four unique full-row mappings are repeated across 29 empty measures | Imported/reopened on Mac; original visual remains usable | Semantic proposal construction/token intake produced empty verified measures | `tmp/apple-validation/screenshots/VT-015-9mm-semantic-zero-proposals.png` |
+| `(Bass)` saved semantic chart | Imported Windows `.mtstate`; screenshot-rendered 9mm derivative | 59 | 59 | 27 proposed numeric events are the sequential values 10 through 36, consistent with source measure labels rather than playable frets | All 27 are routed to string index 0; four-note groups use synthetic quarter positions | Source mapping opens, but as a tiny nearly full-page preview that is not usable for token verification | Imported/reopened on Mac; remains unverified | Measure-number filtering followed by incorrect string/beat assignment | `tmp/apple-validation/screenshots/VT-015-bass-proposal-source-mapping.png` |
+
+Post-diagnosis inspection of the protected state confirms the reviewed 9mm
+analysis has 822 enabled, assigned, parseable fret/dead-note tokens (62 dead
+notes, maximum fret 16); its busiest row has 88 tokens. The saved route is
+exactly DADG to BEADG with low D routed to B at +3. The repaired semantic intake
+therefore admits all 822 reviewed tokens without hitting its 128-event per-row
+safety ceiling. This is a deterministic intake count, not an accuracy claim:
+the updated UI still must compare first, middle, and final systems before the
+proposal is trusted.
+
+## VT-016 - Apple platform scaffolding is absent at the validation baseline
+
+- **State:** Reproduced on macOS before source changes on 30 July 2026.
+- **Severity:** High platform blocker; existing Windows/Android behavior is not
+  affected.
+- **Observed:** The verified `7cb75c9` checkout contains neither `ios/` nor
+  `macos/`, so the unchanged application cannot be built or launched on either
+  Apple target. Flutter 3.44.8, Xcode 26.6, CocoaPods 1.17.0, and the iOS 26.5
+  Simulator runtime are installed.
+- **Expected:** Minimal Flutter iOS and macOS runner scaffolding exists while
+  preserving the product name `Music Tabbler`, the existing
+  `com.gerri.music_tabbler` identity where Apple conventions permit it, and all
+  Windows/Android project files.
+- **Safety constraint:** Generate only the two missing Apple platforms, review
+  every generated file and dependency change, and keep the scaffolding in its
+  own focused commit after both targets build.
+- **Acceptance:** A macOS development build launches visibly, an iOS Simulator
+  build launches visibly, existing tests and analysis still pass, and no
+  Windows/Android runner file changes.
+
+## VT-017 - First macOS launch initially presents an all-black window
+
+- **State:** Observed on the first visible debug-app launch on 30 July 2026;
+  subsequent inspection showed the complete Song Pool without relaunching.
+- **Severity:** Medium startup/perceived-failure risk.
+- **Observed:** The first Computer Use capture showed only a black client area
+  with no loading label, error, navigation, or safe exit content. The same
+  process later rendered the expected empty-library Song Pool and built-in
+  semantic sample.
+- **Expected:** The first launch presents a visible app shell or progress state
+  promptly while the local database and Flutter surface initialize.
+- **Acceptance:** Measure a cold packaged-app launch and show a nonblank,
+  truthful shell within the documented startup budget. Do not infer a renderer
+  fix until the first slow stage is identified from logs or profiling.
+
+## VT-018 - iPhone Song Pool collapses and overflows in portrait
+
+- **State:** Reproduced and repaired in iOS Simulator on 30 July 2026.
+- **Severity:** High iPhone usability issue.
+- **Fixture:** iPhone 17, iOS 26.5 Simulator, portrait orientation.
+- **Observed:** The Song Pool heading and body collapse into a
+  near-single-character-wide vertical column, while a yellow/black Flutter
+  overflow stripe occupies the right side. Bottom navigation and the top app
+  bar remain visible.
+- **Expected:** Song Pool uses the available phone width without overflow; its
+  heading, explanatory copy, empty state, semantic sample, and actions remain
+  readable and reachable in portrait.
+- **Acceptance:** No overflow diagnostics at representative iPhone portrait
+  and landscape sizes, and the same responsive change does not regress Mac,
+  Windows, or tablet layouts.
+- **Repair and verification:** The Song Pool heading/actions now switch from a
+  horizontal row to a full-width column below 620 logical pixels. Visual,
+  semantic, and sample cards also stack their actions below readable
+  title/subtitle content below 520 pixels. A 393x852 widget regression asserts
+  that the sample title retains useful width. The rebuilt iPhone 17 Simulator
+  app renders the complete portrait Song Pool without overflow or
+  single-character wrapping; landscape remains readable. The same build renders
+  correctly on an iPad Air 11-inch Simulator.
+
+## VT-019 - Full-chart visual-analysis review provides no row progress
+
+- **State:** Reproduced on macOS with the imported 29-row `9mm` chart on
+  30 July 2026.
+- **Severity:** High blocked-review and performance issue.
+- **Observed:** After confirming four source strings, the review screen showed
+  only a spinner and disabled `Use reviewed analysis` action for more than
+  seven minutes. No completed row, row count, partial inventory, warning, or
+  failure became visible before cancellation with Escape.
+- **Expected:** Completed rows appear incrementally in one stable scrollable
+  inventory, with total/progress, confidence, warnings, and cancellation that
+  does not leave invisible full-chart work running.
+- **Likely inspection point:** `_VisualTabAnalysisReviewScreenState._run`
+  accumulates results locally and updates `_analyses`/`_processed` only after
+  every strip has completed.
+- **Acceptance:** The first completed row becomes reviewable promptly, all
+  rows remain visible through stable placeholders, cancellation stops pending
+  work, and the 29-row fixture completes or reports the exact failing row.
+- **Repair and verification:** Analysis results are now committed to state after each
+  row, while the review surface presents every source row in a single lazy
+  list with stable waiting placeholders, per-row source type, system/token
+  inventory, confidence, and unresolved count. Each loaded row remains
+  selectable and editable. The updated macOS app analyzed the real 29-row
+  `9mm` chart, exposed rows 1 through 29 in the same scrollable inventory, and
+  retained the busiest 88-token row 27 without truncation.
+
+## VT-020 - Semantic source comparison is too small to verify the event
+
+- **State:** Reproduced on macOS with the imported `(Bass)` proposal chart on
+  30 July 2026.
+- **Severity:** High correction-workflow issue.
+- **Observed:** Selecting the proposed fret `36` correctly exposed individual
+  Accept/Reject controls and a 69% confidence value, but the source comparison
+  rendered a tiny, nearly full-page score centered in a large panel. The
+  specific source token and string row were not legible at normal window size.
+- **Expected:** The source panel crops/zooms to the mapped row and event with
+  enough surrounding context to distinguish a playable fret from a measure
+  number, while retaining a way to zoom out.
+- **Evidence:** The rendered chart places the proposed `36` on the top G string
+  around semantic measure 19, while the imported JSON shows the sequential
+  values 10 through 36 were proposed from score-number geometry.
+- **Acceptance:** Selecting a first, middle, or final proposal shows a legible
+  source-row crop centered on that exact token, with zoom controls and stable
+  mapping after reopen.
+- **Repair and verification:** The semantic source panel now expands around the selected
+  normalized source mapping instead of fitting the entire page. New semantic
+  proposals derived from reviewed visual analysis convert crop-local token
+  geometry back to source-asset geometry before persistence. The rebuilt macOS
+  app regenerated the disposable `9mm` semantic chart as 29 proposed measures
+  containing exactly 822 separately selectable note proposals in 5-string
+  BEADG. First, middle, and final measures retain source mappings; accepting one
+  selected note reduced the unresolved total from 851 to 850 and persisted
+  through a complete quit/reopen. The chart was not bulk-verified or marked
+  gig-ready.
+
+## VT-021 - Apple PDF import lacks the Flutter PDFium deployment layer
+
+- **State:** Reproduced by the complete macOS Flutter suite on 30 July 2026;
+  repaired and regression-tested in the same pass.
+- **Severity:** High Apple import/runtime blocker.
+- **Observed:** The two PDF import/render regressions reached PDFium and then
+  hung until their two-minute timeout. Isolate diagnostics reported that the
+  default module was unsupported and no native-assets manifest was available.
+  The project depended on `pdfrx_engine` but not its Flutter deployment plugin.
+- **Expected:** macOS/iOS applications package PDFium through the supported
+  Flutter layer, and macOS Flutter tests resolve the generated local dylib.
+- **Repair:** Added reviewed MIT-licensed `pdfium_flutter` 0.2.3, which supplies
+  the Apple XCFramework, and a macOS test bootstrap that points the engine at
+  the dependency hook's generated `libpdfium.dylib`.
+- **Verification:** Both formerly timed-out PDF tests pass independently in
+  roughly three seconds. The complete suite passes 205/205 in roughly ten
+  seconds. The rebuilt sandboxed macOS app also imported, rendered, saved, and
+  reopened a real four-page PDF as a four-row disposable visual chart.
+
+## Apple baseline observations completed on 30 July 2026
+
+- The imported Windows state remained read-only at its original path and was
+  merged from a verified local copy into a disposable sandboxed macOS library:
+  8 variants and 4 setlists imported.
+- Stage-readable Gig mode completed its truthful loading state and displayed
+  the exact four-item `RITN` setlist. Next/previous page navigation, sidebar
+  inventory, direct jump to 9mm, duplicate entry, `Not playing` placeholder,
+  aligned imported annotations, and explicit Exit were visibly exercised.
+- Dark-to-light theme switching rendered correctly. After a full app Quit and
+  relaunch, the light preference and all imported visual/semantic variants
+  remained present; the original dark preference was then restored.
+- The iPhone 17 baseline failed in portrait as VT-018. The rebuilt app now
+  renders readable portrait and landscape layouts, and the iPad Air 11-inch
+  Simulator renders the same Song Pool without overflow. Physical iPhone
+  behavior remains unverified.
+- The macOS and iOS Simulator debug bundles built and launched before the
+  restart. The macOS app stayed sandboxed; the validation library was placed
+  inside its own container rather than weakening entitlements.
 
 ## Windows Computer Use queue
 
