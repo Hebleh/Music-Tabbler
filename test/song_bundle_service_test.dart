@@ -3,7 +3,10 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:music_tabbler/application/portable_container.dart';
 import 'package:music_tabbler/application/song_bundle_service.dart';
+import 'package:music_tabbler/domain/library_models.dart';
+import 'package:music_tabbler/domain/music_models.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 import 'package:music_tabbler/infrastructure/local_library.dart';
 
@@ -89,15 +92,25 @@ void main() {
         draft('variant-b', 'Stage'),
         songId: 'song',
       );
+      final semantic = SongChart.foundationExample().copyWith(
+        id: 'semantic-variant',
+        title: 'Portable Song',
+        artist: 'Band',
+      );
+      await source.saveSemanticChart(semantic, songId: 'song', updatedAt: now);
 
       final bytes = await SongBundleService(
         source,
       ).exportSongBytes('variant-a');
       final result = await SongBundleService(target).importSongBytes(bytes);
 
-      expect(result.importedVariantIds, ['variant-a', 'variant-b']);
+      expect(result.importedVariantIds, [
+        'variant-a',
+        'variant-b',
+        'semantic-variant',
+      ]);
       expect((await target.listSongs()).single.id, 'song');
-      expect(await target.listVariants('song'), hasLength(2));
+      expect(await target.listVariants('song'), hasLength(3));
       final restored = await target.loadDraft('variant-b');
       expect(restored!.provenance!.versionName, 'Stage');
       expect(
@@ -115,6 +128,14 @@ void main() {
         await File(
           source.assetPath(baseAsset.hash, baseAsset.extension),
         ).readAsBytes(),
+      );
+      expect(
+        (await target.loadSemanticChart('semantic-variant'))!.encode(),
+        semantic.encode(),
+      );
+      expect(
+        (await target.identityForDraft('semantic-variant'))!.kind,
+        ChartVariantKind.semantic,
       );
     },
   );
@@ -164,6 +185,52 @@ void main() {
       expect((await target.loadDraft('same-id'))!.title, 'Local edit');
     },
   );
+
+  test('mtsong schema v1 remains importable', () async {
+    final sourceDirectory = await Directory.systemTemp.createTemp(
+      'music_tabbler_mtsong_v1_source_',
+    );
+    final targetDirectory = await Directory.systemTemp.createTemp(
+      'music_tabbler_mtsong_v1_target_',
+    );
+    final source = await LocalLibrary.forTesting(sourceDirectory);
+    final target = await LocalLibrary.forTesting(targetDirectory);
+    addTearDown(() {
+      source.close();
+      target.close();
+      sourceDirectory.deleteSync(recursive: true);
+      targetDirectory.deleteSync(recursive: true);
+    });
+    final now = DateTime.utc(2026, 7, 24);
+    await source.saveDraftAsVariant(
+      VisualChartDraft(
+        id: 'legacy-visual',
+        title: 'Legacy portable song',
+        artist: '',
+        createdAt: now,
+        updatedAt: now,
+      ),
+      songId: 'legacy-song',
+    );
+    final encoded = await SongBundleService(
+      source,
+    ).exportSongBytes('legacy-visual');
+    const codec = PortableContainerCodec();
+    final current = codec.decode(encoded, expectedKind: SongBundleService.kind);
+    final legacyMetadata = Map<String, Object?>.of(current.metadata)
+      ..remove('semanticVariants');
+    final legacy = codec.encode(
+      kind: SongBundleService.kind,
+      schemaVersion: 1,
+      metadata: legacyMetadata,
+      files: current.files,
+    );
+
+    final result = await SongBundleService(target).importSongBytes(legacy);
+
+    expect(result.importedVariantIds, ['legacy-visual']);
+    expect(await target.loadDraft('legacy-visual'), isNotNull);
+  });
 
   test('corrupt mtsong does not install assets or drafts', () async {
     final directory = await Directory.systemTemp.createTemp(
