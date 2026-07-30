@@ -1,0 +1,22 @@
+PODS:
+  - flutter_ocr_native (0.0.7):
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+
+DEPENDENCIES:
+  - flutter_ocr_native (from `Flutter/ephemeral/.symlinks/plugins/flutter_ocr_native/macos`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+
+EXTERNAL SOURCES:
+  flutter_ocr_native:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_ocr_native/macos
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+
+SPEC CHECKSUMS:
+  flutter_ocr_native: d1cc811b3b34465f7c66c296f6cc8e6d792fbeaf
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+
+PODFILE CHECKSUM: 54d867c82ac51cbd61b565781b9fada492027009
+
+COCOAPODS: 1.17.0
