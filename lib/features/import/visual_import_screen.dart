@@ -119,21 +119,24 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     if (settings == null || !mounted) return;
     setState(() => _busy = true);
     try {
-      final inputs = <RecognitionStripInput>[];
-      for (final strip in _draft.strips) {
-        final recognition = await widget.services.textRecognition.recognize(
-          strip,
-        );
-        inputs.add(
-          RecognitionStripInput(
-            sourceId: '${strip.assetHash}.${strip.assetExtension}',
-            regions: recognition.regions,
-            stringCount: settings.tuning.strings.length,
-            tabBand: settings.combinedNotationAndTab
-                ? const NormalizedRect(0, 0.5, 1, 0.99)
-                : const NormalizedRect(0, 0.05, 1, 0.95),
-          ),
-        );
+      final reviewedInputs = _reviewedRecognitionInputs(settings);
+      final inputs = reviewedInputs ?? <RecognitionStripInput>[];
+      if (reviewedInputs == null) {
+        for (final strip in _draft.strips) {
+          final recognition = await widget.services.textRecognition.recognize(
+            strip,
+          );
+          inputs.add(
+            RecognitionStripInput(
+              sourceId: '${strip.assetHash}.${strip.assetExtension}',
+              regions: recognition.regions,
+              stringCount: settings.tuning.strings.length,
+              tabBand: settings.combinedNotationAndTab
+                  ? const NormalizedRect(0, 0.5, 1, 0.99)
+                  : const NormalizedRect(0, 0.05, 1, 0.95),
+            ),
+          );
+        }
       }
       final chartId = 'semantic-${_draft.id}';
       final fresh = const SemanticRecognitionService().propose(
@@ -175,6 +178,80 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  List<RecognitionStripInput>? _reviewedRecognitionInputs(
+    _RecognitionSettings settings,
+  ) {
+    final record = _draft.visualTabTransform;
+    if (record == null || record.analyses.isEmpty) return null;
+    final configuration = VisualTabTransformConfiguration.fromJson(
+      record.configuration,
+    );
+    if (configuration.targetLabels.length != settings.tuning.strings.length) {
+      return null;
+    }
+    final analyses = {
+      for (final value in record.analyses)
+        VisualTabAnalysis.fromJson(value).stripId: VisualTabAnalysis.fromJson(
+          value,
+        ),
+    };
+    final routes = {
+      for (final route in configuration.routes) route.sourceString: route,
+    };
+    final inputs = <RecognitionStripInput>[];
+    for (final strip in record.baseStrips) {
+      final analysis = analyses[strip.id];
+      if (analysis == null) return null;
+      final candidates = <ReviewedFretCandidateInput>[];
+      for (final system in analysis.systems) {
+        for (final token in system.tokens) {
+          final sourceString = token.stringIndex;
+          if (!token.enabled || !token.isFretLike || sourceString == null) {
+            continue;
+          }
+          final route = routes[sourceString];
+          if (route == null) continue;
+          final deadNote =
+              token.kind == VisualTabTokenKind.deadNote ||
+              token.text.trim().toLowerCase() == 'x';
+          final sourceFret = deadNote ? 0 : _reviewedFret(token.text);
+          if (sourceFret == null) continue;
+          final targetFret = deadNote ? 0 : sourceFret + route.effectiveOffset;
+          if (targetFret < 0 || targetFret > 36) continue;
+          candidates.add(
+            ReviewedFretCandidateInput(
+              fret: targetFret,
+              stringIndex: route.targetString,
+              rect: token.rect,
+              sourceRect: cropLocalRectToAsset(token.rect, strip.crop),
+              confidence: token.confidence,
+              deadNote: deadNote,
+            ),
+          );
+        }
+      }
+      inputs.add(
+        RecognitionStripInput(
+          sourceId: '${strip.assetHash}.${strip.assetExtension}',
+          regions: const [],
+          stringCount: settings.tuning.strings.length,
+          tabBand: const NormalizedRect.full(),
+          sourceBand: strip.crop,
+          reviewedFretCandidates: candidates,
+        ),
+      );
+    }
+    return inputs;
+  }
+
+  int? _reviewedFret(String text) {
+    final trimmed = text.trim();
+    final digits = trimmed.startsWith('(') && trimmed.endsWith(')')
+        ? trimmed.substring(1, trimmed.length - 1)
+        : trimmed;
+    return int.tryParse(digits);
   }
 
   Future<void> _reviewVisualTabAnalysis({
@@ -941,7 +1018,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     final siblings = [
       for (final siblingIndex in siblingIndexes) _draft.strips[siblingIndex],
     ];
-    final rows = await showDialog<List<NormalizedRect>>(
+    final result = await showDialog<MultiRowSplitResult>(
       context: context,
       builder: (_) => MultiRowSplitDialog(
         imagePath: widget.services.library.assetPath(
@@ -951,12 +1028,18 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         imageAspectRatio: strip.deskewedPixelWidth / strip.deskewedPixelHeight,
         sourceRect: const NormalizedRect.full(),
         initialRows: [for (final sibling in siblings) sibling.crop],
+        initialMasterLeft: strip.splitMasterLeft,
+        initialMasterRight: strip.splitMasterRight,
         deskewDegrees: strip.deskewDegrees,
       ),
     );
-    if (rows == null || rows.isEmpty) return;
+    if (result == null || result.rows.isEmpty) return;
     final replacements = [
-      for (final crop in rows) _resplitStrip(crop, siblings),
+      for (final crop in result.rows)
+        _resplitStrip(crop, siblings).copyWith(
+          splitMasterLeft: result.masterLeft,
+          splitMasterRight: result.masterRight,
+        ),
     ];
     final insertAt = siblingIndexes.first;
     final siblingSet = siblingIndexes.toSet();

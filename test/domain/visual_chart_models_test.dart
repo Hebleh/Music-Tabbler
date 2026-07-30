@@ -2,6 +2,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 
 void main() {
+  test('split master crop controls survive strip persistence', () {
+    const strip = VisualStrip(
+      id: 'split-row',
+      assetHash: 'asset',
+      assetExtension: 'png',
+      pixelWidth: 1200,
+      pixelHeight: 800,
+      splitMasterLeft: 0.12,
+      splitMasterRight: 0.91,
+    );
+
+    final restored = VisualStrip.fromJson(strip.toJson());
+    expect(restored.splitMasterLeft, 0.12);
+    expect(restored.splitMasterRight, 0.91);
+
+    final legacy = strip.toJson()
+      ..remove('splitMasterLeft')
+      ..remove('splitMasterRight');
+    final migrated = VisualStrip.fromJson(legacy);
+    expect(migrated.splitMasterLeft, isNull);
+    expect(migrated.splitMasterRight, isNull);
+  });
+
   test(
     'visual chart JSON preserves nondestructive crop and lyric overlays',
     () {

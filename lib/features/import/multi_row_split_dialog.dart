@@ -11,6 +11,18 @@ import '../../application/horizontal_row_detector.dart';
 import '../../application/visual_deskew.dart';
 import 'resizable_rect_overlay.dart';
 
+class MultiRowSplitResult {
+  const MultiRowSplitResult({
+    required this.rows,
+    required this.masterLeft,
+    required this.masterRight,
+  });
+
+  final List<NormalizedRect> rows;
+  final double masterLeft;
+  final double masterRight;
+}
+
 class MultiRowSplitDialog extends StatefulWidget {
   const MultiRowSplitDialog({
     super.key,
@@ -18,6 +30,8 @@ class MultiRowSplitDialog extends StatefulWidget {
     required this.imageAspectRatio,
     required this.sourceRect,
     this.initialRows = const [],
+    this.initialMasterLeft,
+    this.initialMasterRight,
     this.deskewDegrees = 0,
   });
 
@@ -25,6 +39,8 @@ class MultiRowSplitDialog extends StatefulWidget {
   final double imageAspectRatio;
   final NormalizedRect sourceRect;
   final List<NormalizedRect> initialRows;
+  final double? initialMasterLeft;
+  final double? initialMasterRight;
   final double deskewDegrees;
 
   @override
@@ -52,8 +68,13 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
         ? _evenRows(5)
         : List.of(widget.initialRows);
     _selected = _selected.clamp(0, _rows.length - 1);
-    _masterLeft = widget.sourceRect.left;
-    _masterRight = widget.sourceRect.right;
+    _masterLeft = (widget.initialMasterLeft ?? widget.sourceRect.left)
+        .clamp(widget.sourceRect.left, widget.sourceRect.right - 0.01)
+        .toDouble();
+    _masterRight = (widget.initialMasterRight ?? widget.sourceRect.right)
+        .clamp(_masterLeft + 0.01, widget.sourceRect.right)
+        .toDouble();
+    _reapplyPersistentMasterCrop();
     _imageBytes = compute(_prepareSplitImage, {
       'path': widget.imagePath,
       'deskewDegrees': widget.deskewDegrees,
@@ -312,7 +333,14 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
               onPressed: () {
                 final sorted = [..._rows]
                   ..sort((a, b) => a.top.compareTo(b.top));
-                Navigator.pop(context, sorted);
+                Navigator.pop(
+                  context,
+                  MultiRowSplitResult(
+                    rows: sorted,
+                    masterLeft: _masterLeft,
+                    masterRight: _masterRight,
+                  ),
+                );
               },
               icon: const Icon(Icons.call_split),
               label: Text('Create ${_rows.length} rows'),

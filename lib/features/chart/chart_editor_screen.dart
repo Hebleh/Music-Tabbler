@@ -1174,7 +1174,8 @@ class _RecognitionReviewPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final unresolved = unresolvedProposalCount(chart);
-    final source = _sourcePath(selectedNote?.sourceMapping);
+    final mapping = selectedNote?.sourceMapping;
+    final source = _sourcePath(mapping);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -1264,19 +1265,7 @@ class _RecognitionReviewPanel extends StatelessWidget {
                           ),
                         ),
                       )
-                    : Image.file(
-                        File(source),
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              'Source preview is unavailable at $source',
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                      ),
+                    : _SourceMappingPreview(path: source, mapping: mapping!),
               ),
             ),
           ],
@@ -1293,6 +1282,57 @@ class _RecognitionReviewPanel extends StatelessWidget {
     return library.assetPath(
       mapping.sourceId.substring(0, dot),
       mapping.sourceId.substring(dot + 1),
+    );
+  }
+}
+
+class _SourceMappingPreview extends StatelessWidget {
+  const _SourceMappingPreview({required this.path, required this.mapping});
+
+  final String path;
+  final SourceMapping mapping;
+
+  @override
+  Widget build(BuildContext context) {
+    final horizontalPadding = (mapping.right - mapping.left).clamp(0.04, 0.12);
+    final verticalPadding = (mapping.bottom - mapping.top).clamp(0.08, 0.24);
+    final left = (mapping.left - horizontalPadding).clamp(0.0, 1.0);
+    final top = (mapping.top - verticalPadding).clamp(0.0, 1.0);
+    final right = (mapping.right + horizontalPadding).clamp(0.0, 1.0);
+    final bottom = (mapping.bottom + verticalPadding).clamp(0.0, 1.0);
+    final width = right - left;
+    final height = bottom - top;
+    return InteractiveViewer(
+      minScale: 1,
+      maxScale: 8,
+      child: ClipRect(
+        child: LayoutBuilder(
+          builder: (context, constraints) => Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned(
+                left: -left * constraints.maxWidth / width,
+                top: -top * constraints.maxHeight / height,
+                width: constraints.maxWidth / width,
+                height: constraints.maxHeight / height,
+                child: Image.file(
+                  File(path),
+                  fit: BoxFit.fill,
+                  errorBuilder: (_, _, _) => Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'Source preview is unavailable at $path',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

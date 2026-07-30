@@ -269,4 +269,49 @@ void main() {
       14,
     ]);
   });
+
+  test('reviewed long rows retain more than sixteen selectable proposals', () {
+    final result = service.propose(
+      chartId: 'reviewed-long-row',
+      title: 'Synthetic',
+      artist: '',
+      strips: [
+        RecognitionStripInput(
+          sourceId: 'row',
+          regions: const [],
+          reviewedFretCandidates: [
+            for (var index = 0; index < 24; index += 1)
+              ReviewedFretCandidateInput(
+                fret: index % 12,
+                stringIndex: index % 4,
+                rect: NormalizedRect(
+                  index / 25,
+                  0.2 + (index % 4) * 0.1,
+                  (index + 0.5) / 25,
+                  0.24 + (index % 4) * 0.1,
+                ),
+                sourceRect: NormalizedRect(
+                  0.1 + index / 30,
+                  0.3,
+                  0.11 + index / 30,
+                  0.34,
+                ),
+                confidence: 0.9,
+              ),
+          ],
+          stringCount: 4,
+        ),
+      ],
+      tuning: BassTuning.eadg,
+    );
+
+    expect(result.proposedEvents, 24);
+    expect(result.chart.measures.single.notes, hasLength(24));
+    expect(result.chart.measures.single.notes.first.stringIndex, 0);
+    expect(result.chart.measures.single.notes[3].stringIndex, 3);
+    expect(
+      result.chart.measures.single.notes.first.sourceMapping!.left,
+      closeTo(0.1, 0.001),
+    );
+  });
 }

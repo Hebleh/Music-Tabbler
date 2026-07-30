@@ -8,12 +8,34 @@ class RecognitionStripInput {
     required this.regions,
     this.stringCount = 5,
     this.tabBand = const NormalizedRect(0, 0.12, 1, 0.82),
+    this.sourceBand,
+    this.reviewedFretCandidates,
   });
 
   final String sourceId;
   final List<RecognizedTextRegion> regions;
   final int stringCount;
   final NormalizedRect tabBand;
+  final NormalizedRect? sourceBand;
+  final List<ReviewedFretCandidateInput>? reviewedFretCandidates;
+}
+
+class ReviewedFretCandidateInput {
+  const ReviewedFretCandidateInput({
+    required this.fret,
+    required this.stringIndex,
+    required this.rect,
+    required this.sourceRect,
+    required this.confidence,
+    this.deadNote = false,
+  });
+
+  final int fret;
+  final int stringIndex;
+  final NormalizedRect rect;
+  final NormalizedRect sourceRect;
+  final double confidence;
+  final bool deadNote;
 }
 
 class SemanticRecognitionResult {
@@ -59,32 +81,59 @@ class SemanticRecognitionService {
         );
       }
       final candidates = <_FretCandidate>[];
-      for (final region in strip.regions) {
-        final token = region.text.trim().toLowerCase();
-        final value = token == 'x' ? 0 : int.tryParse(token);
-        final centerY = (region.rect.top + region.rect.bottom) / 2;
-        if (value == null ||
-            value < 0 ||
-            value > 36 ||
-            centerY < strip.tabBand.top ||
-            centerY > strip.tabBand.bottom) {
-          continue;
+      final reviewed = strip.reviewedFretCandidates;
+      if (reviewed != null) {
+        for (final candidate in reviewed) {
+          if (candidate.fret < 0 ||
+              candidate.fret > 36 ||
+              candidate.stringIndex < 0 ||
+              candidate.stringIndex >= strip.stringCount) {
+            continue;
+          }
+          candidates.add(
+            _FretCandidate(
+              fret: candidate.fret,
+              stringIndex: candidate.stringIndex,
+              rect: candidate.rect,
+              sourceRect: candidate.sourceRect,
+              reviewedConfidence: candidate.confidence,
+              deadNote: candidate.deadNote,
+            ),
+          );
         }
-        final relativeY = (centerY - strip.tabBand.top) / strip.tabBand.height;
-        final stringIndex = (relativeY * strip.stringCount).floor().clamp(
-          0,
-          strip.stringCount - 1,
-        );
-        candidates.add(
-          _FretCandidate(
-            fret: value,
-            stringIndex: stringIndex,
-            rect: region.rect,
-          ),
-        );
+      } else {
+        for (final region in strip.regions) {
+          final token = region.text.trim().toLowerCase();
+          final value = token == 'x' ? 0 : int.tryParse(token);
+          final centerY = (region.rect.top + region.rect.bottom) / 2;
+          if (value == null ||
+              value < 0 ||
+              value > 36 ||
+              centerY < strip.tabBand.top ||
+              centerY > strip.tabBand.bottom) {
+            continue;
+          }
+          final relativeY =
+              (centerY - strip.tabBand.top) / strip.tabBand.height;
+          final stringIndex = (relativeY * strip.stringCount).floor().clamp(
+            0,
+            strip.stringCount - 1,
+          );
+          candidates.add(
+            _FretCandidate(
+              fret: value,
+              stringIndex: stringIndex,
+              rect: region.rect,
+              sourceRect: region.rect,
+              deadNote: token == 'x',
+            ),
+          );
+        }
       }
       candidates.sort((a, b) => a.rect.left.compareTo(b.rect.left));
-      final likelyMeasureNumbers = _likelyMeasureNumberCandidates(candidates);
+      final likelyMeasureNumbers = reviewed == null
+          ? _likelyMeasureNumberCandidates(candidates)
+          : const <_FretCandidate>{};
       if (likelyMeasureNumbers.isNotEmpty) {
         candidates.removeWhere(likelyMeasureNumbers.contains);
         diagnostics.add(
@@ -97,14 +146,14 @@ class SemanticRecognitionService {
         diagnostics.add(
           'Row ${measureIndex + 1}: no fret digits or dead notes were proposed.',
         );
-      } else if (candidates.length > 16) {
+      } else if (candidates.length > 128) {
         diagnostics.add(
-          'Row ${measureIndex + 1}: only the first 16 fret candidates were '
+          'Row ${measureIndex + 1}: only the first 128 fret candidates were '
           'placed; split or correct this row before verification.',
         );
       }
       final notes = <TabNote>[];
-      for (final (ordinal, candidate) in candidates.take(16).indexed) {
+      for (final (ordinal, candidate) in candidates.take(128).indexed) {
         final noteId = 'proposal-${measureIndex + 1}-$ordinal';
         final centerX = (candidate.rect.left + candidate.rect.right) / 2;
         final relativeX = centerX.clamp(0.0, 0.9999);
@@ -126,10 +175,10 @@ class SemanticRecognitionService {
             confidence: _confidence(candidate, strip),
             sourceMapping: SourceMapping(
               sourceId: strip.sourceId,
-              left: candidate.rect.left,
-              top: candidate.rect.top,
-              right: candidate.rect.right,
-              bottom: candidate.rect.bottom,
+              left: candidate.sourceRect.left,
+              top: candidate.sourceRect.top,
+              right: candidate.sourceRect.right,
+              bottom: candidate.sourceRect.bottom,
             ),
           ),
         );
@@ -158,10 +207,10 @@ class SemanticRecognitionService {
                     notes.length,
           sourceMapping: SourceMapping(
             sourceId: strip.sourceId,
-            left: 0,
-            top: strip.tabBand.top,
-            right: 1,
-            bottom: strip.tabBand.bottom,
+            left: strip.sourceBand?.left ?? 0,
+            top: strip.sourceBand?.top ?? strip.tabBand.top,
+            right: strip.sourceBand?.right ?? 1,
+            bottom: strip.sourceBand?.bottom ?? strip.tabBand.bottom,
           ),
         ),
       );
@@ -210,6 +259,9 @@ class SemanticRecognitionService {
       (candidate.rect.top + candidate.rect.bottom) / 2;
 
   double _confidence(_FretCandidate candidate, RecognitionStripInput strip) {
+    if (candidate.reviewedConfidence case final confidence?) {
+      return confidence.clamp(0.35, 0.99);
+    }
     final centerY = (candidate.rect.top + candidate.rect.bottom) / 2;
     final relative = (centerY - strip.tabBand.top) / strip.tabBand.height;
     final ideal = (candidate.stringIndex + 0.5) / strip.stringCount;
@@ -243,6 +295,9 @@ class SemanticRecognitionService {
     _FretCandidate candidate,
     List<RecognizedTextRegion> regions,
   ) {
+    if (candidate.deadNote) {
+      return const [TechniqueMark(TechniqueKind.deadNote)];
+    }
     final marker = _nearbyMarker(candidate, regions, const {
       '/',
       '\\',
@@ -363,9 +418,15 @@ class _FretCandidate {
     required this.fret,
     required this.stringIndex,
     required this.rect,
+    required this.sourceRect,
+    this.reviewedConfidence,
+    this.deadNote = false,
   });
 
   final int fret;
   final int stringIndex;
   final NormalizedRect rect;
+  final NormalizedRect sourceRect;
+  final double? reviewedConfidence;
+  final bool deadNote;
 }

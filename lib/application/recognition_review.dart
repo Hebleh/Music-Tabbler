@@ -62,7 +62,15 @@ ChartMeasure _normalizeRecognitionMeasure(ChartMeasure measure) {
     }
     if (run.length >= 3) rejected.addAll(run.map((note) => note.id));
   }
+  final emptyUnverifiedProposal =
+      measure.notes.isEmpty &&
+      measure.rests.isEmpty &&
+      measure.sourceMapping != null &&
+      (measure.confidence ?? 0) == 0;
   return measure.copyWith(
+    verification: emptyUnverifiedProposal
+        ? VerificationState.proposed
+        : measure.verification,
     notes: [
       for (final note in measure.notes)
         if (!rejected.contains(note.id))

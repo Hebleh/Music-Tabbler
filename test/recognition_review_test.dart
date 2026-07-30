@@ -148,4 +148,35 @@ void main() {
       ..remove('gigReady');
     expect(SongChart.fromJson(json).gigReady, isFalse);
   });
+
+  test('legacy empty recognition rows cannot silently become gig-ready', () {
+    final chart = SongChart(
+      id: 'empty-recognition',
+      title: 'Empty proposal',
+      artist: '',
+      tuning: BassTuning.eadg,
+      lyrics: const [],
+      measures: [
+        ChartMeasure.exact(
+          number: 1,
+          length: BeatFraction(4),
+          notes: const [],
+          verification: VerificationState.verified,
+          confidence: 0,
+          sourceMapping: const SourceMapping(
+            sourceId: 'row.png',
+            left: 0,
+            top: 0.1,
+            right: 1,
+            bottom: 0.9,
+          ),
+        ),
+      ],
+    );
+
+    final normalized = normalizeRecognitionProposals(chart);
+    expect(normalized.measures.single.verification, VerificationState.proposed);
+    expect(unresolvedProposalCount(normalized), 1);
+    expect(() => markChartGigReady(normalized), throwsStateError);
+  });
 }

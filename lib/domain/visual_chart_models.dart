@@ -282,6 +282,8 @@ class VisualStrip {
     this.includeAnnotationsInPdf = false,
     this.deskewDegrees = 0,
     this.deskewBaseGeometry,
+    this.splitMasterLeft,
+    this.splitMasterRight,
   });
 
   final String id;
@@ -301,6 +303,8 @@ class VisualStrip {
   final bool includeAnnotationsInPdf;
   final double deskewDegrees;
   final VisualDeskewBaseGeometry? deskewBaseGeometry;
+  final double? splitMasterLeft;
+  final double? splitMasterRight;
 
   double get deskewedPixelWidth {
     final radians = deskewDegrees * math.pi / 180;
@@ -330,6 +334,9 @@ class VisualStrip {
     double? deskewDegrees,
     VisualDeskewBaseGeometry? deskewBaseGeometry,
     bool clearDeskewBaseGeometry = false,
+    double? splitMasterLeft,
+    double? splitMasterRight,
+    bool clearSplitMaster = false,
   }) {
     return VisualStrip(
       id: id,
@@ -352,6 +359,12 @@ class VisualStrip {
       deskewBaseGeometry: clearDeskewBaseGeometry
           ? null
           : deskewBaseGeometry ?? this.deskewBaseGeometry,
+      splitMasterLeft: clearSplitMaster
+          ? null
+          : splitMasterLeft ?? this.splitMasterLeft,
+      splitMasterRight: clearSplitMaster
+          ? null
+          : splitMasterRight ?? this.splitMasterRight,
     );
   }
 
@@ -373,6 +386,8 @@ class VisualStrip {
     'includeAnnotationsInPdf': includeAnnotationsInPdf,
     'deskewDegrees': deskewDegrees,
     'deskewBaseGeometry': deskewBaseGeometry?.toJson(),
+    'splitMasterLeft': splitMasterLeft,
+    'splitMasterRight': splitMasterRight,
   };
 
   factory VisualStrip.fromJson(Map<String, Object?> json) {
@@ -417,6 +432,8 @@ class VisualStrip {
           : VisualDeskewBaseGeometry.fromJson(
               (json['deskewBaseGeometry']! as Map).cast<String, Object?>(),
             ),
+      splitMasterLeft: (json['splitMasterLeft'] as num?)?.toDouble(),
+      splitMasterRight: (json['splitMasterRight'] as num?)?.toDouble(),
     );
   }
 }

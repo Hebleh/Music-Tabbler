@@ -20,7 +20,7 @@ Future<VisualTabTransformConfiguration?> showVisualTabTransformDialog({
   );
 }
 
-enum _TransformPreset { custom, allStrings, motionSickness, rockWithYou }
+enum _TransformPreset { custom, allStrings, dropDToBeadg, halfStepDownToBeadg }
 
 class _VisualTabTransformDialog extends StatefulWidget {
   const _VisualTabTransformDialog({
@@ -49,6 +49,7 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
   final Map<int, int?> _manualOffsets = {};
   _TransformPreset _preset = _TransformPreset.custom;
   bool _advanced = false;
+  bool _advancedTunings = false;
   bool _compactTabOnly = true;
   String? _error;
 
@@ -124,12 +125,12 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                     child: Text('All strings: pitch change only'),
                   ),
                   DropdownMenuItem(
-                    value: _TransformPreset.motionSickness,
-                    child: Text('Motion Sickness: DADG → BEADG'),
+                    value: _TransformPreset.dropDToBeadg,
+                    child: Text('Drop-D 4-string → BEADG 5-string'),
                   ),
                   DropdownMenuItem(
-                    value: _TransformPreset.rockWithYou,
-                    child: Text('Rock With You: lowered tuning → capo 2'),
+                    value: _TransformPreset.halfStepDownToBeadg,
+                    child: Text('Half-step-down 4-string → BEADG 5-string'),
                   ),
                 ],
                 onChanged: (value) {
@@ -137,28 +138,25 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                 },
               ),
               const SizedBox(height: 10),
+              _TuningOffsetRows(
+                label: 'Source open-string tuning · low → high',
+                tuningSpec: _source.text,
+                onChanged: (value) {
+                  _source.text = value;
+                  _refreshRoutes();
+                },
+              ),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _source,
-                      onChanged: (_) => _refreshRoutes(),
-                      decoration: const InputDecoration(
-                        labelText: 'Source tuning, low → high',
-                        helperText: 'Format: label:MIDI, label:MIDI',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 120,
-                    child: TextField(
-                      controller: _sourceCapo,
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                        labelText: 'Source capo',
-                      ),
+                    child: _TuningOffsetRows(
+                      label: 'Target open-string tuning · low → high',
+                      tuningSpec: _target.text,
+                      onChanged: (value) {
+                        _target.text = value;
+                        _refreshRoutes();
+                      },
                     ),
                   ),
                 ],
@@ -166,26 +164,28 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Expanded(
+                  SizedBox(
+                    width: 150,
                     child: TextField(
-                      controller: _target,
-                      onChanged: (_) => _refreshRoutes(),
+                      controller: _sourceCapo,
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
-                        labelText: 'Target tuning, low → high',
-                        helperText:
-                            'Target may have the same strings or one extra.',
+                        labelText: 'Source capo',
+                        helperText: 'Before routing',
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   SizedBox(
-                    width: 120,
+                    width: 150,
                     child: TextField(
                       controller: _targetCapo,
                       keyboardType: TextInputType.number,
                       onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
                         labelText: 'Target capo',
+                        helperText: 'After routing',
                       ),
                     ),
                   ),
@@ -222,6 +222,35 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                   ),
                 ],
               ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _advancedTunings,
+                onChanged: (value) => setState(() => _advancedTunings = value),
+                title: const Text('Advanced arbitrary tuning / octave entry'),
+                subtitle: const Text(
+                  'Edit confirmed low-to-high label:MIDI values directly.',
+                ),
+              ),
+              if (_advancedTunings) ...[
+                TextField(
+                  controller: _source,
+                  onChanged: (_) => _refreshRoutes(),
+                  decoration: const InputDecoration(
+                    labelText: 'Advanced source tuning, low → high',
+                    helperText: 'Format: label:MIDI, label:MIDI',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _target,
+                  onChanged: (_) => _refreshRoutes(),
+                  decoration: const InputDecoration(
+                    labelText: 'Advanced target tuning, low → high',
+                    helperText:
+                        'Target may have the same strings or one extra.',
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               if (preview case final routePreview?) ...[
                 Text(
@@ -384,7 +413,7 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
             widget.sourceStringCount,
             (index) => index,
           );
-        case _TransformPreset.motionSickness:
+        case _TransformPreset.dropDToBeadg:
           _source.text = 'D:26, A:33, D:38, G:43';
           _target.text = 'B:23, E:28, A:33, D:38, G:43';
           _sourceCapo.text = '0';
@@ -392,7 +421,7 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
           _pitchChange.text = '0';
           _selectedChanges.clear();
           _routeTargets = [0, 2, 3, 4];
-        case _TransformPreset.rockWithYou:
+        case _TransformPreset.halfStepDownToBeadg:
           _source.text = 'D#:27, G#:32, C#:37, F#:42';
           _target.text = 'B:23, E:28, A:33, D:38, G:43';
           _sourceCapo.text = '0';
@@ -548,6 +577,182 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
       setState(() => _error = error.toString());
     }
   }
+}
+
+class _TuningOffsetRows extends StatefulWidget {
+  const _TuningOffsetRows({
+    required this.label,
+    required this.tuningSpec,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String tuningSpec;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_TuningOffsetRows> createState() => _TuningOffsetRowsState();
+}
+
+class _TuningOffsetRowsState extends State<_TuningOffsetRows> {
+  late List<String> _baseLabels;
+  late List<int> _baseMidis;
+  final List<TextEditingController> _offsets = [];
+  String? _lastEmitted;
+
+  @override
+  void initState() {
+    super.initState();
+    _load(widget.tuningSpec);
+  }
+
+  @override
+  void didUpdateWidget(covariant _TuningOffsetRows oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.tuningSpec != oldWidget.tuningSpec &&
+        widget.tuningSpec != _lastEmitted) {
+      _load(widget.tuningSpec);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _offsets) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _load(String value) {
+    late final ParsedVisualTuning tuning;
+    try {
+      tuning = parseVisualTuningSpec(value);
+    } on FormatException {
+      return;
+    }
+    _baseLabels = [...tuning.labels];
+    _baseMidis = [...tuning.openMidis];
+    for (final controller in _offsets) {
+      controller.dispose();
+    }
+    _offsets
+      ..clear()
+      ..addAll([
+        for (var index = 0; index < _baseMidis.length; index += 1)
+          TextEditingController(text: '0'),
+      ]);
+    _lastEmitted = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: widget.label,
+        helperText:
+            'Open-string changes are separate from song pitch, capo, and '
+            'selected-string overrides.',
+        border: const OutlineInputBorder(),
+      ),
+      child: Column(
+        children: [
+          for (var index = 0; index < _baseMidis.length; index += 1)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: index == _baseMidis.length - 1 ? 0 : 6,
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 88,
+                    child: Text(
+                      '${index + 1}. ${_baseLabels[index]}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Lower string ${index + 1} by one semitone',
+                    onPressed: () => _step(index, -1),
+                    icon: const Icon(Icons.remove),
+                  ),
+                  SizedBox(
+                    width: 72,
+                    child: TextField(
+                      controller: _offsets[index],
+                      textAlign: TextAlign.center,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        signed: true,
+                      ),
+                      onChanged: (_) {
+                        setState(() {});
+                        _emit();
+                      },
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'semitones',
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Raise string ${index + 1} by one semitone',
+                    onPressed: () => _step(index, 1),
+                    icon: const Icon(Icons.add),
+                  ),
+                  const Icon(Icons.arrow_forward, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _calculatedLabel(index),
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _step(int index, int amount) {
+    final current = int.tryParse(_offsets[index].text.trim()) ?? 0;
+    _offsets[index].text = (current + amount).clamp(-24, 24).toInt().toString();
+    setState(() {});
+    _emit();
+  }
+
+  int _offset(int index) =>
+      (int.tryParse(_offsets[index].text.trim()) ?? 0).clamp(-24, 24).toInt();
+
+  String _calculatedLabel(int index) {
+    final midi = (_baseMidis[index] + _offset(index)).clamp(0, 127).toInt();
+    return '${_noteName(midi)}  (MIDI $midi)';
+  }
+
+  void _emit() {
+    final value = [
+      for (var index = 0; index < _baseMidis.length; index += 1)
+        '${_noteName((_baseMidis[index] + _offset(index)).clamp(0, 127).toInt())}:'
+            '${(_baseMidis[index] + _offset(index)).clamp(0, 127).toInt()}',
+    ].join(', ');
+    _lastEmitted = value;
+    widget.onChanged(value);
+  }
+
+  String _noteName(int midi) => const [
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
+  ][midi % 12];
 }
 
 String _defaultSource(int count) => switch (count) {
