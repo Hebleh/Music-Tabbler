@@ -1,6 +1,6 @@
 # Music Tabbler handover
 
-Updated: 30 July 2026
+Updated: 31 July 2026
 
 This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset user work; inspect the current branch and working tree before starting a contract.
 
@@ -12,17 +12,24 @@ order, the user-testing gate, and the reusable implementation cycle.
 - Windows repository: `C:\vibes\Music Tabbler`
 - Mac repository: `/Users/guh/Vibes/Codex/Music Tabbler`
 - Stable integration branch: `master`
-- Current Apple validation branch: `codex/mt-602-apple-full-validation`
-- Apple validation history is pushed; inspect the branch head for the final
-  real-fixture and exact-release UI regression updates
+- Apple validation branch: `codex/mt-602-apple-full-validation` at `81763a4`
+- Current Windows regression branch: `codex/windows-post-apple-regression`
+- Apple validation history is pulled into the Windows checkout. The current
+  branch contains the follow-up real-9mm semantic segmentation and review
+  repairs.
 - Immutable MVP archive branch: `mvp/v0.1.0`
 - Release checkpoint: Windows MVP `v0.1.0`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Latest automated checkpoint: MT-602 Apple validation, semantic proposal
-  repair, all-row review, tuning controls, and responsive iPhone layout.
-  Shared behavior still requires a consolidated Windows/Android regression
-  before integration or prerelease.
+- Latest automated checkpoint: the complete suite passes 211/211 and
+  `flutter analyze` is clean after MT-602 Apple validation plus Windows
+  reviewed-visual semantic segmentation, measure-local proposal positioning,
+  dead-note rendering, and source-crop repairs.
+- Latest Windows Computer Use checkpoint: the disposable mixed setlist opens
+  in Balanced (8 pages) and Stage-readable (15 pages) Gig mode without the old
+  density-floor error. Song boundaries, duplicate entries, the red
+  `Not playing` placeholder, sidebar jumps, annotation controls, Clear All,
+  and explicit Exit were exercised without touching the user's main library.
 - Near-term product target: dependable, stage-readable charts for the user's 16 August 2026 gig
 - Current user-test sheet: `docs/COMBINED_USER_TEST_SPRINT6.md`
 
@@ -105,6 +112,30 @@ Do not use `git reset --hard`, `git checkout --`, or otherwise discard user work
   in `docs/BUGS_MT504_VALIDATION.md`, and the Unicode PDF-header font decision.
 - Existing `master`, `v0.1.0`, `mvp/v0.1.0`, `v0.2.0-beta.1`, and its release
   remain unchanged.
+
+## Windows post-Apple regression checkpoint
+
+- The Apple branch was pulled at `81763a4` and continued on
+  `codex/windows-post-apple-regression`.
+- Reviewed visual analysis no longer creates one semantic measure per full
+  strip. Bar-line geometry splits the real 9mm fixture into 129 proposed
+  measures while retaining all 822 reviewed fret/dead-note proposals.
+- Proposal positions remain local to their semantic measure after save/reopen;
+  source comparison crops preserve aspect ratio and center the selected source
+  token. Dead notes render as one `x`, without an adjacent synthetic `0`.
+- The automated checkpoint is 211/211 tests, clean analysis, and clean
+  `git diff --check` apart from the repository's existing Windows line-ending
+  advisory.
+- Balanced Gig mode renders the four-item `RITN` fixture in 8 pages and
+  Stage-readable renders it in 15. Each song and placeholder starts on a fresh
+  page; duplicate and placeholder sidebar entries remain available.
+- The Android debug APK was rebuilt successfully at
+  `build\app\outputs\flutter-apk\app-debug.apk` (242,720,986 bytes, SHA-256
+  `8e341bdd0d165cea87baf51e4a3f88f83e1c53c69a55eff2fd66a8b45ff13416`).
+  It is a development artifact, not a release package.
+- Remaining meaningful gate: install and exercise the APK on the user's
+  Samsung tablet, including import/export, Back, fullscreen, swipe navigation,
+  keep-awake cleanup, S Pen behavior, annotations, and restart persistence.
 
 ## Product intent and fixed decisions
 

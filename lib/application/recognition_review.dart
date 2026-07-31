@@ -32,6 +32,7 @@ SongChart normalizeRecognitionProposals(SongChart chart) {
 }
 
 ChartMeasure _normalizeRecognitionMeasure(ChartMeasure measure) {
+  final measureMapping = measure.sourceMapping;
   final proposed =
       measure.notes
           .where(
@@ -78,9 +79,10 @@ ChartMeasure _normalizeRecognitionMeasure(ChartMeasure measure) {
                   note.sourceMapping != null
               ? note.copyWith(
                   position: BeatFraction(
-                    (((note.sourceMapping!.left + note.sourceMapping!.right) /
-                                    2)
-                                .clamp(0.0, 0.9999) *
+                    (_relativeSourceCenterX(
+                              note.sourceMapping!,
+                              measureMapping,
+                            ).clamp(0.0, 0.9999) *
                             measure.length.value *
                             1000)
                         .round(),
@@ -90,6 +92,16 @@ ChartMeasure _normalizeRecognitionMeasure(ChartMeasure measure) {
               : note,
     ],
   );
+}
+
+double _relativeSourceCenterX(SourceMapping note, SourceMapping? measure) {
+  final center = (note.left + note.right) / 2;
+  if (measure == null ||
+      measure.sourceId != note.sourceId ||
+      measure.right - measure.left <= 0.000001) {
+    return center;
+  }
+  return (center - measure.left) / (measure.right - measure.left);
 }
 
 double _sourceCenterY(TabNote note) =>

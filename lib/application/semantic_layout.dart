@@ -294,20 +294,26 @@ class SemanticLayoutEngine {
           }
           if (showTab) {
             final y = tabTop + note.stringIndex * 20;
+            final isDeadNote = note.techniques.any(
+              (mark) => mark.kind == TechniqueKind.deadNote,
+            );
             targets.add(SemanticNoteTarget(noteId: note.id, x: x, y: y));
             primitives.add(
               SemanticTextPrimitive(
-                text: note.fret.toString(),
+                text: isDeadNote ? 'x' : note.fret.toString(),
                 x: x - 4,
                 y: y - 7,
                 role: SemanticTextRole.fret,
                 size: 12,
               ),
             );
-            for (var index = 0; index < note.techniques.length; index += 1) {
+            final visibleTechniques = note.techniques
+                .where((mark) => mark.kind != TechniqueKind.deadNote)
+                .toList(growable: false);
+            for (var index = 0; index < visibleTechniques.length; index += 1) {
               primitives.add(
                 SemanticTextPrimitive(
-                  text: _techniqueLabel(note.techniques[index]),
+                  text: _techniqueLabel(visibleTechniques[index]),
                   x: x + 8 + index * 12,
                   y: y - 7,
                   role: SemanticTextRole.technique,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -1286,55 +1287,143 @@ class _RecognitionReviewPanel extends StatelessWidget {
   }
 }
 
-class _SourceMappingPreview extends StatelessWidget {
+class _SourceMappingPreview extends StatefulWidget {
   const _SourceMappingPreview({required this.path, required this.mapping});
 
   final String path;
   final SourceMapping mapping;
 
   @override
+  State<_SourceMappingPreview> createState() => _SourceMappingPreviewState();
+}
+
+class _SourceMappingPreviewState extends State<_SourceMappingPreview> {
+  ui.Image? _image;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant _SourceMappingPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      _image?.dispose();
+      _image = null;
+      _error = null;
+      unawaited(_load());
+    }
+  }
+
+  Future<void> _load() async {
+    final requestedPath = widget.path;
+    try {
+      final bytes = await File(requestedPath).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+      if (!mounted || requestedPath != widget.path) {
+        frame.image.dispose();
+        return;
+      }
+      setState(() {
+        _image = frame.image;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error);
+    }
+  }
+
+  @override
+  void dispose() {
+    _image?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final horizontalPadding = (mapping.right - mapping.left).clamp(0.04, 0.12);
-    final verticalPadding = (mapping.bottom - mapping.top).clamp(0.08, 0.24);
-    final left = (mapping.left - horizontalPadding).clamp(0.0, 1.0);
-    final top = (mapping.top - verticalPadding).clamp(0.0, 1.0);
-    final right = (mapping.right + horizontalPadding).clamp(0.0, 1.0);
-    final bottom = (mapping.bottom + verticalPadding).clamp(0.0, 1.0);
-    final width = right - left;
-    final height = bottom - top;
+    final mapping = widget.mapping;
+    final horizontalPadding = ((mapping.right - mapping.left) * 8).clamp(
+      0.04,
+      0.12,
+    );
+    final verticalPadding = ((mapping.bottom - mapping.top) * 4).clamp(
+      0.02,
+      0.07,
+    );
+    final sourceRect = Rect.fromLTRB(
+      (mapping.left - horizontalPadding).clamp(0.0, 1.0),
+      (mapping.top - verticalPadding).clamp(0.0, 1.0),
+      (mapping.right + horizontalPadding).clamp(0.0, 1.0),
+      (mapping.bottom + verticalPadding).clamp(0.0, 1.0),
+    );
+    final image = _image;
     return InteractiveViewer(
       minScale: 1,
       maxScale: 8,
-      child: ClipRect(
-        child: LayoutBuilder(
-          builder: (context, constraints) => Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned(
-                left: -left * constraints.maxWidth / width,
-                top: -top * constraints.maxHeight / height,
-                width: constraints.maxWidth / width,
-                height: constraints.maxHeight / height,
-                child: Image.file(
-                  File(path),
-                  fit: BoxFit.fill,
-                  errorBuilder: (_, _, _) => Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        'Source preview is unavailable at $path',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
+      child: image == null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  _error == null
+                      ? 'Loading source preview…'
+                      : 'Source preview is unavailable at ${widget.path}',
+                  textAlign: TextAlign.center,
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
+            )
+          : SizedBox.expand(
+              child: CustomPaint(
+                painter: _SourceCropPainter(
+                  image: image,
+                  normalizedSourceRect: sourceRect,
+                ),
+              ),
+            ),
     );
   }
+}
+
+class _SourceCropPainter extends CustomPainter {
+  const _SourceCropPainter({
+    required this.image,
+    required this.normalizedSourceRect,
+  });
+
+  final ui.Image image;
+  final Rect normalizedSourceRect;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final source = Rect.fromLTRB(
+      normalizedSourceRect.left * image.width,
+      normalizedSourceRect.top * image.height,
+      normalizedSourceRect.right * image.width,
+      normalizedSourceRect.bottom * image.height,
+    );
+    final fitted = applyBoxFit(BoxFit.contain, source.size, size);
+    final destination = Alignment.center.inscribe(
+      fitted.destination,
+      Offset.zero & size,
+    );
+    canvas.drawImageRect(
+      image,
+      source,
+      destination,
+      Paint()..filterQuality = FilterQuality.high,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SourceCropPainter oldDelegate) =>
+      oldDelegate.image != image ||
+      oldDelegate.normalizedSourceRect != normalizedSourceRect;
 }
 
 class _InstrumentEditor extends StatelessWidget {

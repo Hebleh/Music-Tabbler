@@ -142,6 +142,53 @@ void main() {
     },
   );
 
+  test('proposal positions are normalized inside their source measure', () {
+    final chart = SongChart(
+      id: 'split-recognition',
+      title: 'Split',
+      artist: '',
+      tuning: BassTuning.eadg,
+      lyrics: const [],
+      measures: [
+        ChartMeasure.exact(
+          number: 1,
+          length: BeatFraction(4),
+          verification: VerificationState.proposed,
+          sourceMapping: const SourceMapping(
+            sourceId: 'page.png',
+            left: 0.40,
+            top: 0.20,
+            right: 0.60,
+            bottom: 0.30,
+          ),
+          notes: [
+            TabNote.exact(
+              id: 'inside-measure',
+              position: BeatFraction.zero,
+              stringIndex: 0,
+              fret: 7,
+              value: NoteValue.quarter,
+              verification: VerificationState.proposed,
+              sourceMapping: const SourceMapping(
+                sourceId: 'page.png',
+                left: 0.49,
+                top: 0.23,
+                right: 0.51,
+                bottom: 0.27,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final normalized = normalizeRecognitionProposals(chart);
+    expect(
+      normalized.measures.single.notes.single.position.value,
+      closeTo(2, 0.001),
+    );
+  });
+
   test('schema v3 charts migrate with gig-ready false', () {
     final json = SongChart.foundationExample().toJson()
       ..['schemaVersion'] = 3

@@ -66,16 +66,18 @@ This file records accepted limitations that are intentionally deferred beyond th
 - The acceptance target is a separately selectable, source-aligned proposal for
   every playable fret/dead note, with uncertainty left visibly unverified.
   Until then, visual transforms remain the supported route for real gig charts.
-- **MT-602 implementation verified on the disposable `9mm` copy:** When a visual transform has
+- **Post-Apple Windows implementation verified on the disposable `9mm` copy:** When a visual transform has
   musician-reviewed analysis, semantic recognition now consumes its enabled
   fret/dead-note tokens, applies the reviewed string route and fret offset,
-  preserves source-asset geometry, and retains up to 128 separately selectable
-  events per row. Unreviewed charts still use conservative local OCR. Legacy
-  zero-confidence empty rows reopen as proposed rather than silently verified.
-  The real fixture produced 29 proposed measures with 822 note proposals in
-  5-string BEADG; row 27 retained all 88 candidates. One accepted note and its
-  source comparison persisted after quit/reopen. Full musical verification is
-  intentionally left to the musician.
+  preserves source-asset geometry, and retains every reviewed event. Reviewed
+  bar-line geometry now divides full visual rows into 129 semantic measures,
+  with token positions normalized inside their measure instead of overlapping
+  at full-row coordinates. Unreviewed charts still use conservative local OCR.
+  Legacy zero-confidence empty rows reopen as proposed rather than silently
+  verified. The real fixture retained all 822 note/dead-note proposals in
+  5-string BEADG, and source comparison now shows an aspect-correct crop around
+  the selected original token. Full musical verification is intentionally left
+  to the musician.
 
 ## Visual analysis review density
 

@@ -10,6 +10,7 @@ import '../../application/app_services.dart';
 import '../../application/draft_edit_session.dart';
 import '../../application/highlight_geometry.dart';
 import '../../application/recognition_review.dart';
+import '../../application/reviewed_visual_recognition.dart';
 import '../../application/semantic_recognition_service.dart';
 import '../../application/service_contracts.dart';
 import '../../application/visual_tab_analysis_service.dart';
@@ -185,73 +186,10 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   ) {
     final record = _draft.visualTabTransform;
     if (record == null || record.analyses.isEmpty) return null;
-    final configuration = VisualTabTransformConfiguration.fromJson(
-      record.configuration,
+    return reviewedVisualRecognitionInputs(
+      record: record,
+      tuning: settings.tuning,
     );
-    if (configuration.targetLabels.length != settings.tuning.strings.length) {
-      return null;
-    }
-    final analyses = {
-      for (final value in record.analyses)
-        VisualTabAnalysis.fromJson(value).stripId: VisualTabAnalysis.fromJson(
-          value,
-        ),
-    };
-    final routes = {
-      for (final route in configuration.routes) route.sourceString: route,
-    };
-    final inputs = <RecognitionStripInput>[];
-    for (final strip in record.baseStrips) {
-      final analysis = analyses[strip.id];
-      if (analysis == null) return null;
-      final candidates = <ReviewedFretCandidateInput>[];
-      for (final system in analysis.systems) {
-        for (final token in system.tokens) {
-          final sourceString = token.stringIndex;
-          if (!token.enabled || !token.isFretLike || sourceString == null) {
-            continue;
-          }
-          final route = routes[sourceString];
-          if (route == null) continue;
-          final deadNote =
-              token.kind == VisualTabTokenKind.deadNote ||
-              token.text.trim().toLowerCase() == 'x';
-          final sourceFret = deadNote ? 0 : _reviewedFret(token.text);
-          if (sourceFret == null) continue;
-          final targetFret = deadNote ? 0 : sourceFret + route.effectiveOffset;
-          if (targetFret < 0 || targetFret > 36) continue;
-          candidates.add(
-            ReviewedFretCandidateInput(
-              fret: targetFret,
-              stringIndex: route.targetString,
-              rect: token.rect,
-              sourceRect: cropLocalRectToAsset(token.rect, strip.crop),
-              confidence: token.confidence,
-              deadNote: deadNote,
-            ),
-          );
-        }
-      }
-      inputs.add(
-        RecognitionStripInput(
-          sourceId: '${strip.assetHash}.${strip.assetExtension}',
-          regions: const [],
-          stringCount: settings.tuning.strings.length,
-          tabBand: const NormalizedRect.full(),
-          sourceBand: strip.crop,
-          reviewedFretCandidates: candidates,
-        ),
-      );
-    }
-    return inputs;
-  }
-
-  int? _reviewedFret(String text) {
-    final trimmed = text.trim();
-    final digits = trimmed.startsWith('(') && trimmed.endsWith(')')
-        ? trimmed.substring(1, trimmed.length - 1)
-        : trimmed;
-    return int.tryParse(digits);
   }
 
   Future<void> _reviewVisualTabAnalysis({

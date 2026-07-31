@@ -65,6 +65,38 @@ void main() {
     expect(notationOnly.noteTargets, isEmpty);
   });
 
+  test('dead notes render one x instead of a zero plus technique label', () {
+    const engine = SemanticLayoutEngine();
+    final base = SongChart.foundationExample();
+    final deadNote = base.measures.first.notes.first.copyWith(
+      fret: 0,
+      techniques: const [TechniqueMark(TechniqueKind.deadNote)],
+    );
+    final chart = base.copyWith(
+      measures: [
+        base.measures.first.copyWith(notes: [deadNote]),
+      ],
+      lyrics: const [],
+    );
+
+    final plan = engine.build(
+      chart,
+      showTitle: false,
+      showTab: true,
+      showNotation: false,
+    );
+    final noteTexts = plan.primitives
+        .whereType<SemanticTextPrimitive>()
+        .where(
+          (text) =>
+              text.role == SemanticTextRole.fret ||
+              text.role == SemanticTextRole.technique,
+        )
+        .map((text) => text.text);
+
+    expect(noteTexts, ['x']);
+  });
+
   test(
     'semantic A4 export uses the shared plan and paginates systems',
     () async {

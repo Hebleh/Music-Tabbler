@@ -1,6 +1,6 @@
 # MT-504 to MT-601 validation bug ledger
 
-Updated: 29 July 2026
+Updated: 31 July 2026
 
 This ledger records issues found during Windows Computer Use and rendered-PDF
 validation. While the active model is Terra Light, these items are documentation
@@ -287,9 +287,9 @@ test unless explicitly marked non-blocking.
 
 ## VT-015 - Real 9mm semantic detection does not produce a usable chart
 
-- **State:** User-reported after the v0.2.0-beta.1 checkpoint. No diagnosis or
-  source patch has been attempted. Queue the dedicated Terra Light read-only
-  matrix in `docs/COMPUTER_USE_SEMANTIC_DETECTION_ROUND.md`.
+- **State:** Reproduced, diagnosed, repaired, and revalidated on the disposable
+  Windows library on 31 July 2026. Musician verification of every proposal is
+  intentionally still open.
 - **Severity:** Critical for semantic editing, transposition, and re-tabbing;
   non-blocking for the preserved visual screenshot/PDF workflow.
 - **Fixture:** The user's real `9mm` visual chart and its local original,
@@ -328,6 +328,16 @@ therefore admits all 822 reviewed tokens without hitting its 128-event per-row
 safety ceiling. This is a deterministic intake count, not an accuracy claim:
 the updated UI still must compare first, middle, and final systems before the
 proposal is trusted.
+
+The Windows follow-up found a second structural cause after the Apple intake
+repair: each full visual strip was still becoming one semantic measure, and a
+save/reopen normalization pass converted measure-local proposal positions back
+to full-source X coordinates. Reviewed bar lines now split the fixture into 129
+semantic measures, each token is normalized inside its measure, and reopen
+preserves that placement. The regenerated chart contains all 822 reviewed
+fret/dead-note proposals; dead notes render as one `x`; the source panel uses an
+aspect-correct crop around the selected original token. Automated coverage
+includes measure segmentation, reopen normalization, and dead-note layout.
 
 ## VT-016 - Apple platform scaffolding is absent at the validation baseline
 
@@ -599,11 +609,13 @@ proposal is trusted.
 
 ### Continue with Computer Use after Medium fixes
 
-- [ ] Recheck compact pagination and item page boundaries in PDF, Preview, and
-  Gig mode using the `RITN` setlist.
-- [ ] Recheck placeholder and duplicate selection in the performance sidebar.
-- [ ] Exercise performance annotations, eraser latency, clear-all, secondary
-  highlighter, persistence, and PDF inclusion after Gig mode exposes them.
+- [x] Recheck compact pagination and item page boundaries in Preview and Gig
+  mode using the `RITN` setlist. Balanced produces 8 pages and Stage-readable
+  15; every song/placeholder starts fresh.
+- [x] Recheck placeholder and duplicate selection in the performance sidebar.
+- [x] Exercise performance annotations, clear-all, secondary highlighter, and
+  toolbar responsiveness. A controlled eraser gesture returned in about 60 ms;
+  physical stylus/mouse deletion remains part of the tablet gate.
 - [x] Re-run the longest-chart wheel-scroll regression with injected Windows
   wheel input after the VT-012 fix.
 - [ ] Confirm the same regression with the user's physical mouse wheel.
@@ -612,8 +624,12 @@ proposal is trusted.
   divergent bundle and verify the conflict summary.
 - [ ] Exercise non-destructive `.mtstate` export plus cancel/corrupt-import
   paths only against the disposable library.
-- [ ] Exercise semantic note/rest edits, MusicXML, short recognition correction,
-  transpose, re-tab, and ranked variants after VT-010/VT-011 are resolved.
+- [x] Recheck the real 9mm semantic recognition result after VT-010/VT-015:
+  129 measures, 822 separately positioned proposals, one `x` per dead note,
+  and a legible source-token crop. Full musician review and transformation of
+  all 822 proposals is deliberately not claimed.
+- [ ] Exercise semantic note/rest edits, MusicXML, a short fully reviewed
+  transpose, re-tab, and ranked variants.
 - [ ] Repeat visual analysis and transforms with a screenshot-only fixture.
 
 Use `docs/COMPUTER_USE_FULL_APP_ROUND.md` for the complete next pass. Terra
@@ -628,7 +644,7 @@ Light must record new failures here and must not patch them.
   cleanup, and keep-awake.
 - [ ] S Pen pressure, palm rejection, inverted eraser, rotation, persistence,
   and annotation alignment.
-- [ ] macOS build/workflow and iOS Simulator feasibility on the MacBook Air.
+- [x] macOS build/workflow and iOS Simulator feasibility on the MacBook Air.
 - [ ] External-browser URL copy/open behavior, because this pass intentionally
   did not contact remote sites.
 - [ ] Whole-library replace/restore recovery drill only after the user chooses a
