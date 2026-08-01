@@ -550,8 +550,10 @@ includes measure segmentation, reopen normalization, and dead-note layout.
 
 ## VT-025 - Transform presets do not populate an explicit 4-to-5-string control model
 
-- **State:** User-reported from the Windows development build on 1 August
-  2026; documentation only, no repair attempted.
+- **State:** Repaired on `codex/windows-post-apple-regression`; automated
+  widget coverage passes. A fresh live-build recheck remains queued because
+  the local Flutter Windows build command stalled before spawning the native
+  compiler during the final verification pass.
 - **Severity:** High transform-configuration clarity issue.
 - **Observed:** Selecting `Drop-D 4-string -> BEADG 5-string` changes the
   displayed source/target tuning and route calculations, but the lower
@@ -567,11 +569,15 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   switching back to Custom preserves the shown values; the fifth-string state
   is keyboard/touch accessible and covered by widget and serialization tests.
 - **Evidence:** `codex-clipboard-02caf99a-26fe-402f-b395-7d3e11e6e4a9.png`.
+- **Repair:** The transform dialog now renders every target string as an
+  explicit ordered switch, labels the added unused string, reroutes enabled
+  strings monotonically, and moves preset edits into the visible Custom state.
 
 ## VT-026 - Raster/OCR full-document analysis stalls and effectively scans only the first page
 
-- **State:** User-reported with the Neck Deep / Motion Sickness score on
-  1 August 2026; documentation only, no diagnosis or repair attempted.
+- **State:** Repaired and deterministically verified on all eight local Motion
+  Sickness pages. The review UI now preallocates stable row geometry, isolates
+  row failures, and exposes a chart-wide `Raster / OCR all rows` action.
 - **Severity:** Critical for screenshot and raster-PDF recognition; the manual
   visual crop/split workflow remains the fallback.
 - **Observed:** The all-row Raster/OCR review becomes sticky while scrolling.
@@ -587,11 +593,17 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   retrying one failed page leaves completed pages intact; instrumentation
   records page/row start, completion, cancellation, and failure.
 - **Evidence:** `codex-clipboard-6d79dda3-af82-470d-b45b-f545a00a368b.png`.
+- **Verification:** The real local PDF produced usable raster results on every
+  page: 8, 9, 9, 9, 9, 9, 9, and 3 systems. Computer Use also confirmed that
+  all 65 prepared rows remain visible with stable scroll position during the
+  positioned-text pass. The final chart-wide button has focused widget
+  coverage; a rebuilt live-button click remains queued with VT-025.
 
 ## VT-027 - General semantic intake is unusable for the Motion Sickness raster path
 
-- **State:** User-reported on 1 August 2026 after the Raster/OCR attempt;
-  documentation only, no repair attempted.
+- **State:** Safety gate repaired and covered by persistence/domain tests.
+  Recognition quality for Motion Sickness remains proposal-quality and must
+  not be described as complete semantic transcription.
 - **Severity:** Critical for semantic transpose/re-tab of this fixture;
   non-blocking for the visual PDF/screenshot workflow.
 - **Observed:** The resulting semantic chart exposes only 9 proposals across
@@ -609,11 +621,14 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   gig-ready; Motion Sickness PDF and screenshot forms expose proposals from
   every accepted row with traceable page/row source mappings.
 - **Evidence:** `codex-clipboard-6bdf6541-0c42-4731-9d7b-892c124f1db4.png`.
+- **Repair:** Semantic charts now persist explicit source-completeness state.
+  Incomplete intake disables bulk verification and gig-ready status, including
+  after save/reopen. Visual import rejects missing or unusable reviewed rows.
 
 ## VT-028 - Stage-readable Gig mode wastes the viewport and does not fit transformed content
 
-- **State:** User-reported on Windows on 1 August 2026; documentation only, no
-  repair attempted.
+- **State:** Guard and compaction path implemented with automated portrait-page
+  regression coverage; final user-level stage-distance review is still open.
 - **Severity:** Critical stage-use regression for unsplit/full-page charts.
 - **Observed:** Stage-readable Gig mode centers a small portrait page inside a
   maximized landscape window with very large black margins, produces 23 pages,
@@ -627,11 +642,14 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   Golden/layout tests cover portrait source pages in wide desktop and tablet
   viewports, with no clipping, overflow, or unexplained empty margins.
 - **Evidence:** `codex-clipboard-f91ae907-8087-4734-8e07-ac860e251a11.png`.
+- **Repair:** Balanced/Stage-readable preparation now compacts page-aware rows
+  when safe and otherwise returns a clear `Split into rows` action instead of
+  silently shrinking an unprepared portrait page.
 
 ## VT-029 - Automatic row splitting needs page-aware exclusion and tighter crops
 
-- **State:** User-requested after reviewing Windows row detection on 1 August
-  2026; documentation only, no implementation attempted.
+- **State:** Implemented, covered by synthetic fixtures, and live-checked with
+  the local Motion Sickness PDF.
 - **Severity:** High manual-work and export-density issue.
 - **Observed:** New visual charts require a manual split action. Detection
   includes the title/artist/site header in Row 1, keeps the printed page number
@@ -647,14 +665,17 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   footer/page-number, sparse final row, and asymmetric margin cases. Automatic
   proposals never delete source pixels, can be reset to the original page, and
   match the compact target shown in the supplied reference screenshot.
+- **Repair and verification:** Import adds one undoable automatic page-aware
+  preparation operation. Detection uses staff geometry to exclude title-only
+  and footer-only regions, tightens vertical bounds, and proposes common side
+  crops. The live first page began at `Intro 1`, not the title block.
 - **Evidence:** `codex-clipboard-4c53e513-9725-43fa-b8f4-dc8746b02380.png`,
   `codex-clipboard-dd264b06-803e-4ac0-afc1-071a5be94a64.png`, and
   `codex-clipboard-a3b1d97e-8370-4ec6-af8a-bf26b2bb9e90.png`.
 
 ## VT-030 - Split-row review lacks persistent original-page context
 
-- **State:** User-requested on 1 August 2026; documentation only, no
-  implementation attempted.
+- **State:** Implemented and live-verified after fixing one responsive overflow.
 - **Severity:** Medium review-efficiency and provenance-context issue.
 - **Observed:** The split dialog shows row boxes over the source during initial
   detection, but there is no persistent side-by-side page context once the
@@ -666,11 +687,15 @@ includes measure segmentation, reopen normalization, and dead-note layout.
 - **Acceptance:** Page-to-row identity survives save/reopen, split/delete/
   reorder, and PDF/image inputs; the side panel virtualizes large documents and
   never reintroduces sticky scrolling or eager full-resolution decoding.
+- **Repair and verification:** The split dialog now shows a bounded original
+  page preview, the selected source crop, and virtualized derived-row previews.
+  Source-page labels persist on imported rows. Computer Use verified the panel
+  without the former 69-pixel overflow.
 
 ## VT-031 - Top crop handles do not resize a tab row
 
-- **State:** User-reported on Windows on 1 August 2026; documentation only, no
-  repair attempted.
+- **State:** Repaired, covered across all eight handles and fast drags, and
+  live-verified on Windows.
 - **Severity:** High basic crop-editor input defect.
 - **Observed:** Dragging the top edge/corner handles in `Crop tab row` does not
   change the crop. Bottom-edge dragging still works. Slider fine-tuning remains
@@ -682,6 +707,9 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   speeds, including reversed direction and minimum-size clamping. A Windows
   Computer Use pass confirms the top edge changes the preview and saved crop.
 - **Evidence:** `codex-clipboard-ce7b2512-2060-452f-b7b3-c5fc8cabdadb.png`.
+- **Repair and verification:** Edge/corner hit targets are clamped inside the
+  canvas while preserving visual alignment. Computer Use moved the top crop to
+  28%; cancel left the saved chart unchanged.
 
 ## Apple baseline observations completed on 30 July 2026
 
@@ -742,20 +770,20 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   routes semantic recognition through `Start visual source`; no link was
   fetched or submitted during this pass.
 
-### Next documented repair/validation batch
+### Current repair/validation batch
 
-- [ ] VT-025: make preset-driven 4-to-5-string state explicit in the same
+- [x] VT-025: make preset-driven 4-to-5-string state explicit in the same
   five target-string controls used for manual configuration.
-- [ ] VT-026: stabilize multi-page Raster/OCR progress and scrolling, and prove
+- [x] VT-026: stabilize multi-page Raster/OCR progress and scrolling, and prove
   every page is analyzed independently.
-- [ ] VT-027: gate semantic creation on complete source analysis and retest
-  Motion Sickness PDF plus screenshot forms.
-- [ ] VT-028: prevent Stage-readable mode from shrinking unsplit portrait pages
+- [~] VT-027: gate semantic creation on complete source analysis. The gate is
+  repaired; musical-quality review of Motion Sickness proposals remains open.
+- [~] VT-028: prevent Stage-readable mode from shrinking unsplit portrait pages
   into a mostly empty wide viewport.
-- [ ] VT-029: create undoable page-aware automatic row proposals with header/
+- [x] VT-029: create undoable page-aware automatic row proposals with header/
   footer exclusion, tighter safe bounds, and suggested master side crops.
-- [ ] VT-030: add a virtualized original-page/derived-row context panel.
-- [ ] VT-031: repair and verify top-edge/corner crop resizing.
+- [x] VT-030: add a virtualized original-page/derived-row context panel.
+- [x] VT-031: repair and verify top-edge/corner crop resizing.
 
 ### Remaining regression and user checks
 

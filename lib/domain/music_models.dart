@@ -955,11 +955,12 @@ class SongChart {
     this.sections = const [],
     this.repeats = const [],
     this.gigReady = false,
+    this.recognitionSourceComplete = true,
     this.derivedFromChartId,
     this.transformationLabel,
   });
 
-  static const schemaVersion = 5;
+  static const schemaVersion = 6;
 
   final String id;
   final String title;
@@ -972,6 +973,7 @@ class SongChart {
   final List<SongSection> sections;
   final List<RepeatRegion> repeats;
   final bool gigReady;
+  final bool recognitionSourceComplete;
   final String? derivedFromChartId;
   final String? transformationLabel;
 
@@ -999,6 +1001,7 @@ class SongChart {
       sections: sections,
       repeats: repeats,
       gigReady: gigReady,
+      recognitionSourceComplete: recognitionSourceComplete,
       derivedFromChartId: derivedFromChartId,
       transformationLabel: transformationLabel,
     );
@@ -1114,6 +1117,7 @@ class SongChart {
       sections: sections,
       repeats: repeats,
       gigReady: gigReady,
+      recognitionSourceComplete: recognitionSourceComplete,
       derivedFromChartId: derivedFromChartId,
       transformationLabel: transformationLabel,
     );
@@ -1131,6 +1135,7 @@ class SongChart {
     List<SongSection>? sections,
     List<RepeatRegion>? repeats,
     bool? gigReady,
+    bool? recognitionSourceComplete,
     String? derivedFromChartId,
     bool clearDerivedFromChartId = false,
     String? transformationLabel,
@@ -1148,6 +1153,8 @@ class SongChart {
       sections: sections ?? this.sections,
       repeats: repeats ?? this.repeats,
       gigReady: gigReady ?? this.gigReady,
+      recognitionSourceComplete:
+          recognitionSourceComplete ?? this.recognitionSourceComplete,
       derivedFromChartId: clearDerivedFromChartId
           ? null
           : derivedFromChartId ?? this.derivedFromChartId,
@@ -1170,6 +1177,7 @@ class SongChart {
     'sections': [for (final section in sections) section.toJson()],
     'repeats': [for (final repeat in repeats) repeat.toJson()],
     'gigReady': gigReady,
+    'recognitionSourceComplete': recognitionSourceComplete,
     'derivedFromChartId': ?derivedFromChartId,
     'transformationLabel': ?transformationLabel,
   };
@@ -1225,6 +1233,9 @@ class SongChart {
               ),
             ),
       gigReady: version >= 4 ? json['gigReady'] as bool? ?? false : false,
+      recognitionSourceComplete: version >= 6
+          ? json['recognitionSourceComplete'] as bool? ?? true
+          : true,
       derivedFromChartId: version >= 5
           ? json['derivedFromChartId'] as String?
           : null,

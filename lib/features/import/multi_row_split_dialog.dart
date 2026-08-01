@@ -186,8 +186,10 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
                 Flexible(
                   child: LayoutBuilder(
                     builder: (context, viewportConstraints) {
+                      final contextPanelWidth =
+                          viewportConstraints.maxWidth >= 850 ? 270.0 : 0.0;
                       final controlSize = Size(
-                        viewportConstraints.maxWidth,
+                        viewportConstraints.maxWidth - contextPanelWidth,
                         34,
                       );
                       return Column(
@@ -211,108 +213,138 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
                             ),
                           ),
                           Expanded(
-                            child: Stack(
+                            child: Row(
                               children: [
-                                Scrollbar(
-                                  controller: _scrollController,
-                                  thumbVisibility: true,
-                                  child: Listener(
-                                    onPointerSignal: (event) {
-                                      if (event is PointerScrollEvent &&
-                                          _scrollController.hasClients) {
-                                        GestureBinding
-                                            .instance
-                                            .pointerSignalResolver
-                                            .register(event, (resolvedEvent) {
-                                              final scroll =
-                                                  resolvedEvent
-                                                      as PointerScrollEvent;
-                                              final position =
-                                                  _scrollController.position;
-                                              _scrollController.jumpTo(
-                                                (position.pixels +
-                                                        scroll.scrollDelta.dy)
-                                                    .clamp(
-                                                      position.minScrollExtent,
-                                                      position.maxScrollExtent,
-                                                    ),
-                                              );
-                                            });
-                                      }
-                                    },
-                                    child: SingleChildScrollView(
-                                      controller: _scrollController,
-                                      primary: false,
-                                      child: AspectRatio(
-                                        aspectRatio: widget.imageAspectRatio,
-                                        child: LayoutBuilder(
-                                          builder: (context, constraints) {
-                                            final size = Size(
-                                              constraints.maxWidth,
-                                              constraints.maxHeight,
-                                            );
-                                            return Stack(
-                                              fit: StackFit.expand,
-                                              children: [
-                                                FutureBuilder<Uint8List>(
-                                                  future: _imageBytes,
-                                                  builder: (context, snapshot) {
-                                                    if (snapshot.hasError) {
-                                                      return const Center(
-                                                        child: Text(
-                                                          'Split preview unavailable',
-                                                        ),
-                                                      );
-                                                    }
-                                                    if (!snapshot.hasData) {
-                                                      return const Center(
-                                                        child:
-                                                            CircularProgressIndicator(),
-                                                      );
-                                                    }
-                                                    return Image.memory(
-                                                      snapshot.data!,
-                                                      fit: BoxFit.fill,
+                                Expanded(
+                                  child: Stack(
+                                    children: [
+                                      Scrollbar(
+                                        controller: _scrollController,
+                                        thumbVisibility: true,
+                                        child: Listener(
+                                          onPointerSignal: (event) {
+                                            if (event is PointerScrollEvent &&
+                                                _scrollController.hasClients) {
+                                              GestureBinding
+                                                  .instance
+                                                  .pointerSignalResolver
+                                                  .register(event, (
+                                                    resolvedEvent,
+                                                  ) {
+                                                    final scroll =
+                                                        resolvedEvent
+                                                            as PointerScrollEvent;
+                                                    final position =
+                                                        _scrollController
+                                                            .position;
+                                                    _scrollController.jumpTo(
+                                                      (position.pixels +
+                                                              scroll
+                                                                  .scrollDelta
+                                                                  .dy)
+                                                          .clamp(
+                                                            position
+                                                                .minScrollExtent,
+                                                            position
+                                                                .maxScrollExtent,
+                                                          ),
                                                     );
-                                                  },
-                                                ),
-                                                for (final index in _paintOrder)
-                                                  ResizableRectOverlay(
-                                                    rect: _rows[index],
-                                                    canvasSize: size,
-                                                    color:
-                                                        Colors.primaries[index %
-                                                            Colors
-                                                                .primaries
-                                                                .length],
-                                                    label: 'Row ${index + 1}',
-                                                    selected:
-                                                        index == _selected,
-                                                    onSelected: () => setState(
-                                                      () => _selected = index,
-                                                    ),
-                                                    onChanged: (value) =>
-                                                        setState(() {
-                                                          _selected = index;
-                                                          _rows[index] = value;
-                                                        }),
-                                                  ),
-                                              ],
-                                            );
+                                                  });
+                                            }
                                           },
+                                          child: SingleChildScrollView(
+                                            controller: _scrollController,
+                                            primary: false,
+                                            child: AspectRatio(
+                                              aspectRatio:
+                                                  widget.imageAspectRatio,
+                                              child: LayoutBuilder(
+                                                builder: (context, constraints) {
+                                                  final size = Size(
+                                                    constraints.maxWidth,
+                                                    constraints.maxHeight,
+                                                  );
+                                                  return Stack(
+                                                    fit: StackFit.expand,
+                                                    children: [
+                                                      FutureBuilder<Uint8List>(
+                                                        future: _imageBytes,
+                                                        builder: (context, snapshot) {
+                                                          if (snapshot
+                                                              .hasError) {
+                                                            return const Center(
+                                                              child: Text(
+                                                                'Split preview unavailable',
+                                                              ),
+                                                            );
+                                                          }
+                                                          if (!snapshot
+                                                              .hasData) {
+                                                            return const Center(
+                                                              child:
+                                                                  CircularProgressIndicator(),
+                                                            );
+                                                          }
+                                                          return Image.memory(
+                                                            snapshot.data!,
+                                                            fit: BoxFit.fill,
+                                                          );
+                                                        },
+                                                      ),
+                                                      for (final index
+                                                          in _paintOrder)
+                                                        ResizableRectOverlay(
+                                                          rect: _rows[index],
+                                                          canvasSize: size,
+                                                          color:
+                                                              Colors
+                                                                  .primaries[index %
+                                                                  Colors
+                                                                      .primaries
+                                                                      .length],
+                                                          label:
+                                                              'Row ${index + 1}',
+                                                          selected:
+                                                              index ==
+                                                              _selected,
+                                                          onSelected: () =>
+                                                              setState(
+                                                                () =>
+                                                                    _selected =
+                                                                        index,
+                                                              ),
+                                                          onChanged: (value) =>
+                                                              setState(() {
+                                                                _selected =
+                                                                    index;
+                                                                _rows[index] =
+                                                                    value;
+                                                              }),
+                                                        ),
+                                                    ],
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
+                                      _buildMasterGuide(
+                                        _masterLeft,
+                                        controlSize.width,
+                                      ),
+                                      _buildMasterGuide(
+                                        _masterRight,
+                                        controlSize.width,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                _buildMasterGuide(
-                                  _masterLeft,
-                                  viewportConstraints.maxWidth,
-                                ),
-                                _buildMasterGuide(
-                                  _masterRight,
-                                  viewportConstraints.maxWidth,
-                                ),
+                                if (contextPanelWidth > 0)
+                                  SizedBox(
+                                    width: contextPanelWidth,
+                                    child: _buildDerivedRowsContext(),
+                                  ),
                               ],
                             ),
                           ),
@@ -356,6 +388,106 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
       if (index != _selected) index,
     if (_rows.isNotEmpty) _selected,
   ];
+
+  Widget _buildDerivedRowsContext() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        border: Border(left: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: FutureBuilder<Uint8List>(
+        future: _imageBytes,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final sourcePreviewHeight = (constraints.maxHeight * 0.32)
+                  .clamp(72.0, 180.0)
+                  .toDouble();
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(12, 10, 12, 6),
+                    child: Text(
+                      'Source page -> derived rows',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  SizedBox(
+                    height: sourcePreviewHeight,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Center(
+                        child: AspectRatio(
+                          aspectRatio: widget.imageAspectRatio,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.memory(snapshot.data!, fit: BoxFit.fill),
+                              IgnorePointer(
+                                child: CustomPaint(
+                                  painter: _SelectedCropPainter(
+                                    _rows[_selected],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.builder(
+                      key: const ValueKey('derived-row-context-list'),
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                      itemCount: _rows.length,
+                      itemBuilder: (context, index) {
+                        final row = _rows[index];
+                        return Card(
+                          color: index == _selected
+                              ? Theme.of(context).colorScheme.secondaryContainer
+                              : null,
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () => setState(() => _selected = index),
+                            child: Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Row ${index + 1}'),
+                                  const SizedBox(height: 4),
+                                  AspectRatio(
+                                    aspectRatio:
+                                        widget.imageAspectRatio *
+                                        row.width /
+                                        row.height,
+                                    child: _PageCropPreview(
+                                      bytes: snapshot.data!,
+                                      crop: row,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
 
   Widget _buildMasterHandle(_MasterSide side, Size canvasSize, double value) {
     final x = value * canvasSize.width;
@@ -471,11 +603,13 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
       });
       if (!mounted) return;
       final rows = [
-        for (final value in detected)
-          NormalizedRect.fromJson(value.cast<String, Object?>()),
+        for (final value in detected['rows']! as List)
+          NormalizedRect.fromJson((value as Map).cast<String, Object?>()),
       ];
       setState(() {
         _rows = rows.isEmpty ? _evenRows(5) : rows;
+        _masterLeft = (detected['masterLeft']! as num).toDouble();
+        _masterRight = (detected['masterRight']! as num).toDouble();
         _selected = 0;
         _reapplyPersistentMasterCrop();
       });
@@ -568,6 +702,60 @@ class _MultiRowSplitDialogState extends State<MultiRowSplitDialog> {
 
 enum _MasterSide { left, right }
 
+class _PageCropPreview extends StatelessWidget {
+  const _PageCropPreview({required this.bytes, required this.crop});
+
+  final Uint8List bytes;
+  final NormalizedRect crop;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: LayoutBuilder(
+        builder: (context, constraints) => Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            Positioned(
+              left: -crop.left / crop.width * constraints.maxWidth,
+              top: -crop.top / crop.height * constraints.maxHeight,
+              width: constraints.maxWidth / crop.width,
+              height: constraints.maxHeight / crop.height,
+              child: Image.memory(bytes, fit: BoxFit.fill),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectedCropPainter extends CustomPainter {
+  const _SelectedCropPainter(this.crop);
+
+  final NormalizedRect crop;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Rect.fromLTRB(
+      crop.left * size.width,
+      crop.top * size.height,
+      crop.right * size.width,
+      crop.bottom * size.height,
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = Colors.amber
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SelectedCropPainter oldDelegate) =>
+      oldDelegate.crop != crop;
+}
+
 Uint8List _prepareSplitImage(Map<String, Object> request) {
   var image = img.decodeImage(
     File(request['path']! as String).readAsBytesSync(),
@@ -583,14 +771,19 @@ Uint8List _prepareSplitImage(Map<String, Object> request) {
   return Uint8List.fromList(img.encodePng(image, level: 3));
 }
 
-List<Map<String, Object>> _detectRowsInBackground(Map<String, Object> request) {
+Map<String, Object> _detectRowsInBackground(Map<String, Object> request) {
   final sourceRect = NormalizedRect.fromJson(
     (request['sourceRect']! as Map).cast<String, Object?>(),
   );
-  return const HorizontalRowDetector()
-      .detect(request['bytes']! as Uint8List, sourceRect: sourceRect)
-      .map((row) => row.toJson())
-      .toList(growable: false);
+  final proposal = const HorizontalRowDetector().detectPageAware(
+    request['bytes']! as Uint8List,
+    sourceRect: sourceRect,
+  );
+  return {
+    'rows': proposal.rows.map((row) => row.toJson()).toList(growable: false),
+    'masterLeft': proposal.masterLeft,
+    'masterRight': proposal.masterRight,
+  };
 }
 
 List<NormalizedRect> evenRowRects(NormalizedRect source, int count) {

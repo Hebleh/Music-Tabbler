@@ -143,10 +143,11 @@ This file records accepted limitations that are intentionally deferred beyond th
 
 ## Full-document raster analysis and semantic gating
 
-- Multi-page Raster/OCR currently has a user-reported scroll-anchor/page-load
-  failure on Motion Sickness that leaves later visible tab pages without
-  systems or tokens. Do not describe general raster semantic conversion as
-  usable until VT-026 is fixed and verified on PDF plus screenshot fixtures.
+- Multi-page Raster/OCR now uses stable all-row placeholders, isolated failure
+  states, and a chart-wide sequential action. The real eight-page Motion
+  Sickness PDF produces usable raster results on every page. General semantic
+  conversion is still proposal-quality until source-aligned musical review is
+  completed on both PDF and screenshot fixtures.
 - Semantic creation must carry an explicit source-completeness result separate
   from per-token confidence. If required pages or rows fail analysis, the chart
   remains an incomplete proposal and cannot be bulk-verified or marked
@@ -156,8 +157,8 @@ This file records accepted limitations that are intentionally deferred beyond th
 
 ## Automatic page-to-row preparation
 
-- New PDF/image charts should begin with an undoable automatic row proposal,
-  while preserving the current manual split/crop fallback.
+- New PDF/image charts now begin with an undoable automatic row proposal while
+  preserving the manual split/crop fallback.
 - Page-aware classification must exclude non-musical headings and footer page
   numbers, preserve tempo/tuning/time-signature context, propose tighter safe
   vertical bounds, and infer common master side crops without overwriting
@@ -168,14 +169,23 @@ This file records accepted limitations that are intentionally deferred beyond th
 
 ## Stage-readable viewport contract
 
-- Stage-readable mode must operate on prepared tab rows, not shrink an unsplit
-  portrait source page into a landscape window. It should use the available
-  viewport, preserve readable geometry, and clearly block or redirect charts
-  that still require row preparation. See VT-028.
+- Stage-readable mode now compacts safe prepared portrait inputs and blocks
+  unprepared pages with a clear row-preparation message. User-level
+  stage-distance review remains open. See VT-028.
 
 ## Direct crop manipulation
 
-- The crop overlay needs regression coverage for all four edges and four
-  corners. The current Windows report says bottom resizing works while top
-  resizing does not. Sliders remain a fallback, not the primary interaction.
-  See VT-031.
+- The crop overlay now has regression coverage for all four edges, all four
+  corners, and fast drags; the top edge was live-verified on Windows. Preserve
+  these tests whenever pointer geometry changes. See VT-031.
+
+## Compact transformed-PDF row normalization
+
+- The deterministic real `9mm +1` visual transform is musically complete (760
+  numeric frets plus 62 dead notes), but rendered inspection shows mixed source
+  crop heights producing inconsistent row scale and a sparse final A4 page.
+  Some wide source rows also reach the page edge. A future layout-only repair
+  should normalize transformed strip bounds and paginate by a consistent
+  stage-readable scale without changing any reviewed fret token or source
+  asset. The current transformation audit remains valid; this is not a reason
+  to fall back to unreviewed semantic conversion.

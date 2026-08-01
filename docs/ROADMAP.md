@@ -48,16 +48,16 @@ Only a verified sprint merges into `master`.
 
 MT-107 through MT-601 are implemented on the stacked feature history now
 continued by `codex/windows-post-apple-regression`. MT-602 macOS/iOS Simulator
-feasibility is complete. The current Windows source passes 211 automated tests
+feasibility is complete. The current Windows source passes 225 automated tests
 and static analysis; the last public artifact checkpoint remains
 `v0.2.0-beta.1+2` and has not been replaced by this development branch.
 
 The reliable manual PDF/image workflow, setlists, portable state, semantic
-domain/editor, and visual transforms exist. General full-document Raster/OCR
-and semantic intake are not accepted as reliable: VT-026 and VT-027 reproduce
-an incomplete Motion Sickness path. Stage-readable handling of unsplit source
-pages is also open as VT-028. VT-025 through VT-031 are the next repair batch.
-Physical Android hardware verification remains required.
+domain/editor, and visual transforms exist. VT-025, VT-026, and VT-029 through
+VT-031 are repaired; VT-027 now blocks incomplete semantic sources rather than
+presenting them as trustworthy. VT-028 has an automated compaction/preparation
+guard but still needs user-level stage-distance review. Physical Android
+hardware verification remains required.
 
 - [x] Preserve `mvp/v0.1.0` at the MVP checkpoint.
 - [x] Keep `master` as the stable integration branch.

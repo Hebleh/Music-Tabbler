@@ -21,7 +21,7 @@ order, the user-testing gate, and the reusable implementation cycle.
 - Release checkpoint: Windows MVP `v0.1.0`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Latest automated checkpoint: the complete suite passes 211/211 and
+- Latest automated checkpoint: the complete suite passes 225/225 and
   `flutter analyze` is clean after MT-602 Apple validation plus Windows
   reviewed-visual semantic segmentation, measure-local proposal positioning,
   dead-note rendering, and source-crop repairs.
@@ -123,7 +123,7 @@ Do not use `git reset --hard`, `git checkout --`, or otherwise discard user work
 - Proposal positions remain local to their semantic measure after save/reopen;
   source comparison crops preserve aspect ratio and center the selected source
   token. Dead notes render as one `x`, without an adjacent synthetic `0`.
-- The automated checkpoint is 211/211 tests, clean analysis, and clean
+- The automated checkpoint is 225/225 tests, clean analysis, and clean
   `git diff --check` apart from the repository's existing Windows line-ending
   advisory.
 - Balanced Gig mode renders the four-item `RITN` fixture in 8 pages and
@@ -257,7 +257,9 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 
 ## Known limitations and cautions
 
-- The automatic row detector is deliberately conservative. It may retain a header or footer rather than risk cutting notation or lyrics; proposals are intended for manual fine tuning.
+- New PDF/image imports receive one undoable page-aware row proposal. Staff
+  geometry excludes clear title/footer-only regions and suggests common side
+  crops, while every proposal remains manually editable and resettable.
 - The user identified the scroll failure more precisely: after lower rows loaded, upward wheel input could stick and jiggle while scrollbar-thumb dragging remained reliable. Preview heights are now stable before/after asynchronous loading, custom wheel rerouting has been removed, and a 43-row down/up regression passes. Real-chart confirmation through `dev.bat` is still required.
 - Title/artist OCR and detected lyric words are assistive, user-correctable proposals. They are not guaranteed complete.
 - Japanese OCR depends on the optional Japanese Windows OCR language capability. The app tries `ja-JP`, English, and profile recognizers and falls back safely when a language engine is unavailable.
@@ -282,13 +284,13 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 
 Keep the reliable visual fallback ahead of semantic research until the gig workflow is dependable.
 
-1. Reproduce and repair VT-025 through VT-031 as one explicitly planned UX/
-   recognition batch, without changing the user's useful source charts.
-2. Keep automatic page-to-row preparation undoable and preserve the complete
-   manual split/crop fallback.
-3. Re-run real PDF plus screenshot fixtures after the Raster/OCR and semantic
-   completeness gates are fixed; do not claim the general semantic path works
-   from the reviewed 9mm result alone.
+1. Finish the user-level VT-028 Stage-readable review using prepared rows and
+   normal music-stand distance; do not accept unprepared portrait pages.
+2. Re-run PDF plus screenshot semantic fixtures through the repaired all-row
+   Raster/OCR action; source completeness is now a gate, not proof of musical
+   correctness.
+3. Normalize compact transformed-PDF strip scale/pagination without changing
+   reviewed transformation tokens or the manual crop fallback.
 4. Revalidate Stage-readable Preview/Gig/PDF only with prepared rows, then run
    the physical Samsung tablet/S Pen checklist using the debug APK.
 5. Merge to `master` and prepare a later release only when those gates and the

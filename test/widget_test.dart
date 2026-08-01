@@ -97,6 +97,65 @@ void main() {
     },
   );
 
+  testWidgets('visual tab review can rerun every row through raster OCR', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final library = _FakeLibrary();
+    final analyzer = _RecordingVisualTabAnalyzer(library);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () => showVisualTabAnalysisReview(
+                context: context,
+                library: library,
+                analyzer: analyzer,
+                strips: const [
+                  VisualStrip(
+                    id: 'row-a',
+                    assetHash: 'a',
+                    assetExtension: 'png',
+                    pixelWidth: 400,
+                    pixelHeight: 100,
+                  ),
+                  VisualStrip(
+                    id: 'row-b',
+                    assetHash: 'b',
+                    assetExtension: 'png',
+                    pixelWidth: 400,
+                    pixelHeight: 100,
+                  ),
+                ],
+                sourceStringCount: 4,
+              ),
+              child: const Text('Open review'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open review'));
+    for (var index = 0; index < 5; index += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(analyzer.preferPositionedPdf, [isTrue, isTrue]);
+
+    await tester.tap(find.byKey(const ValueKey('raster-ocr-all-rows')));
+    for (var index = 0; index < 5; index += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(analyzer.preferPositionedPdf, [isTrue, isTrue, isFalse, isFalse]);
+    expect(find.text('2 / 2'), findsOneWidget);
+  });
+
   testWidgets('opens the semantic sample chart from the song pool', (
     tester,
   ) async {
@@ -1348,6 +1407,45 @@ class _UnusedTextRecognition implements TextRecognitionService {
   @override
   Future<MetadataSuggestion> recognize(VisualStrip strip) async =>
       const MetadataSuggestion();
+}
+
+class _RecordingVisualTabAnalyzer extends VisualTabAnalysisService {
+  _RecordingVisualTabAnalyzer(ChartLibrary library)
+    : super(library: library, textRecognition: const _UnusedTextRecognition());
+
+  final List<bool> preferPositionedPdf = [];
+
+  @override
+  Future<VisualTabAnalysis> analyze(
+    VisualStrip strip, {
+    required int sourceStringCount,
+    bool preferPositionedPdf = true,
+  }) async {
+    this.preferPositionedPdf.add(preferPositionedPdf);
+    return VisualTabAnalysis(
+      stripId: strip.id,
+      sourceType: preferPositionedPdf
+          ? VisualTabSourceType.positionedPdf
+          : VisualTabSourceType.rasterOcr,
+      systems: [
+        VisualTabSystem(
+          id: '${strip.id}-system',
+          rect: const NormalizedRect(0, 0.1, 1, 0.9),
+          stringLines: const [0.2, 0.4, 0.6, 0.8],
+          barLines: const [0.05, 0.95],
+          tokens: [
+            VisualTabToken(
+              id: '${strip.id}-token',
+              text: '5',
+              rect: const NormalizedRect(0.4, 0.56, 0.44, 0.64),
+              kind: VisualTabTokenKind.fret,
+              stringIndex: 2,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 class _UnusedExporter

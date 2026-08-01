@@ -428,4 +428,140 @@ void main() {
 
     expect(rows, hasLength(3));
   });
+
+  test('page-aware proposals exclude title/footer and suggest staff sides', () {
+    final source = img.Image(width: 1000, height: 900);
+    img.fill(source, color: img.ColorRgb8(250, 250, 250));
+    img.fillRect(
+      source,
+      x1: 250,
+      y1: 35,
+      x2: 750,
+      y2: 55,
+      color: img.ColorRgb8(20, 20, 20),
+    );
+    for (final top in [180, 430, 680]) {
+      for (var line = 0; line < 4; line += 1) {
+        img.fillRect(
+          source,
+          x1: 90,
+          y1: top + line * 12,
+          x2: 910,
+          y2: top + line * 12 + 1,
+          color: img.ColorRgb8(30, 30, 30),
+        );
+      }
+      img.fillRect(
+        source,
+        x1: 160,
+        y1: top + 65,
+        x2: 840,
+        y2: top + 70,
+        color: img.ColorRgb8(90, 90, 90),
+      );
+    }
+    img.fillRect(
+      source,
+      x1: 490,
+      y1: 865,
+      x2: 510,
+      y2: 875,
+      color: img.ColorRgb8(30, 30, 30),
+    );
+
+    final proposal = const HorizontalRowDetector().detectPageAware(
+      Uint8List.fromList(img.encodePng(source)),
+    );
+
+    expect(proposal.rows, hasLength(3));
+    expect(proposal.rows.first.top, greaterThan(0.08));
+    expect(proposal.rows.last.bottom, lessThan(0.95));
+    expect(proposal.masterLeft, closeTo(0.09, 0.04));
+    expect(proposal.masterRight, closeTo(0.91, 0.04));
+  });
+
+  test('stage density refuses an unprepared portrait page', () {
+    final source = img.Image(width: 600, height: 900);
+    img.fill(source, color: img.ColorRgb8(250, 250, 250));
+    img.fillRect(
+      source,
+      x1: 120,
+      y1: 200,
+      x2: 480,
+      y2: 240,
+      color: img.ColorRgb8(20, 20, 20),
+    );
+
+    expect(
+      () => const VisualImageProcessor().processForExportBatch(
+        Uint8List.fromList(img.encodePng(source)),
+        const [
+          VisualStrip(
+            id: 'portrait',
+            assetHash: 'hash',
+            assetExtension: 'png',
+            pixelWidth: 600,
+            pixelHeight: 900,
+          ),
+        ],
+        maximumRowAspectRatio: 14,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('Split into rows'),
+        ),
+      ),
+    );
+  });
+
+  test('stage density compacts a prepared portrait page into staff rows', () {
+    final source = img.Image(width: 1000, height: 900);
+    img.fill(source, color: img.ColorRgb8(250, 250, 250));
+    for (final top in [180, 430, 680]) {
+      for (var line = 0; line < 4; line += 1) {
+        img.fillRect(
+          source,
+          x1: 90,
+          y1: top + line * 12,
+          x2: 910,
+          y2: top + line * 12 + 1,
+          color: img.ColorRgb8(30, 30, 30),
+        );
+      }
+      img.fillRect(
+        source,
+        x1: 160,
+        y1: top + 65,
+        x2: 840,
+        y2: top + 70,
+        color: img.ColorRgb8(90, 90, 90),
+      );
+    }
+
+    final rows = const VisualImageProcessor().processForExportBatch(
+      Uint8List.fromList(img.encodePng(source)),
+      const [
+        VisualStrip(
+          id: 'portrait',
+          assetHash: 'hash',
+          assetExtension: 'png',
+          pixelWidth: 1000,
+          pixelHeight: 900,
+        ),
+      ],
+      maximumRowAspectRatio: 14,
+    ).single;
+
+    expect(rows, hasLength(3));
+    expect(
+      rows,
+      everyElement(
+        predicate<ProcessedExportImage>(
+          (row) => row.aspectRatio > 4 && row.aspectRatio <= 14,
+        ),
+      ),
+    );
+  });
 }

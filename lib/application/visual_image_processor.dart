@@ -135,10 +135,24 @@ class VisualImageProcessor {
     required double maximumRowAspectRatio,
   }) {
     final rendered = Uint8List.fromList(img.encodePng(image, level: 3));
-    final detected = const HorizontalRowDetector().detect(rendered);
+    final portraitLike =
+        image.width / image.height < splitDetectedRowsBelowAspectRatio;
+    final detector = const HorizontalRowDetector();
+    final detected = portraitLike
+        ? detector.detectPageAware(rendered).rows
+        : detector.detect(rendered);
+    if (portraitLike &&
+        maximumRowAspectRatio.isFinite &&
+        image.width / image.height < 1.4 &&
+        detected.length <= 1) {
+      throw StateError(
+        'This portrait/full-page source has no reviewed tab rows. Open the '
+        'chart and use Split into rows before Balanced or Stage-readable mode.',
+      );
+    }
     final rows = detected.isEmpty
         ? [const NormalizedRect.full()]
-        : image.width / image.height < splitDetectedRowsBelowAspectRatio
+        : portraitLike
         ? detected
         : [NormalizedRect(0, detected.first.top, 1, detected.last.bottom)];
     final safeRows = [

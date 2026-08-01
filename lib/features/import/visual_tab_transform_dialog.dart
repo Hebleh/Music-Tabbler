@@ -143,6 +143,7 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                 tuningSpec: _source.text,
                 onChanged: (value) {
                   _source.text = value;
+                  _preset = _TransformPreset.custom;
                   _refreshRoutes();
                 },
               ),
@@ -155,6 +156,7 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                       tuningSpec: _target.text,
                       onChanged: (value) {
                         _target.text = value;
+                        _preset = _TransformPreset.custom;
                         _refreshRoutes();
                       },
                     ),
@@ -253,6 +255,55 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
               ],
               const SizedBox(height: 14),
               if (preview case final routePreview?) ...[
+                Text(
+                  'Target strings',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  routePreview.targetLabels.length ==
+                          routePreview.sourceLabels.length + 1
+                      ? 'Five-string result: choose exactly one unused target '
+                            'string. The other four receive the source strings '
+                            'in order.'
+                      : 'Every target string is used for this transform.',
+                ),
+                const SizedBox(height: 4),
+                for (
+                  var targetIndex = 0;
+                  targetIndex < routePreview.targetLabels.length;
+                  targetIndex += 1
+                )
+                  SwitchListTile(
+                    key: ValueKey('target-string-enabled-$targetIndex'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: routePreview.routes.any(
+                      (route) => route.targetString == targetIndex,
+                    ),
+                    onChanged:
+                        routePreview.targetLabels.length ==
+                            routePreview.sourceLabels.length + 1
+                        ? (enabled) => _setTargetStringEnabled(
+                            routePreview,
+                            targetIndex,
+                            enabled,
+                          )
+                        : null,
+                    title: Text(
+                      '${targetIndex + 1}. '
+                      '${routePreview.targetLabels[targetIndex]}',
+                    ),
+                    subtitle: Text(
+                      routePreview.routes.any(
+                            (route) => route.targetString == targetIndex,
+                          )
+                          ? 'Used by source string '
+                                '${routePreview.routes.indexWhere((route) => route.targetString == targetIndex) + 1}'
+                          : 'Added target string - unused',
+                    ),
+                  ),
+                const Divider(height: 20),
                 Text(
                   'Source-string routing',
                   style: Theme.of(context).textTheme.titleMedium,
@@ -360,7 +411,10 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
               ],
               onChanged: (value) {
                 if (value == null) return;
-                setState(() => _routeTargets[sourceIndex] = value);
+                setState(() {
+                  _routeTargets[sourceIndex] = value;
+                  _preset = _TransformPreset.custom;
+                });
               },
             ),
           ),
@@ -430,6 +484,39 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
           _selectedChanges.clear();
           _routeTargets = [0, 1, 2, 3];
       }
+      _error = null;
+    });
+  }
+
+  void _setTargetStringEnabled(
+    _TransformRoutePreview preview,
+    int targetIndex,
+    bool enabled,
+  ) {
+    if (preview.targetLabels.length != preview.sourceLabels.length + 1) return;
+    final used = _routeTargets.toSet();
+    final isUsed = used.contains(targetIndex);
+    if (enabled == isUsed) return;
+    setState(() {
+      if (!enabled) {
+        _routeTargets = [
+          for (var index = 0; index < preview.targetLabels.length; index += 1)
+            if (index != targetIndex) index,
+        ];
+      } else {
+        final priorUnused = preview.unusedTargetString;
+        var replacementUnused = preview.targetLabels.length - 1;
+        if (replacementUnused == targetIndex) replacementUnused = 0;
+        if (priorUnused != null && priorUnused != targetIndex) {
+          replacementUnused = priorUnused;
+        }
+        _routeTargets = [
+          for (var index = 0; index < preview.targetLabels.length; index += 1)
+            if (index != replacementUnused) index,
+        ];
+      }
+      _preset = _TransformPreset.custom;
+      _manualOffsets.clear();
       _error = null;
     });
   }

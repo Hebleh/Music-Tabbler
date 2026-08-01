@@ -220,6 +220,10 @@ class VisualTabAnalysis {
             .length,
   );
 
+  /// True when the reviewed row contains source structure and at least one
+  /// usable tab token. This is independent of musical confidence.
+  bool get isSourceUsable => systems.isNotEmpty && enabledFretTokenCount > 0;
+
   VisualTabAnalysis copyWith({
     VisualTabSourceType? sourceType,
     List<VisualTabSystem>? systems,

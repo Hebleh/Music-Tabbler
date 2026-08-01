@@ -226,4 +226,28 @@ void main() {
     expect(unresolvedProposalCount(normalized), 1);
     expect(() => markChartGigReady(normalized), throwsStateError);
   });
+
+  test(
+    'incomplete recognition source cannot be bulk-approved as gig-ready',
+    () {
+      final chart = SongChart.foundationExample().copyWith(
+        recognitionSourceComplete: false,
+        measures: [
+          for (final measure in SongChart.foundationExample().measures)
+            measure.copyWith(
+              verification: VerificationState.verified,
+              notes: [
+                for (final note in measure.notes)
+                  note.copyWith(verification: VerificationState.verified),
+              ],
+            ),
+        ],
+      );
+
+      expect(chart.recognitionSourceComplete, isFalse);
+      expect(() => markChartGigReady(chart), throwsStateError);
+      final restored = SongChart.fromJson(chart.toJson());
+      expect(restored.recognitionSourceComplete, isFalse);
+    },
+  );
 }

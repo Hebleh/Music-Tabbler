@@ -21,7 +21,7 @@ Updated: 1 August 2026
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
 - `flutter analyze` passes with no issues, and the current source suite passes
-  211/211 tests.
+  225/225 tests.
 - The post-Apple Windows repair pass has automated coverage for fresh-page
   setlist boundaries, density-floor compaction, duplicate `.mtsong` identities,
   measure-local source-spaced semantic proposals, per-proposal source review,
@@ -226,12 +226,12 @@ Updated: 1 August 2026
 
 ### Slice 3 - local screenshot/PDF recognition
 
-- **Prototype implemented; not generally usable yet:** rights-safe fixture
-  metrics, local fret/rhythm/technique/section/lyric proposals, source-side
-  correction, and explicit gig-ready verification exist. The reviewed 9mm
-  positioned-PDF path works as an editable proposal, but the Motion Sickness
-  Raster/OCR path analyzes only part of the document and yields an unusable
-  semantic chart (VT-026/VT-027). The manual visual workflow remains supported.
+- **Prototype implemented with explicit completeness gating:** rights-safe
+  fixture metrics, local fret/rhythm/technique/section/lyric proposals,
+  source-side correction, and gig-ready verification exist. All eight local
+  Motion Sickness pages now produce raster analysis, but recognition remains
+  editable proposal data and incomplete sources cannot be bulk-verified or
+  marked gig-ready. The manual visual workflow remains supported.
 
 ### Slice 4 - transformations and safe transfer
 
@@ -253,8 +253,8 @@ For the 16 August 2026 gig, prioritize dependable Windows-created PDFs from user
 
 - Confirm whether macOS becomes a supported full platform after Android.
 - Establish measured stage-readable density through iterative user review.
-- Repair automatic page-to-row preparation and require prepared rows before
-  Stage-readable mode lays out portrait/full-page sources (VT-028/VT-029).
+- Complete user-level stage-distance review of the repaired page-aware row
+  preparation and Stage-readable portrait guard (VT-028/VT-029).
 - Define the annotated fixture corpus and acceptance thresholds for each recognition source.
 - Select Flutter packages only after license, Windows/Android support, and deterministic rendering spikes.
 - Review source terms/content rights before distributing online adapters or deciding repository visibility/license.

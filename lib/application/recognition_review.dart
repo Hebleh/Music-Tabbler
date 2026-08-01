@@ -142,6 +142,12 @@ SongChart verifyAllProposals(SongChart chart) {
 }
 
 SongChart markChartGigReady(SongChart chart) {
+  if (!chart.recognitionSourceComplete) {
+    throw StateError(
+      'Recognition did not cover every accepted source row. Re-run or repair '
+      'the missing rows before marking this chart gig-ready.',
+    );
+  }
   final unresolved = unresolvedProposalCount(chart);
   if (unresolved != 0) {
     throw StateError(

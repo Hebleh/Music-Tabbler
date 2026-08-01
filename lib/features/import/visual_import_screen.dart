@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,7 @@ import 'package:flutter/services.dart';
 import '../../application/app_services.dart';
 import '../../application/draft_edit_session.dart';
 import '../../application/highlight_geometry.dart';
+import '../../application/horizontal_row_detector.dart';
 import '../../application/recognition_review.dart';
 import '../../application/reviewed_visual_recognition.dart';
 import '../../application/semantic_recognition_service.dart';
@@ -122,11 +124,14 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     try {
       final reviewedInputs = _reviewedRecognitionInputs(settings);
       final inputs = reviewedInputs ?? <RecognitionStripInput>[];
+      var sourceComplete = reviewedInputs != null;
       if (reviewedInputs == null) {
+        sourceComplete = true;
         for (final strip in _draft.strips) {
           final recognition = await widget.services.textRecognition.recognize(
             strip,
           );
+          if (recognition.regions.isEmpty) sourceComplete = false;
           inputs.add(
             RecognitionStripInput(
               sourceId: '${strip.assetHash}.${strip.assetExtension}',
@@ -147,12 +152,15 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         strips: inputs,
         tuning: settings.tuning,
       );
+      final freshChart = fresh.chart.copyWith(
+        recognitionSourceComplete: sourceComplete,
+      );
       final prior = await widget.services.semanticCharts.loadSemanticChart(
         chartId,
       );
       final proposal = prior == null
-          ? fresh.chart
-          : mergeRecognitionRerun(prior, fresh.chart);
+          ? freshChart
+          : mergeRecognitionRerun(prior, freshChart);
       final identity = await widget.services.songVariants.identityForDraft(
         _draft.id,
       );
@@ -186,6 +194,16 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   ) {
     final record = _draft.visualTabTransform;
     if (record == null || record.analyses.isEmpty) return null;
+    final analyses = record.analyses
+        .map(VisualTabAnalysis.fromJson)
+        .toList(growable: false);
+    if (analyses.length != record.baseStrips.length ||
+        analyses.any((analysis) => !analysis.isSourceUsable)) {
+      throw StateError(
+        'Reviewed visual analysis is incomplete. Re-open Visual tab transform '
+        'and repair or retry every source row before semantic recognition.',
+      );
+    }
     return reviewedVisualRecognitionInputs(
       record: record,
       tuning: settings.tuning,
@@ -904,6 +922,64 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
             _titleController.text.trim() == 'Untitled chart');
     _commitDraft(_draft.copyWith(strips: [..._draft.strips, ...additions]));
     if (shouldRecognize) unawaited(_recognizeMetadata(additions.first));
+    unawaited(_autoPrepareImportedPages(additions));
+  }
+
+  Future<void> _autoPrepareImportedPages(List<VisualStrip> additions) async {
+    final proposals = <String, Map<String, Object?>>{};
+    for (final strip in additions) {
+      if (strip.crop != const NormalizedRect.full()) continue;
+      try {
+        final proposal = await compute(_detectImportedPageRows, {
+          'path': widget.services.library.assetPath(
+            strip.assetHash,
+            strip.assetExtension,
+          ),
+        });
+        if ((proposal['rows']! as List).length > 1) {
+          proposals[strip.id] = proposal;
+        }
+      } catch (_) {
+        // Automatic preparation is assistive. The original full page remains
+        // available through the manual Split into rows workflow.
+      }
+    }
+    if (!mounted || proposals.isEmpty) return;
+    final currentIds = _draft.strips.map((strip) => strip.id).toSet();
+    if (!proposals.keys.every(currentIds.contains)) return;
+    final prepared = <VisualStrip>[];
+    var createdRows = 0;
+    for (final strip in _draft.strips) {
+      final proposal = proposals[strip.id];
+      if (proposal == null || strip.crop != const NormalizedRect.full()) {
+        prepared.add(strip);
+        continue;
+      }
+      final rows = [
+        for (final value in proposal['rows']! as List)
+          NormalizedRect.fromJson((value as Map).cast<String, Object?>()),
+      ];
+      final masterLeft = (proposal['masterLeft']! as num).toDouble();
+      final masterRight = (proposal['masterRight']! as num).toDouble();
+      for (final row in rows) {
+        prepared.add(
+          _resplitStrip(row, [strip]).copyWith(
+            splitMasterLeft: masterLeft,
+            splitMasterRight: masterRight,
+          ),
+        );
+      }
+      createdRows += rows.length;
+    }
+    _commitDraft(_draft.copyWith(strips: prepared));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Prepared $createdRows editable tab rows automatically. Ctrl+Z '
+          'restores the original imported pages.',
+        ),
+      ),
+    );
   }
 
   Future<void> _recognizeMetadata(VisualStrip strip) async {
@@ -1359,6 +1435,16 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
 }
 
 enum _ImportKind { images, pdf, clipboard }
+
+Map<String, Object?> _detectImportedPageRows(Map<String, Object?> request) {
+  final bytes = File(request['path']! as String).readAsBytesSync();
+  final proposal = const HorizontalRowDetector().detectPageAware(bytes);
+  return {
+    'rows': [for (final row in proposal.rows) row.toJson()],
+    'masterLeft': proposal.masterLeft,
+    'masterRight': proposal.masterRight,
+  };
+}
 
 class _ProvenanceDialogResult {
   const _ProvenanceDialogResult({this.value, this.remove = false});

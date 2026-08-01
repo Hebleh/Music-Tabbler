@@ -103,18 +103,28 @@ class _ResizableRectOverlayState extends State<ResizableRectOverlay> {
       _Handle.left => pixelRect.centerLeft,
     };
     const hitSize = 28.0;
+    final left = (point.dx - hitSize / 2).clamp(
+      0.0,
+      (widget.canvasSize.width - hitSize).clamp(0.0, double.infinity),
+    );
+    final top = (point.dy - hitSize / 2).clamp(
+      0.0,
+      (widget.canvasSize.height - hitSize).clamp(0.0, double.infinity),
+    );
     return Positioned(
-      left: point.dx - hitSize / 2,
-      top: point.dy - hitSize / 2,
+      left: left,
+      top: top,
       width: hitSize,
       height: hitSize,
       child: GestureDetector(
+        key: ValueKey('resize-handle-${handle.name}'),
         behavior: HitTestBehavior.opaque,
         onPanStart: (details) => _startGesture(details.globalPosition),
         onPanUpdate: (details) => _resize(handle, details.globalPosition),
         onPanEnd: (_) => _endGesture(),
         onPanCancel: _endGesture,
-        child: Center(
+        child: Align(
+          alignment: handle.alignment,
           child: Container(
             width: 11,
             height: 11,
@@ -194,4 +204,15 @@ enum _Handle {
   bool get usesTop => this == topLeft || this == top || this == topRight;
   bool get usesBottom =>
       this == bottomLeft || this == bottom || this == bottomRight;
+
+  Alignment get alignment => switch (this) {
+    topLeft => Alignment.topLeft,
+    top => Alignment.topCenter,
+    topRight => Alignment.topRight,
+    right => Alignment.centerRight,
+    bottomRight => Alignment.bottomRight,
+    bottom => Alignment.bottomCenter,
+    bottomLeft => Alignment.bottomLeft,
+    left => Alignment.centerLeft,
+  };
 }

@@ -4,6 +4,18 @@ import 'package:image/image.dart' as img;
 
 import '../domain/visual_chart_models.dart';
 
+class PageRowProposal {
+  const PageRowProposal({
+    required this.rows,
+    required this.masterLeft,
+    required this.masterRight,
+  });
+
+  final List<NormalizedRect> rows;
+  final double masterLeft;
+  final double masterRight;
+}
+
 class HorizontalRowDetector {
   const HorizontalRowDetector({
     this.minimumGapFraction = 0.012,
@@ -14,6 +26,71 @@ class HorizontalRowDetector {
   final double minimumGapFraction;
   final int minimumGapPixels;
   final int maximumRows;
+
+  /// Produces editable page-level row proposals. Compared with [detect], this
+  /// trims header/footer content around the repeated staff systems and derives
+  /// conservative common side crops. The original pixels remain untouched.
+  PageRowProposal detectPageAware(
+    Uint8List sourceBytes, {
+    NormalizedRect sourceRect = const NormalizedRect.full(),
+  }) {
+    var image = img.decodeImage(sourceBytes);
+    if (image == null) {
+      return PageRowProposal(
+        rows: [sourceRect],
+        masterLeft: sourceRect.left,
+        masterRight: sourceRect.right,
+      );
+    }
+    image = img.bakeOrientation(image);
+    final detected = detect(sourceBytes, sourceRect: sourceRect);
+    final background = _backgroundLuminance(
+      image,
+      (sourceRect.left * image.width).floor().clamp(0, image.width - 1),
+      (sourceRect.top * image.height).floor().clamp(0, image.height - 1),
+      (sourceRect.right * image.width).ceil().clamp(1, image.width),
+      (sourceRect.bottom * image.height).ceil().clamp(1, image.height),
+    );
+    final results = <(NormalizedRect, (double, double)?)>[];
+    for (final row in detected) {
+      results.add(_tightenPageRow(image, row, background));
+    }
+    final staffedResults = results
+        .where((result) => result.$2 != null)
+        .toList(growable: false);
+    // A page with several confirmed staff rows may also contain title and page
+    // number bands. Exclude those non-staff bands from automatic proposals;
+    // retain the conservative detector result when staff evidence is sparse.
+    final retained = staffedResults.length >= 2 ? staffedResults : results;
+    final tightened = retained.map((result) => result.$1).toList();
+    final sideBounds = staffedResults.map((result) => result.$2!).toList();
+    if (sideBounds.isEmpty) {
+      return PageRowProposal(
+        rows: tightened,
+        masterLeft: sourceRect.left,
+        masterRight: sourceRect.right,
+      );
+    }
+    final lefts = sideBounds.map((value) => value.$1).toList()..sort();
+    final rights = sideBounds.map((value) => value.$2).toList()..sort();
+    final medianLeft = lefts[lefts.length ~/ 2];
+    final medianRight = rights[rights.length ~/ 2];
+    final padding = sourceRect.width * 0.012;
+    final masterLeft = (medianLeft - padding)
+        .clamp(sourceRect.left, sourceRect.right - 0.02)
+        .toDouble();
+    final masterRight = (medianRight + padding)
+        .clamp(masterLeft + 0.02, sourceRect.right)
+        .toDouble();
+    return PageRowProposal(
+      rows: [
+        for (final row in tightened)
+          NormalizedRect(masterLeft, row.top, masterRight, row.bottom),
+      ],
+      masterLeft: masterLeft,
+      masterRight: masterRight,
+    );
+  }
 
   List<NormalizedRect> detect(
     Uint8List sourceBytes, {
@@ -206,7 +283,97 @@ class HorizontalRowDetector {
       pixel.r.toDouble() * 0.299 +
       pixel.g.toDouble() * 0.587 +
       pixel.b.toDouble() * 0.114;
+
+  (NormalizedRect, (double, double)?) _tightenPageRow(
+    img.Image image,
+    NormalizedRect row,
+    double background,
+  ) {
+    final left = (row.left * image.width).floor().clamp(0, image.width - 1);
+    final right = (row.right * image.width).ceil().clamp(left + 1, image.width);
+    final top = (row.top * image.height).floor().clamp(0, image.height - 1);
+    final bottom = (row.bottom * image.height).ceil().clamp(
+      top + 1,
+      image.height,
+    );
+    final stepX = ((right - left) / 900).ceil().clamp(1, right - left);
+    final wideYs = <int>[];
+    for (var y = top; y < bottom; y += 1) {
+      var ink = 0;
+      var samples = 0;
+      for (var x = left; x < right; x += stepX) {
+        final distance = (_luminance(image.getPixel(x, y)) - background).abs();
+        if (distance >= 16) {
+          ink += 1;
+        }
+        samples += 1;
+      }
+      // Staff lines span most of the usable row width. A lower threshold lets
+      // large title glyphs masquerade as a four-line tab system.
+      if (samples > 0 && ink / samples >= 0.42) {
+        wideYs.add(y);
+      }
+    }
+    if (wideYs.isEmpty) return (row, null);
+    final runs = <(int, int)>[];
+    var runStart = wideYs.first;
+    var runEnd = wideYs.first;
+    for (final y in wideYs.skip(1)) {
+      if (y <= runEnd + 1) {
+        runEnd = y;
+      } else {
+        runs.add((runStart, runEnd));
+        runStart = y;
+        runEnd = y;
+      }
+    }
+    runs.add((runStart, runEnd));
+    (int, int)? staffBand;
+    final maximumStaffSpan = (image.height * 0.08).round().clamp(20, 140);
+    for (var index = 0; index + 2 < runs.length; index += 1) {
+      for (var end = index + 2; end < runs.length; end += 1) {
+        if (runs[end].$2 - runs[index].$1 > maximumStaffSpan) break;
+        if (end - index + 1 >= 3) {
+          staffBand = (runs[index].$1, runs[end].$2);
+        }
+      }
+      if (staffBand != null) break;
+    }
+    if (staffBand == null) return (row, null);
+    var inkLeft = right;
+    var inkRight = left;
+    for (var y = staffBand.$1; y <= staffBand.$2; y += 1) {
+      for (var x = left; x < right; x += stepX) {
+        final distance = (_luminance(image.getPixel(x, y)) - background).abs();
+        if (distance < 16) continue;
+        inkLeft = mathMin(inkLeft, x);
+        inkRight = mathMax(inkRight, x);
+      }
+    }
+    final topGuard = (image.height * 0.035).round().clamp(4, 90);
+    final bottomGuard = (image.height * 0.045).round().clamp(6, 110);
+    final tightenedTop = (staffBand.$1 - topGuard)
+        .clamp(top, bottom - 1)
+        .toInt();
+    final tightenedBottom = (staffBand.$2 + bottomGuard)
+        .clamp(tightenedTop + 1, bottom)
+        .toInt();
+    return (
+      NormalizedRect(
+        row.left,
+        tightenedTop / image.height,
+        row.right,
+        tightenedBottom / image.height,
+      ).clamp(),
+      inkRight > inkLeft
+          ? (inkLeft / image.width, (inkRight + stepX) / image.width)
+          : null,
+    );
+  }
 }
+
+int mathMin(int left, int right) => left < right ? left : right;
+int mathMax(int left, int right) => left > right ? left : right;
 
 class _WideLineCluster {
   _WideLineCluster(this.first) : last = first, count = 1, runs = 1;

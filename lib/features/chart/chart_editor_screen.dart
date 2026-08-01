@@ -1200,7 +1200,7 @@ class _RecognitionReviewPanel extends StatelessWidget {
                 Wrap(
                   spacing: 8,
                   children: [
-                    if (unresolved > 0)
+                    if (unresolved > 0 && chart.recognitionSourceComplete)
                       OutlinedButton(
                         onPressed: onVerifyAll,
                         child: const Text('Verify all'),
@@ -1211,13 +1211,24 @@ class _RecognitionReviewPanel extends StatelessWidget {
                         child: const Text('Reject selected'),
                       ),
                     FilledButton(
-                      onPressed: unresolved == 0 ? onMarkGigReady : null,
+                      onPressed:
+                          unresolved == 0 && chart.recognitionSourceComplete
+                          ? onMarkGigReady
+                          : null,
                       child: const Text('Mark gig-ready'),
                     ),
                   ],
                 ),
               ],
             ),
+            if (!chart.recognitionSourceComplete) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Incomplete source analysis: at least one imported row or '
+                'page produced no usable recognition result. Re-run Visual '
+                'tab analysis before verifying this chart.',
+              ),
+            ],
             if (selectedNote?.verification == VerificationState.proposed) ...[
               const SizedBox(height: 10),
               Text(

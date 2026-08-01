@@ -51,23 +51,29 @@ class _VisualTabAnalysisReviewScreen extends StatefulWidget {
 
 class _VisualTabAnalysisReviewScreenState
     extends State<_VisualTabAnalysisReviewScreen> {
-  final List<VisualTabAnalysis> _analyses = [];
+  late final List<VisualTabAnalysis?> _analyses;
+  late final List<_AnalysisRowState> _rowStates;
+  final Map<int, Object> _rowErrors = {};
   final Set<String> _selectedTokenIds = {};
   var _currentIndex = 0;
   var _processed = 0;
-  Object? _error;
-  int? _errorRow;
   bool _rerunningSource = false;
   bool _drawing = false;
   Offset? _drawStart;
   Offset? _drawEnd;
 
-  VisualStrip get _strip => widget.strips[_currentIndex];
-  VisualTabAnalysis get _analysis => _analyses[_currentIndex];
+  VisualTabAnalysis get _analysis => _analyses[_currentIndex]!;
+  VisualTabAnalysis? get _currentAnalysis =>
+      _analyses.isEmpty ? null : _analyses[_currentIndex];
 
   @override
   void initState() {
     super.initState();
+    _analyses = List<VisualTabAnalysis?>.filled(widget.strips.length, null);
+    _rowStates = List<_AnalysisRowState>.filled(
+      widget.strips.length,
+      _AnalysisRowState.waiting,
+    );
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     _run();
   }
@@ -88,32 +94,50 @@ class _VisualTabAnalysisReviewScreenState
   }
 
   Future<void> _run() async {
-    for (final (index, strip) in widget.strips.indexed) {
-      try {
-        final analysis = await widget.analyzer.analyze(
-          strip,
-          sourceStringCount: widget.sourceStringCount,
-        );
-        if (!mounted) return;
-        setState(() {
-          _analyses.add(analysis);
-          _processed = _analyses.length;
-        });
-      } catch (error) {
-        if (mounted) {
-          setState(() {
-            _error = error;
-            _errorRow = index;
-          });
-        }
-        return;
-      }
+    for (var index = 0; index < widget.strips.length; index += 1) {
+      await _analyzeIndex(index);
+      if (!mounted) return;
+    }
+  }
+
+  Future<void> _analyzeIndex(
+    int index, {
+    bool preferPositionedPdf = true,
+  }) async {
+    if (!mounted) return;
+    setState(() {
+      _rowStates[index] = _AnalysisRowState.analyzing;
+      _rowErrors.remove(index);
+    });
+    try {
+      final analysis = await widget.analyzer.analyze(
+        widget.strips[index],
+        sourceStringCount: widget.sourceStringCount,
+        preferPositionedPdf: preferPositionedPdf,
+      );
+      if (!mounted) return;
+      setState(() {
+        _analyses[index] = analysis;
+        _rowStates[index] = _AnalysisRowState.completed;
+        _processed = _rowStates
+            .where((state) => state == _AnalysisRowState.completed)
+            .length;
+        if (_currentAnalysis == null) _currentIndex = index;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _rowStates[index] = _AnalysisRowState.failed;
+        _rowErrors[index] = error;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final complete = _processed == widget.strips.length && _error == null;
+    final complete =
+        _rowStates.every((state) => state == _AnalysisRowState.completed) &&
+        _analyses.every((analysis) => analysis?.isSourceUsable ?? false);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Review visual tab analysis'),
@@ -123,7 +147,7 @@ class _VisualTabAnalysisReviewScreenState
           icon: const Icon(Icons.close),
         ),
         actions: [
-          if (_analyses.isNotEmpty)
+          if (_currentAnalysis != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Center(
@@ -134,7 +158,9 @@ class _VisualTabAnalysisReviewScreenState
             onPressed: complete
                 ? () => Navigator.pop(
                     context,
-                    List<VisualTabAnalysis>.unmodifiable(_analyses),
+                    List<VisualTabAnalysis>.unmodifiable(
+                      _analyses.whereType<VisualTabAnalysis>(),
+                    ),
                   )
                 : null,
             icon: const Icon(Icons.check),
@@ -148,21 +174,6 @@ class _VisualTabAnalysisReviewScreenState
   }
 
   Widget _buildBody(bool complete) {
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'Visual tab analysis failed on row '
-            '${(_errorRow ?? _processed) + 1} after $_processed completed '
-            'row(s): $_error',
-          ),
-        ),
-      );
-    }
-    if (_analyses.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
     return Column(
       children: [
         if (!complete)
@@ -171,94 +182,106 @@ class _VisualTabAnalysisReviewScreenState
                 ? null
                 : _processed / widget.strips.length,
           ),
-        Material(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                DropdownButton<int>(
-                  value: _currentIndex,
-                  items: [
-                    for (var index = 0; index < _analyses.length; index += 1)
-                      DropdownMenuItem(
-                        value: index,
-                        child: Text('Row ${index + 1}'),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() {
-                      _currentIndex = value;
-                      _selectedTokenIds.clear();
-                    });
-                  },
-                ),
-                Chip(
-                  avatar: Icon(
-                    _analysis.sourceType == VisualTabSourceType.positionedPdf
-                        ? Icons.picture_as_pdf_outlined
-                        : Icons.document_scanner_outlined,
+        if (_currentAnalysis != null)
+          Material(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  DropdownButton<int>(
+                    value: _currentIndex,
+                    items: [
+                      for (var index = 0; index < _analyses.length; index += 1)
+                        DropdownMenuItem(
+                          value: index,
+                          enabled: _analyses[index] != null,
+                          child: Text('Row ${index + 1}'),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _currentIndex = value;
+                        _selectedTokenIds.clear();
+                      });
+                    },
                   ),
-                  label: Text(
-                    _analysis.sourceType == VisualTabSourceType.positionedPdf
-                        ? 'Positioned PDF text'
-                        : 'Raster / OCR',
+                  Chip(
+                    avatar: Icon(
+                      _analysis.sourceType == VisualTabSourceType.positionedPdf
+                          ? Icons.picture_as_pdf_outlined
+                          : Icons.document_scanner_outlined,
+                    ),
+                    label: Text(
+                      _analysis.sourceType == VisualTabSourceType.positionedPdf
+                          ? 'Positioned PDF text'
+                          : 'Raster / OCR',
+                    ),
                   ),
-                ),
-                Text(
-                  '${_analysis.systems.length} system(s), '
-                  '${_analysis.enabledFretTokenCount} fret/dead-note token(s)',
-                ),
-                OutlinedButton.icon(
-                  onPressed: _rerunningSource ? null : _rerunCurrentWithOcr,
-                  icon: _rerunningSource
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.document_scanner_outlined),
-                  label: const Text('Use raster / OCR'),
-                ),
-                FilterChip(
-                  selected: _drawing,
-                  avatar: const Icon(Icons.add_box_outlined),
-                  label: const Text('Draw missing token'),
-                  onSelected: (value) => setState(() => _drawing = value),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _selectedTokenIds.length == 1
-                      ? _editSelected
-                      : null,
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Edit'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _selectedTokenIds.length > 1
-                      ? _mergeSelected
-                      : null,
-                  icon: const Icon(Icons.call_merge),
-                  label: const Text('Merge'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _selectedTokenIds.length == 1
-                      ? _splitSelected
-                      : null,
-                  icon: const Icon(Icons.call_split),
-                  label: const Text('Separate'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _selectedTokenIds.isEmpty ? null : _deleteSelected,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Delete'),
-                ),
-              ],
+                  Text(
+                    '${_analysis.systems.length} system(s), '
+                    '${_analysis.enabledFretTokenCount} fret/dead-note token(s)',
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _rerunningSource ? null : _rerunCurrentWithOcr,
+                    icon: _rerunningSource
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.document_scanner_outlined),
+                    label: const Text('Use raster / OCR'),
+                  ),
+                  OutlinedButton.icon(
+                    key: const ValueKey('raster-ocr-all-rows'),
+                    onPressed: _rerunningSource || widget.strips.isEmpty
+                        ? null
+                        : _rerunAllWithOcr,
+                    icon: const Icon(Icons.document_scanner),
+                    label: const Text('Raster / OCR all rows'),
+                  ),
+                  FilterChip(
+                    selected: _drawing,
+                    avatar: const Icon(Icons.add_box_outlined),
+                    label: const Text('Draw missing token'),
+                    onSelected: (value) => setState(() => _drawing = value),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _selectedTokenIds.length == 1
+                        ? _editSelected
+                        : null,
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Edit'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _selectedTokenIds.length > 1
+                        ? _mergeSelected
+                        : null,
+                    icon: const Icon(Icons.call_merge),
+                    label: const Text('Merge'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _selectedTokenIds.length == 1
+                        ? _splitSelected
+                        : null,
+                    icon: const Icon(Icons.call_split),
+                    label: const Text('Separate'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _selectedTokenIds.isEmpty
+                        ? null
+                        : _deleteSelected,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Delete'),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -269,13 +292,19 @@ class _VisualTabAnalysisReviewScreenState
                   padding: const EdgeInsets.all(12),
                   itemCount: widget.strips.length,
                   itemBuilder: (context, index) {
-                    if (index >= _analyses.length) {
+                    final analysis = _analyses[index];
+                    if (analysis == null) {
                       return _AnalysisRowPlaceholder(
                         key: ValueKey('analysis-placeholder-$index'),
                         rowNumber: index + 1,
+                        strip: widget.strips[index],
+                        state: _rowStates[index],
+                        error: _rowErrors[index],
+                        onRetry: _rowStates[index] == _AnalysisRowState.failed
+                            ? () => _analyzeIndex(index)
+                            : null,
                       );
                     }
-                    final analysis = _analyses[index];
                     final confidence = _analysisConfidence(analysis);
                     final ambiguities = analysis.systems.fold<int>(
                       0,
@@ -371,99 +400,114 @@ class _VisualTabAnalysisReviewScreenState
               ),
               SizedBox(
                 width: 330,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                    border: Border(
-                      left: BorderSide(color: Theme.of(context).dividerColor),
+                child: Material(
+                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border(
+                        left: BorderSide(color: Theme.of(context).dividerColor),
+                      ),
                     ),
-                  ),
-                  child: ListView(
-                    padding: const EdgeInsets.all(8),
-                    children: [
-                      if (_analysis.warnings.isNotEmpty) ...[
-                        for (final warning in _analysis.warnings)
-                          ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.warning_amber_outlined),
-                            title: Text(warning),
-                          ),
-                        const Divider(),
-                      ],
-                      for (final system in _analysis.systems) ...[
-                        ListTile(
-                          dense: true,
-                          title: Text(
-                            'System ${_analysis.systems.indexOf(system) + 1}',
-                          ),
-                          subtitle: Text(
-                            '${system.stringLines.length} strings · '
-                            '${system.barLines.length} bar lines · '
-                            '${system.connectedNotationRisks.length} seam risk(s)',
-                          ),
-                        ),
-                        for (final risk in system.connectedNotationRisks)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child:
-                                DropdownButtonFormField<
-                                  VisualConnectedComponentSide
-                                >(
-                                  initialValue: risk.side,
-                                  decoration: InputDecoration(
-                                    isDense: true,
-                                    labelText:
-                                        'Gap ${risk.gapIndex + 1} component',
-                                    helperText:
-                                        'Choose which side moves as one piece.',
-                                  ),
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: VisualConnectedComponentSide
-                                          .unresolved,
-                                      child: Text('Needs review'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: VisualConnectedComponentSide.upper,
-                                      child: Text('Move with upper string'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: VisualConnectedComponentSide.lower,
-                                      child: Text('Move with lower string'),
-                                    ),
-                                  ],
-                                  onChanged: (side) {
-                                    if (side != null) {
-                                      _setRiskSide(system.id, risk.id, side);
-                                    }
-                                  },
-                                ),
-                          ),
-                        for (final token in system.tokens)
-                          CheckboxListTile(
-                            dense: true,
-                            value: _selectedTokenIds.contains(token.id),
-                            onChanged: (_) => _toggleToken(token.id),
-                            secondary: Icon(
-                              token.enabled
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
+                    child: ListView(
+                      padding: const EdgeInsets.all(8),
+                      children: [
+                        if (_currentAnalysis == null)
+                          const ListTile(
+                            title: Text('Select a completed row to review it.'),
+                          )
+                        else if (_analysis.warnings.isNotEmpty) ...[
+                          for (final warning in _analysis.warnings)
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.warning_amber_outlined),
+                              title: Text(warning),
                             ),
-                            title: Text(
-                              token.text,
-                              style: TextStyle(
-                                decoration: token.enabled
-                                    ? null
-                                    : TextDecoration.lineThrough,
+                          const Divider(),
+                        ],
+                        if (_currentAnalysis != null)
+                          for (final system in _analysis.systems) ...[
+                            ListTile(
+                              dense: true,
+                              title: Text(
+                                'System ${_analysis.systems.indexOf(system) + 1}',
+                              ),
+                              subtitle: Text(
+                                '${system.stringLines.length} strings · '
+                                '${system.barLines.length} bar lines · '
+                                '${system.connectedNotationRisks.length} seam risk(s)',
                               ),
                             ),
-                            subtitle: Text(
-                              '${token.kind.name} · '
-                              '${token.stringIndex == null ? "no string" : "string ${token.stringIndex! + 1}"}',
-                            ),
-                          ),
+                            for (final risk in system.connectedNotationRisks)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                child:
+                                    DropdownButtonFormField<
+                                      VisualConnectedComponentSide
+                                    >(
+                                      initialValue: risk.side,
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        labelText:
+                                            'Gap ${risk.gapIndex + 1} component',
+                                        helperText:
+                                            'Choose which side moves as one piece.',
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(
+                                          value: VisualConnectedComponentSide
+                                              .unresolved,
+                                          child: Text('Needs review'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: VisualConnectedComponentSide
+                                              .upper,
+                                          child: Text('Move with upper string'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: VisualConnectedComponentSide
+                                              .lower,
+                                          child: Text('Move with lower string'),
+                                        ),
+                                      ],
+                                      onChanged: (side) {
+                                        if (side != null) {
+                                          _setRiskSide(
+                                            system.id,
+                                            risk.id,
+                                            side,
+                                          );
+                                        }
+                                      },
+                                    ),
+                              ),
+                            for (final token in system.tokens)
+                              CheckboxListTile(
+                                dense: true,
+                                value: _selectedTokenIds.contains(token.id),
+                                onChanged: (_) => _toggleToken(token.id),
+                                secondary: Icon(
+                                  token.enabled
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                ),
+                                title: Text(
+                                  token.text,
+                                  style: TextStyle(
+                                    decoration: token.enabled
+                                        ? null
+                                        : TextDecoration.lineThrough,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${token.kind.name} · '
+                                  '${token.stringIndex == null ? "no string" : "string ${token.stringIndex! + 1}"}',
+                                ),
+                              ),
+                          ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -508,18 +552,23 @@ class _VisualTabAnalysisReviewScreenState
       _selectedTokenIds.clear();
     });
     try {
-      final analysis = await widget.analyzer.analyze(
-        _strip,
-        sourceStringCount: widget.sourceStringCount,
-        preferPositionedPdf: false,
-      );
-      if (!mounted) return;
-      setState(() => _analyses[_currentIndex] = analysis);
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Raster / OCR analysis failed: $error')),
-      );
+      await _analyzeIndex(_currentIndex, preferPositionedPdf: false);
+    } finally {
+      if (mounted) setState(() => _rerunningSource = false);
+    }
+  }
+
+  Future<void> _rerunAllWithOcr() async {
+    setState(() {
+      _rerunningSource = true;
+      _selectedTokenIds.clear();
+    });
+    try {
+      for (var index = 0; index < widget.strips.length; index += 1) {
+        if (!mounted) return;
+        setState(() => _currentIndex = index);
+        await _analyzeIndex(index, preferPositionedPdf: false);
+      }
     } finally {
       if (mounted) setState(() => _rerunningSource = false);
     }
@@ -885,27 +934,61 @@ NormalizedRect _boundingRect(Iterable<NormalizedRect> rects) {
   return NormalizedRect(left, top, right, bottom);
 }
 
+enum _AnalysisRowState { waiting, analyzing, completed, failed }
+
 class _AnalysisRowPlaceholder extends StatelessWidget {
-  const _AnalysisRowPlaceholder({super.key, required this.rowNumber});
+  const _AnalysisRowPlaceholder({
+    super.key,
+    required this.rowNumber,
+    required this.strip,
+    required this.state,
+    this.error,
+    this.onRetry,
+  });
 
   final int rowNumber;
+  final VisualStrip strip;
+  final _AnalysisRowState state;
+  final Object? error;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: SizedBox(
-        height: 150,
+      child: AspectRatio(
+        aspectRatio: strip.croppedAspectRatio,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              const SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+              if (state == _AnalysisRowState.analyzing)
+                const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(
+                  state == _AnalysisRowState.failed
+                      ? Icons.error_outline
+                      : Icons.hourglass_empty,
+                ),
               const SizedBox(width: 12),
-              Text('Row $rowNumber · waiting for local analysis'),
+              Expanded(
+                child: Text(
+                  state == _AnalysisRowState.failed
+                      ? 'Row $rowNumber failed: $error'
+                      : state == _AnalysisRowState.analyzing
+                      ? 'Row $rowNumber - analyzing locally'
+                      : 'Row $rowNumber - waiting for local analysis',
+                ),
+              ),
+              if (onRetry != null)
+                TextButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry row'),
+                ),
             ],
           ),
         ),
@@ -977,18 +1060,18 @@ class _AnalysisCanvasState extends State<_AnalysisCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Uint8List>(
-      future: _preview,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(child: Text('Preview unavailable'));
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return AspectRatio(
-          aspectRatio: widget.strip.croppedAspectRatio,
-          child: LayoutBuilder(
+    return AspectRatio(
+      aspectRatio: widget.strip.croppedAspectRatio,
+      child: FutureBuilder<Uint8List>(
+        future: _preview,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(child: Text('Preview unavailable'));
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return LayoutBuilder(
             builder: (context, constraints) {
               Offset normalize(Offset local) => Offset(
                 (local.dx / constraints.maxWidth).clamp(0.0, 1.0),
@@ -1053,9 +1136,9 @@ class _AnalysisCanvasState extends State<_AnalysisCanvas> {
                 ),
               );
             },
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
