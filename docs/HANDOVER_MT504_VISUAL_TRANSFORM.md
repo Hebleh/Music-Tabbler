@@ -1,5 +1,9 @@
 # MT-504–MT-506 visual-transform checkpoint
 
+> Historical checkpoint: superseded by `HANDOVER.md`, `CURRENT_STATUS.md`, and
+> the VT ledger after Apple validation and the Windows post-Apple regression.
+> Counts and branch details below intentionally describe that earlier snapshot.
+
 Last updated: 29 July 2026
 
 ## Stop point

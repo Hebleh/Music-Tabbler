@@ -46,14 +46,18 @@ Only a verified sprint merges into `master`.
 
 ## Current checkpoint
 
-MT-107 through MT-601 (except the hardware-gated MT-602 Apple feasibility
-checkpoint) are implemented on stacked contract branches. The current Windows
-source passes 201 automated tests and static analysis. The consolidated Windows
-Computer Use pass confirmed the primary visual, setlist, preview, gig,
-recognition-review, and local provenance flows. The long-chart wheel path and
-Gig loading/cache fixes have also passed focused Computer Use regression. The
-current checkpoint is
-`v0.2.0-beta.1+2`; Android hardware verification remains required.
+MT-107 through MT-601 are implemented on the stacked feature history now
+continued by `codex/windows-post-apple-regression`. MT-602 macOS/iOS Simulator
+feasibility is complete. The current Windows source passes 211 automated tests
+and static analysis; the last public artifact checkpoint remains
+`v0.2.0-beta.1+2` and has not been replaced by this development branch.
+
+The reliable manual PDF/image workflow, setlists, portable state, semantic
+domain/editor, and visual transforms exist. General full-document Raster/OCR
+and semantic intake are not accepted as reliable: VT-026 and VT-027 reproduce
+an incomplete Motion Sickness path. Stage-readable handling of unsplit source
+pages is also open as VT-028. VT-025 through VT-031 are the next repair batch.
+Physical Android hardware verification remains required.
 
 - [x] Preserve `mvp/v0.1.0` at the MVP checkpoint.
 - [x] Keep `master` as the stable integration branch.
@@ -61,12 +65,12 @@ current checkpoint is
 - [x] MT-101 Stage-density profiles.
 - [x] MT-104 Versioned migrations and stable identities.
 - [x] MT-106 Ordered setlist repository.
-- [~] MT-107 Setlist editor UI.
+- [~] MT-107 Setlist editor UI (implemented; combined user gate remains).
   - [x] Create, rename, delete, open, reorder, duplicate, and remove entries.
   - [x] Automated narrow-layout and reference-safety coverage.
-  - [~] Resolve referenced-chart deletion clearly and atomically.
-  - [~] Add named, light-red non-playing placeholders.
-  - [~] Extract the ordered list into a reusable setlist sidebar/panel for
+  - [x] Resolve referenced-chart deletion clearly and atomically.
+  - [x] Add named, light-red non-playing placeholders.
+  - [x] Extract the ordered list into a reusable setlist sidebar/panel for
     later gig-mode composition.
   - [~] User verification deferred into the combined MT-107/MT-108 test cycle.
 - [~] MT-108 Combined setlist A4 export.
@@ -81,8 +85,8 @@ current checkpoint is
   - [x] Fail by set item for missing, empty, or unreadable charts.
   - [x] Stage completed bytes before replacing the chosen destination.
   - [~] Real-setlist visual verification and merge gate.
-- [~] MT-105 Persistent per-device preferences, if it does not endanger the
-  gig-critical PDF path.
+- [~] MT-105 Persistent per-device preferences (implemented; physical-device
+  persistence gate remains).
 
 MT-102 master-crop persistence and MT-103 Japanese OCR diagnostics remain
 documented debt unless they materially block gig preparation.
@@ -199,14 +203,14 @@ documented debt unless they materially block gig preparation.
 
 - [x] **MT-601 — Reversible visual deskew**
   - Preview/apply/reset geometry without modifying original assets.
-- [!] **MT-602 — macOS/iOS feasibility checkpoint**
+- [x] **MT-602 — macOS/iOS feasibility checkpoint**
   - macOS and iOS Simulator feasibility is established on the MacBook Air:
     builds launch, the disposable Windows library survives import/reopen, real
     PDFs import/export, semantic review works, and representative iPhone/iPad
     layouts have been inspected.
-  - Integration remains gated on the consolidated Windows/Android regression,
-    physical iPhone/signing behavior, and the deferred manual/hardware items;
-    Simulator evidence is not an installable iPhone release.
+  - Simulator evidence is not an installable iPhone release. Physical iPhone
+    testing is outside the current hardware scope because the user has no
+    iPhone; it is not required to preserve the feasibility result.
 
 ## Legal and open-source boundary
 
@@ -242,8 +246,9 @@ Every contract must:
 
 ## Gig priority
 
-Before the 16 August 2026 gig, prioritize reliable Windows-created, stage-readable
-PDFs from user-supplied screenshots/PDFs, ordered setlists, and backing-vocal
-highlights. Android parity, gig mode, annotations, semantic recognition,
-transformations, portable state, online adapters, deskew, and Apple platforms
-must not endanger that fallback and should normally remain post-gig work.
+Before the 16 August 2026 gig, prioritize reliable Windows-created PDFs from
+user-supplied screenshots/PDFs, ordered setlists, and backing-vocal highlights.
+Android testing may continue, but it must not endanger that fallback. Treat
+semantic recognition and Stage-readable Gig mode as experimental until
+VT-026-to-VT-029 pass real-fixture validation. Online adapters remain legally
+gated.

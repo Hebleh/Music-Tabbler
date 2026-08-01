@@ -1,5 +1,9 @@
 # Combined Windows user test through Sprint 6
 
+> Historical checkpoint checklist. General semantic recognition is not
+> currently accepted for full-document raster sources; see VT-026 and VT-027
+> before relying on the steps below.
+
 Use this as the single Windows test gate for the implemented roadmap through
 MT-503. Android testing and building are intentionally deferred until the
 Windows workflow has been corrected to the user's satisfaction.

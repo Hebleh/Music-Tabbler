@@ -1,5 +1,11 @@
 # Terra Light full-app Computer Use round
 
+> Checkpoint note (1 August 2026): this remains the reusable desktop matrix,
+> but its dated priority section records an earlier pass. Start new work from
+> the open entries in `BUGS_MT504_VALIDATION.md`, especially VT-025 through
+> VT-031, and record results there rather than treating unchecked historical
+> items as proof of current failure.
+
 This is the post-Medium Windows validation pass for the complete public,
 pre-legal Music Tabbler application. Terra Light is the tester and recorder:
 do not edit source code, patch defects, migrate the user's main library, build

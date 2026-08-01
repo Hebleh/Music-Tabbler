@@ -1,6 +1,6 @@
 # MT-504 to MT-601 validation bug ledger
 
-Updated: 31 July 2026
+Updated: 1 August 2026
 
 This ledger records issues found during Windows Computer Use and rendered-PDF
 validation. While the active model is Terra Light, these items are documentation
@@ -548,6 +548,141 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   setlists or five entries. The bundle remains ignored under
   `tmp/apple-validation/input/9mm.mtsong`.
 
+## VT-025 - Transform presets do not populate an explicit 4-to-5-string control model
+
+- **State:** User-reported from the Windows development build on 1 August
+  2026; documentation only, no repair attempted.
+- **Severity:** High transform-configuration clarity issue.
+- **Observed:** Selecting `Drop-D 4-string -> BEADG 5-string` changes the
+  displayed source/target tuning and route calculations, but the lower
+  per-string controls do not present the complete five-string result as the
+  primary editable state. The newly introduced fifth string is implicit in
+  routing rather than visibly enabled/disabled as the 4-to-5-string operation.
+- **Expected:** A preset populates the same controls the user would edit
+  manually. The lower section shows five ordered target strings, and the
+  additional string has an explicit toggle/unused state that makes the
+  4-to-5-string transformation obvious. Changing the preset, target-string
+  toggle, or route updates all other fields consistently without hidden state.
+- **Acceptance:** Both generic presets round-trip through the visible controls;
+  switching back to Custom preserves the shown values; the fifth-string state
+  is keyboard/touch accessible and covered by widget and serialization tests.
+- **Evidence:** `codex-clipboard-02caf99a-26fe-402f-b395-7d3e11e6e4a9.png`.
+
+## VT-026 - Raster/OCR full-document analysis stalls and effectively scans only the first page
+
+- **State:** User-reported with the Neck Deep / Motion Sickness score on
+  1 August 2026; documentation only, no diagnosis or repair attempted.
+- **Severity:** Critical for screenshot and raster-PDF recognition; the manual
+  visual crop/split workflow remains the fallback.
+- **Observed:** The all-row Raster/OCR review becomes sticky while scrolling.
+  As pages finish loading, the viewport appears to jump to the top of the
+  preceding page. Only the first source page produces useful detected systems;
+  a later row reports `0 system(s)`, `0 fret/dead-note token(s)`, and 0%
+  confidence despite visible tablature below it.
+- **Expected:** Every source page has a stable placeholder and stable scroll
+  anchor. Analysis progresses page by page without moving the user's viewport,
+  and completion/failure is reported independently for every page and row.
+- **Acceptance:** A multi-page positioned PDF forced through Raster/OCR and a
+  screenshot-only equivalent both analyze every page; scrolling never jumps;
+  retrying one failed page leaves completed pages intact; instrumentation
+  records page/row start, completion, cancellation, and failure.
+- **Evidence:** `codex-clipboard-6d79dda3-af82-470d-b45b-f545a00a368b.png`.
+
+## VT-027 - General semantic intake is unusable for the Motion Sickness raster path
+
+- **State:** User-reported on 1 August 2026 after the Raster/OCR attempt;
+  documentation only, no repair attempted.
+- **Severity:** Critical for semantic transpose/re-tab of this fixture;
+  non-blocking for the visual PDF/screenshot workflow.
+- **Observed:** The resulting semantic chart exposes only 9 proposals across
+  mostly empty measures, with an isolated fret `12` and no faithful
+  reconstruction of the visible multi-page tab. This is consistent with the
+  incomplete Raster/OCR intake in VT-026.
+- **Expected:** Semantic creation is disabled or explicitly marked incomplete
+  when required pages/rows have not analyzed successfully. A complete source
+  produces source-aligned, separately reviewable events across all pages.
+- **Scope note:** This evidence proves the Motion Sickness full-document raster
+  path is non-functional. It does not by itself invalidate the repaired 9mm
+  reviewed-analysis path or the domain-level semantic editor/tests.
+- **Acceptance:** End-to-end fixture tests distinguish analysis completeness
+  from musical confidence; incomplete intake cannot be bulk-verified or marked
+  gig-ready; Motion Sickness PDF and screenshot forms expose proposals from
+  every accepted row with traceable page/row source mappings.
+- **Evidence:** `codex-clipboard-6bdf6541-0c42-4731-9d7b-892c124f1db4.png`.
+
+## VT-028 - Stage-readable Gig mode wastes the viewport and does not fit transformed content
+
+- **State:** User-reported on Windows on 1 August 2026; documentation only, no
+  repair attempted.
+- **Severity:** Critical stage-use regression for unsplit/full-page charts.
+- **Observed:** Stage-readable Gig mode centers a small portrait page inside a
+  maximized landscape window with very large black margins, produces 23 pages,
+  and displays tab systems with visibly incorrect spacing/clipping. The app
+  window is not used as the stage-readable layout surface.
+- **Expected:** Gig mode lays out compact tab rows for the actual viewport,
+  maximizes readable content area, preserves aspect ratio, and never treats an
+  unsplit full source page as an acceptable stage-readable row deck.
+- **Acceptance:** The mode detects an unsplit/full-page source and either uses
+  its reviewed automatic rows or explains that row preparation is required.
+  Golden/layout tests cover portrait source pages in wide desktop and tablet
+  viewports, with no clipping, overflow, or unexplained empty margins.
+- **Evidence:** `codex-clipboard-f91ae907-8087-4734-8e07-ac860e251a11.png`.
+
+## VT-029 - Automatic row splitting needs page-aware exclusion and tighter crops
+
+- **State:** User-requested after reviewing Windows row detection on 1 August
+  2026; documentation only, no implementation attempted.
+- **Severity:** High manual-work and export-density issue.
+- **Observed:** New visual charts require a manual split action. Detection
+  includes the title/artist/site header in Row 1, keeps the printed page number
+  in the last row, leaves more vertical space than needed above bar numbers and
+  below rhythm notation, and does not automatically establish useful master
+  left/right crops.
+- **Expected:** Import automatically proposes page-aware tab rows. It excludes
+  title/artist/site headers and page numbers, retains musical context such as
+  tempo and the first system's tuning/time signature, trims narrowly around bar
+  numbers and lower rhythm notation, and proposes common master side crops from
+  the detected staff extents. Every proposal remains editable and undoable.
+- **Acceptance:** Synthetic and local PDF/image fixtures cover header, tempo,
+  footer/page-number, sparse final row, and asymmetric margin cases. Automatic
+  proposals never delete source pixels, can be reset to the original page, and
+  match the compact target shown in the supplied reference screenshot.
+- **Evidence:** `codex-clipboard-4c53e513-9725-43fa-b8f4-dc8746b02380.png`,
+  `codex-clipboard-dd264b06-803e-4ac0-afc1-071a5be94a64.png`, and
+  `codex-clipboard-a3b1d97e-8370-4ec6-af8a-bf26b2bb9e90.png`.
+
+## VT-030 - Split-row review lacks persistent original-page context
+
+- **State:** User-requested on 1 August 2026; documentation only, no
+  implementation attempted.
+- **Severity:** Medium review-efficiency and provenance-context issue.
+- **Observed:** The split dialog shows row boxes over the source during initial
+  detection, but there is no persistent side-by-side page context once the
+  derived rows are reviewed as a sequence.
+- **Expected:** A side panel groups rows by their PDF/image source page and
+  shows the original page beside an overlapping/stacked preview of the rows
+  produced from it. Selecting either representation highlights the
+  corresponding geometry in the other without duplicating source assets.
+- **Acceptance:** Page-to-row identity survives save/reopen, split/delete/
+  reorder, and PDF/image inputs; the side panel virtualizes large documents and
+  never reintroduces sticky scrolling or eager full-resolution decoding.
+
+## VT-031 - Top crop handles do not resize a tab row
+
+- **State:** User-reported on Windows on 1 August 2026; documentation only, no
+  repair attempted.
+- **Severity:** High basic crop-editor input defect.
+- **Observed:** Dragging the top edge/corner handles in `Crop tab row` does not
+  change the crop. Bottom-edge dragging still works. Slider fine-tuning remains
+  available but does not replace direct manipulation.
+- **Expected:** Top, bottom, left, right, and all four corner handles track total
+  pointer travel without acceleration, lost deltas, or selecting an obscured
+  control.
+- **Acceptance:** Pointer tests cover each edge/corner at slow and fast drag
+  speeds, including reversed direction and minimum-size clamping. A Windows
+  Computer Use pass confirms the top edge changes the preview and saved crop.
+- **Evidence:** `codex-clipboard-ce7b2512-2060-452f-b7b3-c5fc8cabdadb.png`.
+
 ## Apple baseline observations completed on 30 July 2026
 
 - The imported Windows state remained read-only at its original path and was
@@ -607,7 +742,22 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   routes semantic recognition through `Start visual source`; no link was
   fetched or submitted during this pass.
 
-### Continue with Computer Use after Medium fixes
+### Next documented repair/validation batch
+
+- [ ] VT-025: make preset-driven 4-to-5-string state explicit in the same
+  five target-string controls used for manual configuration.
+- [ ] VT-026: stabilize multi-page Raster/OCR progress and scrolling, and prove
+  every page is analyzed independently.
+- [ ] VT-027: gate semantic creation on complete source analysis and retest
+  Motion Sickness PDF plus screenshot forms.
+- [ ] VT-028: prevent Stage-readable mode from shrinking unsplit portrait pages
+  into a mostly empty wide viewport.
+- [ ] VT-029: create undoable page-aware automatic row proposals with header/
+  footer exclusion, tighter safe bounds, and suggested master side crops.
+- [ ] VT-030: add a virtualized original-page/derived-row context panel.
+- [ ] VT-031: repair and verify top-edge/corner crop resizing.
+
+### Remaining regression and user checks
 
 - [x] Recheck compact pagination and item page boundaries in Preview and Gig
   mode using the `RITN` setlist. Balanced produces 8 pages and Stage-readable
@@ -632,8 +782,8 @@ includes measure segmentation, reopen normalization, and dead-note layout.
   transpose, re-tab, and ranked variants.
 - [ ] Repeat visual analysis and transforms with a screenshot-only fixture.
 
-Use `docs/COMPUTER_USE_FULL_APP_ROUND.md` for the complete next pass. Terra
-Light must record new failures here and must not patch them.
+Use `docs/COMPUTER_USE_FULL_APP_ROUND.md` for the complete desktop regression
+matrix. Record newly reproduced failures here before patching them.
 
 ### Physical user or hardware gate
 

@@ -1,5 +1,10 @@
 # Terra Light semantic-detection Computer Use round
 
+> Historical checkpoint: this read-only matrix produced the VT-015 diagnosis.
+> The reviewed 9mm path was subsequently repaired. Current full-document raster
+> and semantic failures are VT-026 and VT-027 in
+> `BUGS_MT504_VALIDATION.md`; use those entries for the next pass.
+
 This is a read-only validation pass for the current released-source checkpoint.
 Terra Light is the tester and evidence recorder. Do not patch source code,
 change recognition thresholds, bulk-verify proposals, overwrite a useful chart,

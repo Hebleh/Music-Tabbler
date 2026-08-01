@@ -1,6 +1,6 @@
 # Music Tabbler handover
 
-Updated: 31 July 2026
+Updated: 1 August 2026
 
 This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset user work; inspect the current branch and working tree before starting a contract.
 
@@ -282,15 +282,18 @@ The APK currently builds with a future Kotlin migration warning from `desktop_dr
 
 Keep the reliable visual fallback ahead of semantic research until the gig workflow is dependable.
 
-1. Fetch `codex/mt-602-apple-full-validation` in the Windows checkout and run
-   the complete shared regression before merging.
-2. Confirm the 9mm visual +1 fallback, transformed semantic proposal review,
-   split master-crop reopen, long-chart scrolling, PDFs, setlists, Preview, and
-   Gig mode on Windows.
-3. Build and exercise Android after the Windows workflow is accepted.
-4. Merge to `master` and prepare `v0.2.0-beta.2` only when those gates and the
+1. Reproduce and repair VT-025 through VT-031 as one explicitly planned UX/
+   recognition batch, without changing the user's useful source charts.
+2. Keep automatic page-to-row preparation undoable and preserve the complete
+   manual split/crop fallback.
+3. Re-run real PDF plus screenshot fixtures after the Raster/OCR and semantic
+   completeness gates are fixed; do not claim the general semantic path works
+   from the reviewed 9mm result alone.
+4. Revalidate Stage-readable Preview/Gig/PDF only with prepared rows, then run
+   the physical Samsung tablet/S Pen checklist using the debug APK.
+5. Merge to `master` and prepare a later release only when those gates and the
    remaining manual/hardware checks are truthfully documented.
-5. Review source terms/content rights and dependency licenses before
+6. Review source terms/content rights and dependency licenses before
    implementing or distributing any online adapter or making the repository
    public.
 

@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 31 July 2026
+Updated: 1 August 2026
 
 ## Repository state
 
@@ -220,19 +220,22 @@ Updated: 31 July 2026
 
 ### Slice 2 - semantic editor
 
-- **Complete pending Windows user verification:** measures, exact rhythm,
+- **Implemented, with real-chart verification still open:** measures, exact rhythm,
   notes/rests, tunings, repeats, sections, techniques, lyrics, shared
   screen/PDF rendering, direct editing, and MusicXML interchange.
 
 ### Slice 3 - local screenshot/PDF recognition
 
-- **Complete pending Windows user verification:** rights-safe fixture metrics,
-  local fret/rhythm/technique/section/lyric proposals, source-side correction,
-  and explicit gig-ready verification.
+- **Prototype implemented; not generally usable yet:** rights-safe fixture
+  metrics, local fret/rhythm/technique/section/lyric proposals, source-side
+  correction, and explicit gig-ready verification exist. The reviewed 9mm
+  positioned-PDF path works as an editable proposal, but the Motion Sickness
+  Raster/OCR path analyzes only part of the document and yields an unusable
+  semantic chart (VT-026/VT-027). The manual visual workflow remains supported.
 
 ### Slice 4 - transformations and safe transfer
 
-- **Complete pending Windows user verification:** pitch transposition,
+- **Implemented but gated by trusted semantic input:** pitch transposition,
   same-pitch re-tabbing, ranked fingerings, separate derived variants, portable
   `.mtsong`/`.mtstate`, backups, conflicts, and restore.
 
@@ -250,6 +253,8 @@ For the 16 August 2026 gig, prioritize dependable Windows-created PDFs from user
 
 - Confirm whether macOS becomes a supported full platform after Android.
 - Establish measured stage-readable density through iterative user review.
+- Repair automatic page-to-row preparation and require prepared rows before
+  Stage-readable mode lays out portrait/full-page sources (VT-028/VT-029).
 - Define the annotated fixture corpus and acceptance thresholds for each recognition source.
 - Select Flutter packages only after license, Windows/Android support, and deterministic rendering spikes.
 - Review source terms/content rights before distributing online adapters or deciding repository visibility/license.

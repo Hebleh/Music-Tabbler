@@ -13,11 +13,11 @@ This file records accepted limitations that are intentionally deferred beyond th
 - **Master side-crop positions do not persist reliably through all split-dialog actions or reopenings.** The row crops themselves remain saved; the convenience master-control position is the deferred part.
 - Do not infer the master position from saved row edges until mixed-width and individually adjusted rows have a defined behavior.
 - A future fix should persist explicit per-source master-control state and add widget coverage for detect, evenly divide, add, delete, reopen, and cancel/apply flows.
-- **MT-602 implementation pending verification:** `VisualStrip` now persists
+- **Implementation present; interaction verification remains:** `VisualStrip` now persists
   explicit `splitMasterLeft`/`splitMasterRight` values, sibling rows inherit
   the applied values, and reopening restores those controls without inferring
-  them from row edges. JSON round-trip coverage was added; the interaction
-  matrix remains open until the updated Flutter build can run.
+  them from row edges. JSON round-trip coverage exists; mixed-width Detect,
+  edit, reopen, and reset behavior still needs the Windows interaction matrix.
 
 ## Unicode PDF headers
 
@@ -130,3 +130,52 @@ This file records accepted limitations that are intentionally deferred beyond th
   Separate controls and explanatory text retain global pitch, source/target
   capo, selected-string override, and an Advanced `label:MIDI` path. The live
   control check changed target B (MIDI 23) to C (MIDI 24) and back immediately.
+
+## Transform preset state transparency
+
+- Presets must populate the exact same editable model shown in the custom
+  workflow. A 4-to-5-string transform needs five visible target-string rows and
+  an explicit enabled/unused state for the added string; the existence of the
+  fifth string must not be represented only indirectly by route drop-downs.
+- Preset selection, tuning offsets, target-string state, routing, capo, and
+  global/selected-string pitch changes must remain one synchronized source of
+  truth. See VT-025.
+
+## Full-document raster analysis and semantic gating
+
+- Multi-page Raster/OCR currently has a user-reported scroll-anchor/page-load
+  failure on Motion Sickness that leaves later visible tab pages without
+  systems or tokens. Do not describe general raster semantic conversion as
+  usable until VT-026 is fixed and verified on PDF plus screenshot fixtures.
+- Semantic creation must carry an explicit source-completeness result separate
+  from per-token confidence. If required pages or rows fail analysis, the chart
+  remains an incomplete proposal and cannot be bulk-verified or marked
+  gig-ready. See VT-027.
+- The reviewed positioned-PDF 9mm path remains useful evidence for one intake
+  route, not proof that all semantic recognition paths work.
+
+## Automatic page-to-row preparation
+
+- New PDF/image charts should begin with an undoable automatic row proposal,
+  while preserving the current manual split/crop fallback.
+- Page-aware classification must exclude non-musical headings and footer page
+  numbers, preserve tempo/tuning/time-signature context, propose tighter safe
+  vertical bounds, and infer common master side crops without overwriting
+  individual adjustments. See VT-029.
+- Row review should retain page provenance through a virtualized side-by-side
+  source-page panel with linked highlights between original geometry and the
+  overlapping/stacked derived rows. See VT-030.
+
+## Stage-readable viewport contract
+
+- Stage-readable mode must operate on prepared tab rows, not shrink an unsplit
+  portrait source page into a landscape window. It should use the available
+  viewport, preserve readable geometry, and clearly block or redirect charts
+  that still require row preparation. See VT-028.
+
+## Direct crop manipulation
+
+- The crop overlay needs regression coverage for all four edges and four
+  corners. The current Windows report says bottom resizing works while top
+  resizing does not. Sliders remain a fallback, not the primary interaction.
+  See VT-031.

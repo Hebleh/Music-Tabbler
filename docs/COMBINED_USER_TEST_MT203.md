@@ -1,5 +1,9 @@
 # Combined MT-107 through MT-203 user test
 
+> Historical checkpoint checklist. Use `docs/README.md` and the open queue in
+> `BUGS_MT504_VALIDATION.md` for current testing; retain this file for the exact
+> MT-107-to-MT-203 acceptance steps.
+
 Use this checklist for the single Windows and Samsung-tablet verification gate.
 Do not test replacement or restore against the only copy of an important
 library. Keep the exported Windows `.mtstate` somewhere outside Music Tabbler
