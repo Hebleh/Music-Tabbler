@@ -388,6 +388,7 @@ class _HomeScreenState extends State<HomeScreen> {
         key: ValueKey(_libraryRevision),
         services: widget.services,
         preferences: widget.preferences,
+        onPreferencesChanged: widget.onPreferencesChanged,
       ),
       _ImportSource(onStartVisual: _openVisualEditor),
     ];
@@ -779,10 +780,12 @@ class _GigsAndSetlists extends StatefulWidget {
     super.key,
     required this.services,
     required this.preferences,
+    required this.onPreferencesChanged,
   });
 
   final AppServices services;
   final DevicePreferences preferences;
+  final ValueChanged<DevicePreferences> onPreferencesChanged;
 
   @override
   State<_GigsAndSetlists> createState() => _GigsAndSetlistsState();
@@ -871,6 +874,7 @@ class _GigsAndSetlistsState extends State<_GigsAndSetlists> {
           services: widget.services,
           setlistId: setlist.id,
           preferences: widget.preferences,
+          onPreferencesChanged: widget.onPreferencesChanged,
         ),
       ),
     );
@@ -1004,10 +1008,12 @@ class _SetlistEditorScreen extends StatefulWidget {
     required this.services,
     required this.setlistId,
     required this.preferences,
+    required this.onPreferencesChanged,
   });
   final AppServices services;
   final String setlistId;
   final DevicePreferences preferences;
+  final ValueChanged<DevicePreferences> onPreferencesChanged;
 
   @override
   State<_SetlistEditorScreen> createState() => _SetlistEditorScreenState();
@@ -1019,11 +1025,23 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
   List<VisualChartDraft> _availableDrafts = const [];
   Object? _error;
   var _exporting = false;
+  late DevicePreferences _preferences;
 
   @override
   void initState() {
     super.initState();
+    _preferences = widget.preferences;
     _load();
+  }
+
+  void _toggleTheme() {
+    final updated = _preferences.copyWith(
+      appTheme: _preferences.appTheme == AppThemePreference.dark
+          ? AppThemePreference.light
+          : AppThemePreference.dark,
+    );
+    setState(() => _preferences = updated);
+    widget.onPreferencesChanged(updated);
   }
 
   Future<void> _load() async {
@@ -1280,7 +1298,7 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
           services: widget.services,
           setlist: _setlist!,
           density: density,
-          preferences: widget.preferences,
+          preferences: _preferences,
         ),
       ),
     );
@@ -1295,7 +1313,7 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
           services: widget.services,
           setlist: _setlist!,
           density: density,
-          preferences: widget.preferences,
+          preferences: _preferences,
         ),
       ),
     );
@@ -1318,6 +1336,17 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
       appBar: AppBar(
         title: Text(setlist.name),
         actions: [
+          IconButton(
+            tooltip: _preferences.appTheme == AppThemePreference.dark
+                ? 'Use light theme'
+                : 'Use dark theme',
+            onPressed: _toggleTheme,
+            icon: Icon(
+              _preferences.appTheme == AppThemePreference.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+            ),
+          ),
           IconButton(
             tooltip: 'Start gig mode',
             onPressed: _exporting ? null : _startGigMode,

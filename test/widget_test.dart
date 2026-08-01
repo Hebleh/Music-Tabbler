@@ -156,6 +156,74 @@ void main() {
     expect(find.text('2 / 2'), findsOneWidget);
   });
 
+  testWidgets(
+    'visual tab review can explicitly preserve a tokenless row unchanged',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final library = _FakeLibrary();
+      final analyzer = _BlockedVisualTabAnalyzer(library);
+      List<VisualTabAnalysis>? outcome;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                onPressed: () async {
+                  outcome = await showVisualTabAnalysisReview(
+                    context: context,
+                    library: library,
+                    analyzer: analyzer,
+                    strips: const [
+                      VisualStrip(
+                        id: 'ready-row',
+                        assetHash: 'a',
+                        assetExtension: 'png',
+                        pixelWidth: 400,
+                        pixelHeight: 100,
+                      ),
+                      VisualStrip(
+                        id: 'blocked-row',
+                        assetHash: 'b',
+                        assetExtension: 'png',
+                        pixelWidth: 400,
+                        pixelHeight: 100,
+                      ),
+                    ],
+                    sourceStringCount: 4,
+                  );
+                },
+                child: const Text('Open review'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open review'));
+      for (var index = 0; index < 6; index += 1) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Continue (1 unchanged)'), findsOneWidget);
+
+      await tester.tap(find.text('Continue (1 unchanged)'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Row 2 has no usable fret tokens'), findsOneWidget);
+      await tester.tap(find.text('Keep unchanged and continue'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 800));
+
+      expect(outcome, isNotNull);
+      expect(outcome, hasLength(2));
+      expect(outcome!.first.keepUnchanged, isFalse);
+      expect(outcome!.last.keepUnchanged, isTrue);
+    },
+  );
+
   testWidgets('opens the semantic sample chart from the song pool', (
     tester,
   ) async {
@@ -536,6 +604,40 @@ void main() {
     },
   );
 
+  testWidgets('setlist editor can switch and persist the app theme', (
+    tester,
+  ) async {
+    final library = _FakeLibrary()..setlists.add(_setlist('set-1', 'Gig'));
+    final preferences = _MemoryPreferencesStore();
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MusicTabblerApp(
+        services: await _testServices(
+          library: library,
+          preferences: preferences,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openGigs(tester);
+    await tester.tap(find.text('Gig'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Use light theme'), findsOneWidget);
+    await tester.tap(find.byTooltip('Use light theme'));
+    await tester.pumpAndSettle();
+
+    expect(preferences.value.appTheme, AppThemePreference.light);
+    expect(find.byTooltip('Use dark theme'), findsOneWidget);
+    expect(
+      Theme.of(tester.element(find.text('Gig').first)).brightness,
+      Brightness.light,
+    );
+  });
+
   testWidgets('setlist supports duplicate songs and removing one occurrence', (
     tester,
   ) async {
@@ -829,6 +931,7 @@ void main() {
     final library = _FakeLibrary()..setlists.add(_setlist('set-1', 'Gig'));
     final deckBuilder = _RecordingPerformanceDeckBuilder();
     final performanceMode = _RecordingPerformanceModeController();
+    final preferences = _MemoryPreferencesStore();
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -839,6 +942,7 @@ void main() {
           library: library,
           performanceDeckBuilder: deckBuilder,
           performanceMode: performanceMode,
+          preferences: preferences,
         ),
       ),
     );
@@ -861,10 +965,26 @@ void main() {
     expect(find.byTooltip('Erase annotations'), findsOneWidget);
     expect(find.byTooltip('Undo annotation'), findsOneWidget);
     expect(find.byTooltip('Clear all performance notes'), findsOneWidget);
+    expect(find.byKey(const Key('gig-zoom-slider')), findsOneWidget);
+    await tester.drag(
+      find.byKey(const Key('gig-zoom-slider')),
+      const Offset(-120, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(preferences.value.gigZoom, isNot(0.75));
+    expect(preferences.value.gigZoom, inInclusiveRange(0.45, 1.5));
     await tester.tap(find.byTooltip('Next page'));
     await tester.pumpAndSettle();
     expect(find.text('2 / 2'), findsOneWidget);
     expect(find.byTooltip('Next page'), findsOneWidget);
+    await tester.tap(find.byTooltip('Lock stage controls'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Open setlist sidebar'), findsNothing);
+    expect(find.byKey(const Key('gig-zoom-slider')), findsNothing);
+    expect(find.byTooltip('Unlock stage controls'), findsOneWidget);
+    await tester.tap(find.byTooltip('Unlock stage controls'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('gig-zoom-slider')), findsOneWidget);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(performanceMode.values.last, isFalse);
@@ -1113,6 +1233,7 @@ Future<AppServices> _testServices({
   PerformanceDeckBuilder? performanceDeckBuilder,
   PerformanceModeController? performanceMode,
   LibraryStateTransfer? libraryState,
+  DevicePreferencesStore? preferences,
 }) async {
   final resolvedLibrary = library ?? _FakeLibrary();
   const unusedExporter = _UnusedExporter();
@@ -1127,7 +1248,7 @@ Future<AppServices> _testServices({
     setlistExporter: setlistExporter ?? unusedExporter,
     performanceDeckBuilder: performanceDeckBuilder ?? unusedExporter,
     textRecognition: const _UnusedTextRecognition(),
-    preferences: _MemoryPreferencesStore(),
+    preferences: preferences ?? _MemoryPreferencesStore(),
     performanceMode: performanceMode ?? _RecordingPerformanceModeController(),
     libraryState: libraryState,
   );
@@ -1444,6 +1565,29 @@ class _RecordingVisualTabAnalyzer extends VisualTabAnalysisService {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _BlockedVisualTabAnalyzer extends _RecordingVisualTabAnalyzer {
+  _BlockedVisualTabAnalyzer(super.library);
+
+  @override
+  Future<VisualTabAnalysis> analyze(
+    VisualStrip strip, {
+    required int sourceStringCount,
+    bool preferPositionedPdf = true,
+  }) async {
+    if (strip.id == 'blocked-row') {
+      return VisualTabAnalysis(
+        stripId: strip.id,
+        sourceType: VisualTabSourceType.rasterOcr,
+      );
+    }
+    return super.analyze(
+      strip,
+      sourceStringCount: sourceStringCount,
+      preferPositionedPdf: preferPositionedPdf,
     );
   }
 }

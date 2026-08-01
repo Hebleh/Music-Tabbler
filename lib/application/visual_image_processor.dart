@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -138,8 +139,11 @@ class VisualImageProcessor {
     final portraitLike =
         image.width / image.height < splitDetectedRowsBelowAspectRatio;
     final detector = const HorizontalRowDetector();
+    final pageAware = maximumRowAspectRatio.isFinite
+        ? detector.detectPageAware(rendered)
+        : null;
     final detected = portraitLike
-        ? detector.detectPageAware(rendered).rows
+        ? (pageAware ?? detector.detectPageAware(rendered)).rows
         : detector.detect(rendered);
     if (portraitLike &&
         maximumRowAspectRatio.isFinite &&
@@ -154,9 +158,19 @@ class VisualImageProcessor {
         ? [const NormalizedRect.full()]
         : portraitLike
         ? detected
-        : [NormalizedRect(0, detected.first.top, 1, detected.last.bottom)];
+        : [
+            NormalizedRect(
+              pageAware?.masterLeft ?? 0,
+              detected.first.top,
+              pageAware?.masterRight ?? 1,
+              detected.last.bottom,
+            ),
+          ];
+    final horizontallyCompacted = maximumRowAspectRatio.isFinite
+        ? [for (final row in rows) _trimHorizontalWhitespace(image, row)]
+        : rows;
     final safeRows = [
-      for (final row in rows)
+      for (final row in horizontallyCompacted)
         ..._splitWideRow(image, row, maximumRowAspectRatio),
     ];
     return [
@@ -186,6 +200,44 @@ class VisualImageProcessor {
           );
         }(),
     ];
+  }
+
+  NormalizedRect _trimHorizontalWhitespace(
+    img.Image image,
+    NormalizedRect row,
+  ) {
+    final left = (row.left * image.width).floor().clamp(0, image.width - 1);
+    final right = (row.right * image.width).ceil().clamp(left + 1, image.width);
+    final top = (row.top * image.height).floor().clamp(0, image.height - 1);
+    final bottom = (row.bottom * image.height).ceil().clamp(
+      top + 1,
+      image.height,
+    );
+    final background = _edgeBackground(image, left, right, top, bottom);
+    final requiredInk = math.max(2, ((bottom - top) * 0.012).ceil());
+    var inkLeft = right;
+    var inkRight = left;
+    for (var x = left; x < right; x += 1) {
+      var ink = 0;
+      for (var y = top; y < bottom; y += 1) {
+        if ((_luminance(image.getPixel(x, y)) - background).abs() >= 16) {
+          ink += 1;
+        }
+      }
+      if (ink < requiredInk) continue;
+      inkLeft = math.min(inkLeft, x);
+      inkRight = math.max(inkRight, x + 1);
+    }
+    if (inkRight <= inkLeft) return row;
+    final padding = math.max(4, ((right - left) * 0.012).round());
+    final trimmedLeft = (inkLeft - padding).clamp(left, right - 1);
+    final trimmedRight = (inkRight + padding).clamp(trimmedLeft + 1, right);
+    return NormalizedRect(
+      trimmedLeft / image.width,
+      row.top,
+      trimmedRight / image.width,
+      row.bottom,
+    );
   }
 
   List<NormalizedRect> _splitWideRow(

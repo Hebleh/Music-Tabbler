@@ -11,9 +11,10 @@ class DevicePreferences {
     this.showTitle = true,
     this.showTab = true,
     this.showNotation = true,
+    this.gigZoom = 0.75,
   });
 
-  static const schemaVersion = 1;
+  static const schemaVersion = 2;
   static const defaults = DevicePreferences();
 
   final AppThemePreference appTheme;
@@ -21,6 +22,7 @@ class DevicePreferences {
   final bool showTitle;
   final bool showTab;
   final bool showNotation;
+  final double gigZoom;
 
   DevicePreferences copyWith({
     AppThemePreference? appTheme,
@@ -28,6 +30,7 @@ class DevicePreferences {
     bool? showTitle,
     bool? showTab,
     bool? showNotation,
+    double? gigZoom,
   }) {
     return DevicePreferences(
       appTheme: appTheme ?? this.appTheme,
@@ -35,6 +38,7 @@ class DevicePreferences {
       showTitle: showTitle ?? this.showTitle,
       showTab: showTab ?? this.showTab,
       showNotation: showNotation ?? this.showNotation,
+      gigZoom: gigZoom ?? this.gigZoom,
     );
   }
 
@@ -45,13 +49,14 @@ class DevicePreferences {
     'showTitle': showTitle,
     'showTab': showTab,
     'showNotation': showNotation,
+    'gigZoom': gigZoom,
   };
 
   String encode() => jsonEncode(toJson());
 
   factory DevicePreferences.fromJson(Map<String, Object?> json) {
     final version = json['schemaVersion'];
-    if (version != schemaVersion) {
+    if (version != 1 && version != schemaVersion) {
       throw FormatException('Unsupported device-preference schema: $version');
     }
     return DevicePreferences(
@@ -68,6 +73,9 @@ class DevicePreferences {
       showTitle: _boolValue(json, 'showTitle'),
       showTab: _boolValue(json, 'showTab'),
       showNotation: _boolValue(json, 'showNotation'),
+      gigZoom: version == 1
+          ? DevicePreferences.defaults.gigZoom
+          : _doubleValue(json, 'gigZoom').clamp(0.45, 1.5).toDouble(),
     );
   }
 
@@ -99,6 +107,12 @@ class DevicePreferences {
     throw FormatException('$name must be a boolean.');
   }
 
+  static double _doubleValue(Map<String, Object?> json, String name) {
+    final value = json[name];
+    if (value is num) return value.toDouble();
+    throw FormatException('$name must be a number.');
+  }
+
   @override
   bool operator ==(Object other) =>
       other is DevicePreferences &&
@@ -106,9 +120,16 @@ class DevicePreferences {
       other.gigTheme == gigTheme &&
       other.showTitle == showTitle &&
       other.showTab == showTab &&
-      other.showNotation == showNotation;
+      other.showNotation == showNotation &&
+      other.gigZoom == gigZoom;
 
   @override
-  int get hashCode =>
-      Object.hash(appTheme, gigTheme, showTitle, showTab, showNotation);
+  int get hashCode => Object.hash(
+    appTheme,
+    gigTheme,
+    showTitle,
+    showTab,
+    showNotation,
+    gigZoom,
+  );
 }

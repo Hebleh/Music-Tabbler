@@ -135,9 +135,13 @@ class _VisualTabAnalysisReviewScreenState
 
   @override
   Widget build(BuildContext context) {
-    final complete =
-        _rowStates.every((state) => state == _AnalysisRowState.completed) &&
-        _analyses.every((analysis) => analysis?.isSourceUsable ?? false);
+    final processingComplete = _rowStates.every(
+      (state) => state == _AnalysisRowState.completed,
+    );
+    final blockedRows = [
+      for (var index = 0; index < _analyses.length; index += 1)
+        if (!(_analyses[index]?.isSourceUsable ?? false)) index,
+    ];
     return Scaffold(
       appBar: AppBar(
         title: const Text('Review visual tab analysis'),
@@ -155,28 +159,29 @@ class _VisualTabAnalysisReviewScreenState
               ),
             ),
           FilledButton.icon(
-            onPressed: complete
-                ? () => Navigator.pop(
-                    context,
-                    List<VisualTabAnalysis>.unmodifiable(
-                      _analyses.whereType<VisualTabAnalysis>(),
-                    ),
-                  )
+            onPressed: processingComplete
+                ? () => _finishReview(blockedRows)
                 : null,
-            icon: const Icon(Icons.check),
-            label: const Text('Use reviewed analysis'),
+            icon: Icon(
+              blockedRows.isEmpty ? Icons.check : Icons.warning_amber_rounded,
+            ),
+            label: Text(
+              blockedRows.isEmpty
+                  ? 'Use reviewed analysis'
+                  : 'Continue (${blockedRows.length} unchanged)',
+            ),
           ),
           const SizedBox(width: 12),
         ],
       ),
-      body: _buildBody(complete),
+      body: _buildBody(processingComplete),
     );
   }
 
-  Widget _buildBody(bool complete) {
+  Widget _buildBody(bool processingComplete) {
     return Column(
       children: [
-        if (!complete)
+        if (!processingComplete)
           LinearProgressIndicator(
             value: widget.strips.isEmpty
                 ? null
@@ -516,6 +521,58 @@ class _VisualTabAnalysisReviewScreenState
         ),
       ],
     );
+  }
+
+  Future<void> _finishReview(List<int> blockedRows) async {
+    if (blockedRows.isEmpty) {
+      Navigator.pop(
+        context,
+        List<VisualTabAnalysis>.unmodifiable(
+          _analyses.whereType<VisualTabAnalysis>(),
+        ),
+      );
+      return;
+    }
+    final rowLabels = blockedRows.map((index) => index + 1).join(', ');
+    final keep = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          blockedRows.length == 1
+              ? 'Row $rowLabels has no usable fret tokens'
+              : '${blockedRows.length} rows have no usable fret tokens',
+        ),
+        content: Text(
+          'Raster/OCR could not produce an enabled fret or dead-note token '
+          'for row(s) $rowLabels. You can return to review them, or continue '
+          'and keep those source rows visually unchanged. They will not be '
+          'silently removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Review blocked row'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Keep unchanged and continue'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (keep != true) {
+      setState(() {
+        _currentIndex = blockedRows.first;
+        _selectedTokenIds.clear();
+      });
+      return;
+    }
+    final reviewed = <VisualTabAnalysis>[
+      for (var index = 0; index < _analyses.length; index += 1)
+        _analyses[index]!.copyWith(keepUnchanged: blockedRows.contains(index)),
+    ];
+    Navigator.pop(context, List<VisualTabAnalysis>.unmodifiable(reviewed));
   }
 
   void _activateRow(int index) {

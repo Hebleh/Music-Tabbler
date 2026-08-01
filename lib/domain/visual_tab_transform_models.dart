@@ -204,12 +204,17 @@ class VisualTabAnalysis {
     required this.sourceType,
     this.systems = const [],
     this.warnings = const [],
+    this.keepUnchanged = false,
   });
 
   final String stripId;
   final VisualTabSourceType sourceType;
   final List<VisualTabSystem> systems;
   final List<String> warnings;
+
+  /// Set only after the user explicitly accepts that this source row has no
+  /// usable detected fret tokens. The transform preserves that row verbatim.
+  final bool keepUnchanged;
 
   int get enabledFretTokenCount => systems.fold(
     0,
@@ -224,16 +229,20 @@ class VisualTabAnalysis {
   /// usable tab token. This is independent of musical confidence.
   bool get isSourceUsable => systems.isNotEmpty && enabledFretTokenCount > 0;
 
+  bool get isReviewed => isSourceUsable || keepUnchanged;
+
   VisualTabAnalysis copyWith({
     VisualTabSourceType? sourceType,
     List<VisualTabSystem>? systems,
     List<String>? warnings,
+    bool? keepUnchanged,
   }) {
     return VisualTabAnalysis(
       stripId: stripId,
       sourceType: sourceType ?? this.sourceType,
       systems: systems ?? this.systems,
       warnings: warnings ?? this.warnings,
+      keepUnchanged: keepUnchanged ?? this.keepUnchanged,
     );
   }
 
@@ -242,6 +251,7 @@ class VisualTabAnalysis {
     'sourceType': sourceType.name,
     'systems': systems.map((system) => system.toJson()).toList(),
     'warnings': warnings,
+    'keepUnchanged': keepUnchanged,
   };
 
   factory VisualTabAnalysis.fromJson(Map<String, Object?> json) {
@@ -260,6 +270,7 @@ class VisualTabAnalysis {
       warnings: ((json['warnings'] as List?) ?? const []).cast<String>().toList(
         growable: false,
       ),
+      keepUnchanged: json['keepUnchanged'] as bool? ?? false,
     );
   }
 }

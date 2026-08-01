@@ -238,31 +238,30 @@ void main() {
     expect(row.height, closeTo(45.83, 0.1));
   });
 
-  test(
-    'density floor permits compacting a song to avoid a sparse tail page',
-    () {
-      const layout = SetlistA4Layout(
-        pageWidth: 595.28,
-        pageHeight: 260,
-        margin: 5,
-        songHeaderHeight: 24,
-        minimumRowHeight: 34,
-      );
+  test('setlist rows stay full width and overflow onto a later page', () {
+    const layout = SetlistA4Layout(
+      pageWidth: 595.28,
+      pageHeight: 260,
+      margin: 5,
+      songHeaderHeight: 24,
+      minimumRowHeight: 34,
+    );
 
-      final pages = layout.plan(const [
-        SetlistLayoutEntry.chart(
-          entryIndex: 0,
-          aspectRatios: [6, 6, 6],
-          showHeader: true,
-        ),
-      ]);
+    final pages = layout.plan(const [
+      SetlistLayoutEntry.chart(
+        entryIndex: 0,
+        aspectRatios: [6, 6, 6],
+        showHeader: true,
+      ),
+    ]);
 
-      expect(pages, hasLength(1));
-      final rows = pages.single.elements.where(
-        (element) => element.kind == PlannedSetlistElementKind.strip,
-      );
-      expect(rows, hasLength(3));
-      expect(rows.every((row) => row.height >= 34 * 0.9), isTrue);
-    },
-  );
+    expect(pages, hasLength(2));
+    final rows = pages
+        .expand((page) => page.elements)
+        .where((element) => element.kind == PlannedSetlistElementKind.strip)
+        .toList(growable: false);
+    expect(rows, hasLength(3));
+    expect(rows.every((row) => row.width == 585.28), isTrue);
+    expect(rows.every((row) => row.height > 90), isTrue);
+  });
 }

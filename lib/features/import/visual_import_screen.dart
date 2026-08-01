@@ -268,6 +268,39 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       await _reviewVisualTabAnalysis();
       return;
     }
+    final savedAnalyses = record.analyses
+        .map(VisualTabAnalysis.fromJson)
+        .toList(growable: false);
+    final incomplete =
+        savedAnalyses.length != record.baseStrips.length ||
+        savedAnalyses.any((analysis) => !analysis.isReviewed);
+    if (incomplete) {
+      final repair = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Complete the source review'),
+          content: const Text(
+            'This older transform contains one or more PDF pages without '
+            'usable tab analysis. Re-run Raster / OCR all rows before '
+            'applying it again so no pages are omitted.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Review all source pages'),
+            ),
+          ],
+        ),
+      );
+      if (repair == true && mounted) {
+        await _reviewVisualTabAnalysis(stripsOverride: record.baseStrips);
+      }
+      return;
+    }
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
@@ -310,9 +343,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       await _reviewVisualTabAnalysis(stripsOverride: record.baseStrips);
       return;
     }
-    final analyses = record.analyses
-        .map(VisualTabAnalysis.fromJson)
-        .toList(growable: false);
+    final analyses = savedAnalyses;
     final initial = VisualTabTransformConfiguration.fromJson(
       record.configuration,
     );

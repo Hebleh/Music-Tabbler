@@ -564,4 +564,40 @@ void main() {
       ),
     );
   });
+
+  test('stage density trims horizontal whitespace around a prepared row', () {
+    final source = img.Image(width: 1000, height: 140);
+    img.fill(source, color: img.ColorRgb8(250, 250, 250));
+    for (var line = 0; line < 4; line += 1) {
+      img.drawLine(
+        source,
+        x1: 180,
+        y1: 40 + line * 12,
+        x2: 760,
+        y2: 40 + line * 12,
+        color: img.ColorRgb8(20, 20, 20),
+      );
+    }
+
+    final output = const VisualImageProcessor()
+        .processForExportBatch(
+          Uint8List.fromList(img.encodePng(source)),
+          const [
+            VisualStrip(
+              id: 'wide-row',
+              assetHash: 'hash',
+              assetExtension: 'png',
+              pixelWidth: 1000,
+              pixelHeight: 140,
+            ),
+          ],
+          maximumRowAspectRatio: 100,
+        )
+        .single
+        .single;
+    final decoded = img.decodePng(output.bytes)!;
+
+    expect(decoded.width, lessThan(700));
+    expect(decoded.width, greaterThan(560));
+  });
 }

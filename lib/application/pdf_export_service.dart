@@ -228,51 +228,6 @@ class SetlistA4Layout {
       usedHeight += (current.length == 1 ? 0 : gap) + element.height;
     }
 
-    bool compressCurrentPageToInclude(PlannedSetlistElement next) {
-      if (minimumRowHeight <= 0) return false;
-      final candidates = [...current, next];
-      final fixedHeight = candidates
-          .where((element) => element.kind != PlannedSetlistElementKind.strip)
-          .fold<double>(0, (sum, element) => sum + element.height);
-      final strips = candidates
-          .where((element) => element.kind == PlannedSetlistElementKind.strip)
-          .toList(growable: false);
-      final naturalStripHeight = strips.fold<double>(
-        0,
-        (sum, element) => sum + element.height,
-      );
-      if (naturalStripHeight <= 0) return false;
-      final gapHeight = gap * math.max(0, candidates.length - 1);
-      final scale =
-          (availableHeight - fixedHeight - gapHeight) / naturalStripHeight;
-      if (scale <= 0 || scale >= 1) return false;
-      final floor = minimumRowHeight * minimumRowHeightTolerance;
-      if (strips.any((element) => element.height * scale < floor)) {
-        return false;
-      }
-      current = [
-        for (final element in candidates)
-          element.kind == PlannedSetlistElementKind.strip
-              ? PlannedSetlistElement(
-                  kind: element.kind,
-                  entryIndex: element.entryIndex,
-                  rowIndex: element.rowIndex,
-                  width: element.width * scale,
-                  height: element.height * scale,
-                )
-              : element,
-      ];
-      usedHeight =
-          fixedHeight +
-          gapHeight +
-          current
-              .where(
-                (element) => element.kind == PlannedSetlistElementKind.strip,
-              )
-              .fold<double>(0, (sum, element) => sum + element.height);
-      return true;
-    }
-
     for (final entry in entries) {
       if (entry.isPlaceholder) {
         // Placeholders are setlist navigation boundaries just like songs.
@@ -355,16 +310,7 @@ class SetlistA4Layout {
           entryIndex: entry.entryIndex,
           rowIndex: rowIndex,
         );
-        if (usedHeight + gap + height > availableHeight &&
-            !compressCurrentPageToInclude(
-              PlannedSetlistElement(
-                kind: PlannedSetlistElementKind.strip,
-                entryIndex: entry.entryIndex,
-                rowIndex: rowIndex,
-                width: width,
-                height: height,
-              ),
-            )) {
+        if (usedHeight + gap + height > availableHeight) {
           finishPage();
           addElement(
             PlannedSetlistElement(
@@ -375,7 +321,7 @@ class SetlistA4Layout {
               height: height,
             ),
           );
-        } else if (usedHeight + gap + height <= availableHeight) {
+        } else {
           addElement(
             PlannedSetlistElement(
               kind: PlannedSetlistElementKind.strip,
@@ -1306,12 +1252,16 @@ class _ExportDensitySettings {
   const _ExportDensitySettings({
     required this.layout,
     required this.splitDetectedRowsBelowAspectRatio,
+    this.maximumRowAspectRatioOverride,
   });
 
   final A4StripLayout layout;
   final double splitDetectedRowsBelowAspectRatio;
+  final double? maximumRowAspectRatioOverride;
 
   double get maximumRowAspectRatio {
+    final override = maximumRowAspectRatioOverride;
+    if (override != null) return override;
     if (layout.minimumRowHeight <= 0) return double.infinity;
     final availableWidth = layout.pageWidth - layout.margin * 2;
     return availableWidth /
@@ -1327,6 +1277,7 @@ class _ExportDensitySettings {
       VisualExportDensity.balanced => const _ExportDensitySettings(
         layout: A4StripLayout(minimumRowHeight: 34),
         splitDetectedRowsBelowAspectRatio: 2.8,
+        maximumRowAspectRatioOverride: 15.5,
       ),
       VisualExportDensity.stageReadable => const _ExportDensitySettings(
         layout: A4StripLayout(
@@ -1335,6 +1286,10 @@ class _ExportDensitySettings {
           minimumRowHeight: 48,
         ),
         splitDetectedRowsBelowAspectRatio: 3.5,
+        // Wide single-system source rows keep the original tiny fret glyphs
+        // even when the outer page fills the screen. Splitting at a quiet
+        // vertical cut gives each segment enough scale for a stage glance.
+        maximumRowAspectRatioOverride: 10.5,
       ),
     };
   }

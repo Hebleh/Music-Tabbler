@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../application/app_services.dart';
+import '../../application/gig_viewport_layout.dart';
 import '../../application/performance_deck.dart';
 import '../../domain/device_preferences.dart';
 import '../../domain/library_models.dart';
@@ -40,6 +41,9 @@ class _GigModeScreenState extends State<GigModeScreen>
   var _allowExit = false;
   var _exiting = false;
   var _annotationTool = AnnotationTool.none;
+  var _gigZoom = 0.75;
+  var _stageLocked = false;
+  var _pageDirection = 1;
   _AnnotationUndo? _lastAnnotation;
 
   @override
@@ -47,6 +51,7 @@ class _GigModeScreenState extends State<GigModeScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _setlist = widget.setlist;
+    _gigZoom = widget.preferences.gigZoom;
     _deck = _buildDeck();
     unawaited(_loadDrafts());
     unawaited(widget.services.performanceMode.setActive(true));
@@ -508,18 +513,31 @@ class _GigModeScreenState extends State<GigModeScreen>
     });
   }
 
-  void _jumpToEntry(PerformanceDeck deck, int entryIndex) {
+  void _jumpToEntry(List<GigViewportPage> pages, int entryIndex) {
     final entryId = _setlist.entries[entryIndex].id;
-    final target = deck.pages.indexWhere(
-      (page) => page.elements.any((element) => element.entryId == entryId),
-    );
-    if (target >= 0) setState(() => _pageIndex = target);
+    final target = gigPageIndexForEntry(pages, entryId);
+    if (target >= 0) {
+      setState(() {
+        _pageDirection = target >= _pageIndex ? 1 : -1;
+        _pageIndex = target;
+      });
+    }
     Navigator.of(context).pop();
   }
 
   void _move(int delta, int pageCount) {
     final next = (_pageIndex + delta).clamp(0, pageCount - 1);
-    if (next != _pageIndex) setState(() => _pageIndex = next);
+    if (next != _pageIndex) {
+      setState(() {
+        _pageDirection = delta >= 0 ? 1 : -1;
+        _pageIndex = next;
+      });
+    }
+  }
+
+  Future<void> _saveGigZoom(double value) async {
+    final current = await widget.services.preferences.load();
+    await widget.services.preferences.save(current.copyWith(gigZoom: value));
   }
 
   Future<void> _exit() async {
@@ -540,10 +558,9 @@ class _GigModeScreenState extends State<GigModeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final background =
-        widget.preferences.gigTheme == GigThemePreference.lightOnBlack
+    final background = widget.preferences.appTheme == AppThemePreference.dark
         ? Colors.black
-        : const Color(0xFFE8E8E8);
+        : Colors.white;
     return PopScope(
       canPop: _allowExit,
       onPopInvokedWithResult: (didPop, _) {
@@ -590,259 +607,448 @@ class _GigModeScreenState extends State<GigModeScreen>
               ),
             );
           }
-          final page = deck.pages[_pageIndex.clamp(0, deck.pages.length - 1)];
-          final selectedEntryId = page.elements.first.entryId;
-          final annotationElements = page.elements
-              .where((element) => element.kind == PerformanceElementKind.strip)
-              .toList(growable: false);
-          final annotationTargets = <PerformanceDeckElement>[];
-          final annotationTargetIds = <String>{};
-          for (final element in annotationElements) {
-            final variantId = element.chartVariantId;
-            final stripId = element.sourceStripId;
-            if (variantId == null || stripId == null) continue;
-            if (annotationTargetIds.add('$variantId\u0000$stripId')) {
-              annotationTargets.add(element);
-            }
-          }
-          final annotationElement = annotationElements.isEmpty
-              ? null
-              : annotationElements.first;
-          final undoElement = _undoElementForPage(annotationTargets);
-          final pageAnnotationsVisible =
-              annotationTargets.isNotEmpty &&
-              annotationTargets.every((element) => element.annotationsVisible);
-          final pageAnnotationsIncludedInPdf =
-              annotationTargets.isNotEmpty &&
-              annotationTargets.every(
-                (element) => element.includeAnnotationsInPdf,
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final safePadding = MediaQuery.paddingOf(context);
+              final controlsHeight = _stageLocked ? 18.0 : 126.0;
+              final viewportWidth = (constraints.maxWidth - 16).clamp(
+                1.0,
+                double.infinity,
               );
-          return Scaffold(
-            key: _scaffoldKey,
-            backgroundColor: background,
-            drawer: Drawer(
-              width: 420,
-              child: SafeArea(
-                child: Column(
-                  children: [
-                    ListTile(
-                      title: Text(
-                        _setlist.name,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      subtitle: const Text('Tap a song to jump to it.'),
-                      trailing: IconButton(
-                        tooltip: 'Close setlist sidebar',
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Wrap(
-                        spacing: 8,
-                        children: [
-                          FilledButton.tonalIcon(
-                            onPressed: _chooseSong,
-                            icon: const Icon(Icons.playlist_add),
-                            label: const Text('Add song'),
-                          ),
-                          FilledButton.tonalIcon(
-                            onPressed: _addPlaceholder,
-                            icon: const Icon(Icons.not_interested),
-                            label: const Text('Add placeholder'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: SetlistSidebar(
-                        setlist: _setlist,
-                        draftsByVariant: _draftsByVariant,
-                        selectedEntryId: selectedEntryId,
-                        onEntryTap: (index) => _jumpToEntry(deck, index),
-                        onRemove: _remove,
-                        onEditPlaceholder: _editPlaceholder,
-                        onReorder: _reorder,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            body: SafeArea(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onHorizontalDragEnd:
-                          _annotationTool == AnnotationTool.none
-                          ? (details) {
-                              final velocity = details.primaryVelocity ?? 0;
-                              if (velocity < -250) _move(1, deck.pages.length);
-                              if (velocity > 250) _move(-1, deck.pages.length);
-                            }
-                          : null,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 66),
-                        child: Center(
-                          child: PerformanceDeckPageView(
-                            deck: deck,
-                            page: page,
-                            annotationTool: _annotationTool,
-                            onStrokeCompleted: _addStroke,
-                            onEraseAt: _eraseAt,
+              final viewportHeight =
+                  (constraints.maxHeight -
+                          safePadding.vertical -
+                          controlsHeight -
+                          16)
+                      .clamp(1.0, double.infinity);
+              final gigPages = const GigViewportLayout().plan(
+                deck: deck,
+                viewportWidth: viewportWidth,
+                viewportHeight: viewportHeight,
+                zoom: _gigZoom,
+              );
+              if (gigPages.isEmpty) {
+                return const Scaffold(
+                  body: Center(
+                    child: Text('This gig has no displayable rows.'),
+                  ),
+                );
+              }
+              final safePageIndex = _pageIndex.clamp(0, gigPages.length - 1);
+              final page = gigPages[safePageIndex];
+              final selectedEntryId = page.entryId;
+              final annotationElements = page.items
+                  .map((item) => item.element)
+                  .where(
+                    (element) => element.kind == PerformanceElementKind.strip,
+                  )
+                  .toList(growable: false);
+              final annotationTargets = <PerformanceDeckElement>[];
+              final annotationTargetIds = <String>{};
+              for (final element in annotationElements) {
+                final variantId = element.chartVariantId;
+                final stripId = element.sourceStripId;
+                if (variantId == null || stripId == null) continue;
+                if (annotationTargetIds.add('$variantId\u0000$stripId')) {
+                  annotationTargets.add(element);
+                }
+              }
+              final annotationElement = annotationElements.isEmpty
+                  ? null
+                  : annotationElements.first;
+              final undoElement = _undoElementForPage(annotationTargets);
+              final pageAnnotationsVisible =
+                  annotationTargets.isNotEmpty &&
+                  annotationTargets.every(
+                    (element) => element.annotationsVisible,
+                  );
+              final pageAnnotationsIncludedInPdf =
+                  annotationTargets.isNotEmpty &&
+                  annotationTargets.every(
+                    (element) => element.includeAnnotationsInPdf,
+                  );
+              return Scaffold(
+                key: _scaffoldKey,
+                backgroundColor: background,
+                drawerEnableOpenDragGesture: !_stageLocked,
+                drawer: _stageLocked
+                    ? null
+                    : Drawer(
+                        width: 420,
+                        child: SafeArea(
+                          child: Column(
+                            children: [
+                              ListTile(
+                                title: Text(
+                                  _setlist.name,
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                                subtitle: const Text(
+                                  'Tap a song to jump to it.',
+                                ),
+                                trailing: IconButton(
+                                  tooltip: 'Close setlist sidebar',
+                                  onPressed: () => Navigator.pop(context),
+                                  icon: const Icon(Icons.close),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                child: Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    FilledButton.tonalIcon(
+                                      onPressed: _chooseSong,
+                                      icon: const Icon(Icons.playlist_add),
+                                      label: const Text('Add song'),
+                                    ),
+                                    FilledButton.tonalIcon(
+                                      onPressed: _addPlaceholder,
+                                      icon: const Icon(Icons.not_interested),
+                                      label: const Text('Add placeholder'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Expanded(
+                                child: SetlistSidebar(
+                                  setlist: _setlist,
+                                  draftsByVariant: _draftsByVariant,
+                                  selectedEntryId: selectedEntryId,
+                                  onEntryTap: (index) =>
+                                      _jumpToEntry(gigPages, index),
+                                  onRemove: _remove,
+                                  onEditPlaceholder: _editPlaceholder,
+                                  onReorder: _reorder,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    bottom: 8,
-                    child: Material(
-                      color: Colors.black.withValues(alpha: 0.82),
-                      borderRadius: BorderRadius.circular(18),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: 'Open setlist sidebar',
-                              onPressed: () =>
-                                  _scaffoldKey.currentState?.openDrawer(),
-                              color: Colors.white,
-                              icon: const Icon(Icons.queue_music),
+                body: SafeArea(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onHorizontalDragEnd:
+                              (_stageLocked ||
+                                  _annotationTool == AnnotationTool.none)
+                              ? (details) {
+                                  final velocity = details.primaryVelocity ?? 0;
+                                  if (velocity < -250) {
+                                    _move(1, gigPages.length);
+                                  }
+                                  if (velocity > 250) {
+                                    _move(-1, gigPages.length);
+                                  }
+                                }
+                              : null,
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              8,
+                              8,
+                              8,
+                              _stageLocked ? 8 : 126,
                             ),
-                            TextButton(
-                              onPressed: _exit,
-                              child: const Text('Exit'),
-                            ),
-                            IconButton(
-                              tooltip: 'Draw annotations',
-                              onPressed: annotationElement == null
-                                  ? null
-                                  : () => setState(
-                                      () => _annotationTool =
-                                          _annotationTool == AnnotationTool.draw
-                                          ? AnnotationTool.none
-                                          : AnnotationTool.draw,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 220),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
+                              transitionBuilder: (child, animation) =>
+                                  FadeTransition(
+                                    opacity: animation,
+                                    child: SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: Offset(_pageDirection * 0.10, 0),
+                                        end: Offset.zero,
+                                      ).animate(animation),
+                                      child: child,
                                     ),
-                              color: _annotationTool == AnnotationTool.draw
-                                  ? Colors.amber
-                                  : Colors.white,
-                              icon: const Icon(Icons.draw),
-                            ),
-                            IconButton(
-                              tooltip: 'Highlight performance notes',
-                              onPressed: annotationElement == null
-                                  ? null
-                                  : () => setState(
-                                      () => _annotationTool =
-                                          _annotationTool ==
-                                              AnnotationTool.highlight
-                                          ? AnnotationTool.none
-                                          : AnnotationTool.highlight,
-                                    ),
-                              color: _annotationTool == AnnotationTool.highlight
-                                  ? Colors.amber
-                                  : Colors.white,
-                              icon: const Icon(Icons.border_color),
-                            ),
-                            IconButton(
-                              tooltip: 'Erase annotations',
-                              onPressed: annotationElement == null
-                                  ? null
-                                  : () => setState(
-                                      () => _annotationTool =
-                                          _annotationTool ==
-                                              AnnotationTool.erase
-                                          ? AnnotationTool.none
-                                          : AnnotationTool.erase,
-                                    ),
-                              color: _annotationTool == AnnotationTool.erase
-                                  ? Colors.amber
-                                  : Colors.white,
-                              icon: const Icon(Icons.auto_fix_normal),
-                            ),
-                            IconButton(
-                              tooltip: 'Undo annotation',
-                              onPressed: undoElement == null
-                                  ? null
-                                  : () => _undoAnnotation(undoElement),
-                              color: Colors.white,
-                              icon: const Icon(Icons.undo),
-                            ),
-                            IconButton(
-                              tooltip: pageAnnotationsVisible
-                                  ? 'Hide annotations'
-                                  : 'Show annotations',
-                              onPressed: annotationTargets.isEmpty
-                                  ? null
-                                  : () => _setPageAnnotationVisibility(
-                                      annotationTargets,
-                                      visible: !pageAnnotationsVisible,
-                                    ),
-                              color: Colors.white,
-                              icon: Icon(
-                                pageAnnotationsVisible
-                                    ? Icons.visibility
-                                    : Icons.visibility_off,
+                                  ),
+                              child: PerformanceViewportPageView(
+                                key: ValueKey('gig-page-$safePageIndex'),
+                                page: page,
+                                width: viewportWidth,
+                                height: viewportHeight,
+                                annotationTool: _stageLocked
+                                    ? AnnotationTool.none
+                                    : _annotationTool,
+                                onStrokeCompleted: _addStroke,
+                                onEraseAt: _eraseAt,
                               ),
                             ),
-                            IconButton(
-                              tooltip: pageAnnotationsIncludedInPdf
-                                  ? 'Exclude annotations from PDF'
-                                  : 'Include annotations in PDF',
-                              onPressed: annotationTargets.isEmpty
-                                  ? null
-                                  : () => _setPageAnnotationPdfInclusion(
-                                      annotationTargets,
-                                      included: !pageAnnotationsIncludedInPdf,
-                                    ),
-                              color: pageAnnotationsIncludedInPdf
-                                  ? Colors.amber
-                                  : Colors.white,
-                              icon: const Icon(Icons.picture_as_pdf_outlined),
-                            ),
-                            IconButton(
-                              tooltip: 'Clear all performance notes',
-                              onPressed: _clearAllPerformanceNotes,
-                              color: Colors.white,
-                              icon: const Icon(Icons.layers_clear),
-                            ),
-                            IconButton(
-                              tooltip: 'Previous page',
-                              onPressed: _pageIndex == 0
-                                  ? null
-                                  : () => _move(-1, deck.pages.length),
-                              color: Colors.white,
-                              icon: const Icon(Icons.arrow_back),
-                            ),
-                            Text(
-                              '${_pageIndex + 1} / ${deck.pages.length}',
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                            IconButton(
-                              tooltip: 'Next page',
-                              onPressed: _pageIndex + 1 == deck.pages.length
-                                  ? null
-                                  : () => _move(1, deck.pages.length),
-                              color: Colors.white,
-                              icon: const Icon(Icons.arrow_forward),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
+                      if (!_stageLocked)
+                        Positioned(
+                          left: 8,
+                          right: 8,
+                          bottom: 8,
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.82),
+                            borderRadius: BorderRadius.circular(18),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  children: [
+                                    const SizedBox(width: 8),
+                                    const Icon(
+                                      Icons.zoom_out,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    Expanded(
+                                      child: Slider(
+                                        key: const Key('gig-zoom-slider'),
+                                        value: _gigZoom,
+                                        min: 0.45,
+                                        max: 1.5,
+                                        divisions: 21,
+                                        label: '${(_gigZoom * 100).round()}%',
+                                        onChanged: (value) {
+                                          final anchor = page.items
+                                              .where(
+                                                (item) =>
+                                                    item.element.kind ==
+                                                    PerformanceElementKind
+                                                        .strip,
+                                              )
+                                              .firstOrNull
+                                              ?.element;
+                                          final reflowed =
+                                              const GigViewportLayout().plan(
+                                                deck: deck,
+                                                viewportWidth: viewportWidth,
+                                                viewportHeight: viewportHeight,
+                                                zoom: value,
+                                              );
+                                          final target = gigPageIndexForAnchor(
+                                            reflowed,
+                                            entryId: page.entryId,
+                                            sourceStripId:
+                                                anchor?.sourceStripId,
+                                            rowIndex: anchor?.rowIndex,
+                                          );
+                                          setState(() {
+                                            _gigZoom = value;
+                                            _pageIndex = target < 0
+                                                ? 0
+                                                : target;
+                                          });
+                                        },
+                                        onChangeEnd: (value) =>
+                                            unawaited(_saveGigZoom(value)),
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.zoom_in,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    SizedBox(
+                                      width: 112,
+                                      child: Text(
+                                        '${(_gigZoom * 100).round()}% zoom',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        tooltip: 'Open setlist sidebar',
+                                        onPressed: () => _scaffoldKey
+                                            .currentState
+                                            ?.openDrawer(),
+                                        color: Colors.white,
+                                        icon: const Icon(Icons.queue_music),
+                                      ),
+                                      TextButton(
+                                        onPressed: _exit,
+                                        child: const Text('Exit'),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Lock stage controls',
+                                        onPressed: () => setState(() {
+                                          _stageLocked = true;
+                                          _annotationTool = AnnotationTool.none;
+                                        }),
+                                        color: Colors.white,
+                                        icon: const Icon(Icons.lock_open),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Draw annotations',
+                                        onPressed: annotationElement == null
+                                            ? null
+                                            : () => setState(
+                                                () => _annotationTool =
+                                                    _annotationTool ==
+                                                        AnnotationTool.draw
+                                                    ? AnnotationTool.none
+                                                    : AnnotationTool.draw,
+                                              ),
+                                        color:
+                                            _annotationTool ==
+                                                AnnotationTool.draw
+                                            ? Colors.amber
+                                            : Colors.white,
+                                        icon: const Icon(Icons.draw),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Highlight performance notes',
+                                        onPressed: annotationElement == null
+                                            ? null
+                                            : () => setState(
+                                                () => _annotationTool =
+                                                    _annotationTool ==
+                                                        AnnotationTool.highlight
+                                                    ? AnnotationTool.none
+                                                    : AnnotationTool.highlight,
+                                              ),
+                                        color:
+                                            _annotationTool ==
+                                                AnnotationTool.highlight
+                                            ? Colors.amber
+                                            : Colors.white,
+                                        icon: const Icon(Icons.border_color),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Erase annotations',
+                                        onPressed: annotationElement == null
+                                            ? null
+                                            : () => setState(
+                                                () => _annotationTool =
+                                                    _annotationTool ==
+                                                        AnnotationTool.erase
+                                                    ? AnnotationTool.none
+                                                    : AnnotationTool.erase,
+                                              ),
+                                        color:
+                                            _annotationTool ==
+                                                AnnotationTool.erase
+                                            ? Colors.amber
+                                            : Colors.white,
+                                        icon: const Icon(Icons.auto_fix_normal),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Undo annotation',
+                                        onPressed: undoElement == null
+                                            ? null
+                                            : () =>
+                                                  _undoAnnotation(undoElement),
+                                        color: Colors.white,
+                                        icon: const Icon(Icons.undo),
+                                      ),
+                                      IconButton(
+                                        tooltip: pageAnnotationsVisible
+                                            ? 'Hide annotations'
+                                            : 'Show annotations',
+                                        onPressed: annotationTargets.isEmpty
+                                            ? null
+                                            : () =>
+                                                  _setPageAnnotationVisibility(
+                                                    annotationTargets,
+                                                    visible:
+                                                        !pageAnnotationsVisible,
+                                                  ),
+                                        color: Colors.white,
+                                        icon: Icon(
+                                          pageAnnotationsVisible
+                                              ? Icons.visibility
+                                              : Icons.visibility_off,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: pageAnnotationsIncludedInPdf
+                                            ? 'Exclude annotations from PDF'
+                                            : 'Include annotations in PDF',
+                                        onPressed: annotationTargets.isEmpty
+                                            ? null
+                                            : () => _setPageAnnotationPdfInclusion(
+                                                annotationTargets,
+                                                included:
+                                                    !pageAnnotationsIncludedInPdf,
+                                              ),
+                                        color: pageAnnotationsIncludedInPdf
+                                            ? Colors.amber
+                                            : Colors.white,
+                                        icon: const Icon(
+                                          Icons.picture_as_pdf_outlined,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Clear all performance notes',
+                                        onPressed: _clearAllPerformanceNotes,
+                                        color: Colors.white,
+                                        icon: const Icon(Icons.layers_clear),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Previous page',
+                                        onPressed: safePageIndex == 0
+                                            ? null
+                                            : () => _move(-1, gigPages.length),
+                                        color: Colors.white,
+                                        icon: const Icon(Icons.arrow_back),
+                                      ),
+                                      Text(
+                                        '${safePageIndex + 1} / ${gigPages.length}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Next page',
+                                        onPressed:
+                                            safePageIndex + 1 == gigPages.length
+                                            ? null
+                                            : () => _move(1, gigPages.length),
+                                        color: Colors.white,
+                                        icon: const Icon(Icons.arrow_forward),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (_stageLocked)
+                        Positioned(
+                          left: 4,
+                          bottom: 4,
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            shape: const CircleBorder(),
+                            child: IconButton(
+                              key: const Key('gig-unlock-button'),
+                              tooltip: 'Unlock stage controls',
+                              visualDensity: VisualDensity.compact,
+                              iconSize: 18,
+                              color: Colors.white70,
+                              onPressed: () =>
+                                  setState(() => _stageLocked = false),
+                              icon: const Icon(Icons.lock),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           );
         },
       ),

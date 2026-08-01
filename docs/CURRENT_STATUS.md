@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 1 August 2026
+Updated: 2 August 2026
 
 ## Repository state
 
@@ -21,7 +21,7 @@ Updated: 1 August 2026
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
 - `flutter analyze` passes with no issues, and the current source suite passes
-  225/225 tests.
+  249/249 tests.
 - The post-Apple Windows repair pass has automated coverage for fresh-page
   setlist boundaries, density-floor compaction, duplicate `.mtsong` identities,
   measure-local source-spaced semantic proposals, per-proposal source review,
@@ -30,10 +30,9 @@ Updated: 1 August 2026
   opens in Balanced and Stage-readable Gig mode without the former density
   error, keeps each new song on a fresh page, and retains duplicate and
   placeholder entries.
-- The current release checkpoint is versioned `v0.2.0-beta.1+2`. The Windows
-  installer/portable runtime and Android test APK passed archive-integrity and
-  Windows startup smoke checks. Exact artifacts and hashes are recorded in
-  `docs/releases/v0.2.0-beta.1.md`.
+- The current Android release checkpoint is versioned `v0.2.0-beta.2+3`.
+  Exact APK verification and hashes are recorded in
+  `docs/releases/v0.2.0-beta.2.md`.
 - `tool/package_windows.ps1` produces a single-file user-level installer EXE, a portable ZIP, and SHA-256 sidecars for the Windows MVP.
 - `flutter build apk --debug --no-pub` produces an installable debug APK. The
   31 July checkpoint is 242,720,986 bytes with SHA-256

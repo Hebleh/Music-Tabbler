@@ -24,22 +24,31 @@ class VisualTabTransformService {
     final analysesByStrip = {
       for (final analysis in analyses) analysis.stripId: analysis,
     };
-    if (baseStrips.any((strip) => !analysesByStrip.containsKey(strip.id))) {
+    if (baseStrips.any((strip) {
+      final analysis = analysesByStrip[strip.id];
+      return analysis == null || !analysis.isReviewed;
+    })) {
       throw const FormatException(
-        'Every original row needs reviewed visual analysis.',
+        'Every original row must be reviewed. Run Raster / OCR all rows, then '
+        'repair a blocked row or explicitly keep it unchanged.',
       );
     }
 
     final transformed = <VisualStrip>[];
     var relabelNextSystem = true;
     for (final strip in baseStrips) {
+      final analysis = analysesByStrip[strip.id]!;
+      if (analysis.keepUnchanged) {
+        transformed.add(strip);
+        continue;
+      }
       final bytes = await File(
         library.assetPath(strip.assetHash, strip.assetExtension),
       ).readAsBytes();
       final rendered = await compute(_renderVisualTabSystems, {
         'bytes': bytes,
         'strip': strip.toJson(),
-        'analysis': analysesByStrip[strip.id]!.toJson(),
+        'analysis': analysis.toJson(),
         'configuration': configuration.toJson(),
         'relabelFirstSystem': relabelNextSystem,
       });
@@ -87,6 +96,10 @@ class VisualTabTransformService {
         if (configuration.unusedTargetString != null)
           'Added unused target string '
               '${configuration.unusedTargetString! + 1}.',
+        for (final analysis in analyses)
+          if (analysis.keepUnchanged)
+            'Kept source row ${analysis.stripId} unchanged after explicit '
+                'review because it had no usable detected fret tokens.',
         for (final route in configuration.routes)
           if (route.hasManualOverride && route.manualOffset != route.fretOffset)
             'Route ${route.sourceString + 1} -> '
@@ -231,13 +244,14 @@ VisualTabSystem _systemWithSafeVerticalGuard(
   final system = systems[index];
   if (system.stringLines.length < 2) return system;
   final spacing = _medianSpacing(system.stringLines);
-  final guard = (spacing * 1.25).clamp(0.003, 0.02);
+  final topGuard = (spacing * 2.25).clamp(0.006, 0.04);
+  final bottomGuard = (spacing * 1.5).clamp(0.004, 0.03);
   final previousBottom = index == 0 ? 0.0 : systems[index - 1].rect.bottom;
   final nextTop = index + 1 == systems.length
       ? 1.0
       : systems[index + 1].rect.top;
-  final top = math.max(previousBottom, system.rect.top - guard);
-  final bottom = math.min(nextTop, system.rect.bottom + guard);
+  final top = math.max(previousBottom, system.rect.top - topGuard);
+  final bottom = math.min(nextTop, system.rect.bottom + bottomGuard);
   if (bottom <= top) return system;
   return system.copyWith(
     rect: NormalizedRect(
@@ -277,7 +291,7 @@ Map<String, Object?> _renderSystem(
       : configuration.targetLabels.length - 1 - unusedLowToHigh;
   final seam = unusedTopToBottom == null
       ? null
-      : _insertionSeam(sourceLines, unusedTopToBottom);
+      : _insertionSeam(sourceLines, unusedTopToBottom, base.height.toDouble());
   final insertionPixels = seam == null ? 0 : math.max(1, spacing.round());
   final relevantRisks =
       seam == null ||
@@ -287,6 +301,7 @@ Map<String, Object?> _renderSystem(
       ? const <VisualConnectedNotationRisk>[]
       : system.connectedNotationRisks
             .where((risk) => risk.gapIndex == unusedTopToBottom - 1)
+            .map((risk) => _inferConnectedNotationSide(risk, system))
             .toList(growable: false);
   final unresolved = relevantRisks.where(
     (risk) => risk.side == VisualConnectedComponentSide.unresolved,
@@ -366,7 +381,10 @@ Map<String, Object?> _renderSystem(
   final routes = {
     for (final route in configuration.routes) route.sourceString: route,
   };
-  for (final token in system.tokens) {
+  final transformTokens = _deduplicatedTransformTokens(system.tokens)
+    ..sort((left, right) => left.rect.left.compareTo(right.rect.left));
+  final lastFretBySourceString = <int, int>{};
+  for (final token in transformTokens) {
     if (!token.enabled ||
         token.kind != VisualTabTokenKind.fret ||
         token.stringIndex == null) {
@@ -376,7 +394,15 @@ Map<String, Object?> _renderSystem(
     if (route == null) continue;
     final parsed = _parseFret(token.text);
     if (parsed == null) continue;
-    final targetFret = parsed.$1 + route.effectiveOffset;
+    // Songsterr-style parenthesized frets denote a sustained/tied note. OCR
+    // occasionally reads the enclosed zero as a three because the tie crosses
+    // the glyph. Resolve it from the preceding played fret on the same string
+    // before applying the route offset.
+    final sourceFret = parsed.$2
+        ? lastFretBySourceString[token.stringIndex] ?? parsed.$1
+        : parsed.$1;
+    lastFretBySourceString[token.stringIndex!] = sourceFret;
+    final targetFret = sourceFret + route.effectiveOffset;
     if (targetFret < 0 || targetFret > 36) {
       throw FormatException(
         'Fret ${token.text} on source string '
@@ -385,6 +411,15 @@ Map<String, Object?> _renderSystem(
       );
     }
     final replacement = parsed.$2 ? '($targetFret)' : '$targetFret';
+    if (targetFret == sourceFret) {
+      // The inserted band already moves the source string to the routed
+      // target line. Preserve the source glyph when its fret is unchanged.
+      continue;
+    }
+    final targetLineIndex =
+        configuration.targetLabels.length - 1 - route.targetString;
+    final sourceLineIndex =
+        system.stringLines.length - 1 - token.stringIndex!;
     _replaceToken(
       output,
       token,
@@ -392,6 +427,9 @@ Map<String, Object?> _renderSystem(
       replacement,
       seam: seam,
       insertionPixels: insertionPixels,
+      sourceLineY: sourceLines[sourceLineIndex],
+      targetLineY: targetLines[targetLineIndex],
+      staffSpacing: _medianSpacing(targetLines),
       background: background,
       foreground: foreground,
     );
@@ -404,6 +442,108 @@ Map<String, Object?> _renderSystem(
     'insertionSeam': seam == null ? null : seam / base.height,
     'insertionHeight': insertionPixels / output.height,
   };
+}
+
+List<VisualTabToken> _deduplicatedTransformTokens(
+  List<VisualTabToken> tokens,
+) {
+  final result = <VisualTabToken>[];
+  for (final token in tokens) {
+    if (!token.enabled || !token.isFretLike || token.stringIndex == null) {
+      result.add(token);
+      continue;
+    }
+    final duplicateIndex = result.indexWhere((existing) {
+      if (!existing.enabled ||
+          !existing.isFretLike ||
+          existing.stringIndex != token.stringIndex) {
+        return false;
+      }
+      final overlap = _intersection(existing.rect, token.rect);
+      if (overlap != null) {
+        final smallerArea = math.min(
+          existing.rect.width * existing.rect.height,
+          token.rect.width * token.rect.height,
+        );
+        if (smallerArea > 0 &&
+            (overlap.width * overlap.height) / smallerArea >= 0.35) {
+          return true;
+        }
+      }
+      // Positioned-PDF and raster passes can disagree about the text while
+      // describing the same glyph, or use non-overlapping boxes (for example,
+      // the PDF box around `(0)` and an OCR box around a misread central `3`).
+      // Treat near-identical centres on the same string as one proposal.
+      final centerDx =
+          ((existing.rect.left + existing.rect.right) -
+                  (token.rect.left + token.rect.right))
+              .abs() /
+          2;
+      final centerDy =
+          ((existing.rect.top + existing.rect.bottom) -
+                  (token.rect.top + token.rect.bottom))
+              .abs() /
+          2;
+      final horizontalTolerance = math.max(
+        0.006,
+        math.max(existing.rect.width, token.rect.width) * 1.25,
+      );
+      final verticalTolerance = math.max(
+        0.018,
+        math.max(existing.rect.height, token.rect.height) * 1.5,
+      );
+      return centerDx <= horizontalTolerance &&
+          centerDy <= verticalTolerance;
+    });
+    if (duplicateIndex < 0) {
+      result.add(token);
+      continue;
+    }
+    final existing = result[duplicateIndex];
+    final tokenIsParenthesized = token.text.startsWith('(');
+    final existingIsParenthesized = existing.text.startsWith('(');
+    if ((tokenIsParenthesized && !existingIsParenthesized) ||
+        (tokenIsParenthesized == existingIsParenthesized &&
+            token.confidence > existing.confidence)) {
+      result[duplicateIndex] = token;
+    }
+  }
+  return result;
+}
+
+VisualConnectedNotationRisk _inferConnectedNotationSide(
+  VisualConnectedNotationRisk risk,
+  VisualTabSystem system,
+) {
+  if (risk.side != VisualConnectedComponentSide.unresolved) return risk;
+  final nearbyUpper = <VisualTabToken>[];
+  final nearbyLower = <VisualTabToken>[];
+  // Ties and slides can span a sizeable part of a measure; inspect nearby
+  // played strings on both sides of the component rather than only the few
+  // pixels touching the seam.
+  final horizontalGuard = math.max(0.25, risk.rect.width * 3);
+  for (final token in system.tokens) {
+    if (!token.enabled || !token.isFretLike || token.stringIndex == null) {
+      continue;
+    }
+    final distance = token.rect.right < risk.rect.left
+        ? risk.rect.left - token.rect.right
+        : token.rect.left > risk.rect.right
+        ? token.rect.left - risk.rect.right
+        : 0.0;
+    if (distance > horizontalGuard) continue;
+    final topToBottomString =
+        system.stringLines.length - 1 - token.stringIndex!;
+    if (topToBottomString == risk.gapIndex) nearbyUpper.add(token);
+    if (topToBottomString == risk.gapIndex + 1) nearbyLower.add(token);
+  }
+  if (nearbyUpper.isNotEmpty && nearbyLower.isEmpty) {
+    return risk.copyWith(side: VisualConnectedComponentSide.upper);
+  }
+  if (nearbyLower.isNotEmpty && nearbyUpper.isEmpty) {
+    return risk.copyWith(side: VisualConnectedComponentSide.lower);
+  }
+  return risk;
 }
 
 void _replaceTuningLabels(
@@ -521,6 +661,9 @@ void _replaceToken(
   String replacement, {
   required double? seam,
   required int insertionPixels,
+  required double sourceLineY,
+  required double targetLineY,
+  required double staffSpacing,
   required img.Color background,
   required img.Color foreground,
 }) {
@@ -528,24 +671,26 @@ void _replaceToken(
       ((token.rect.left - systemRect.left) / systemRect.width * image.width);
   final right =
       ((token.rect.right - systemRect.left) / systemRect.width * image.width);
-  var top =
+  final originalTop =
       ((token.rect.top - systemRect.top) /
       systemRect.height *
       (image.height - insertionPixels));
-  var bottom =
+  final originalBottom =
       ((token.rect.bottom - systemRect.top) /
       systemRect.height *
       (image.height - insertionPixels));
+  var top = originalTop;
+  var bottom = originalBottom;
   if (seam != null) {
     if ((top + bottom) / 2 >= seam) {
       top += insertionPixels;
       bottom += insertionPixels;
     }
   }
-  final x1 = (left.floor() - 2).clamp(0, image.width - 1);
-  final y1 = (top.floor() - 2).clamp(0, image.height - 1);
-  final x2 = (right.ceil() + 2).clamp(x1 + 1, image.width);
-  final y2 = (bottom.ceil() + 2).clamp(y1 + 1, image.height);
+  final x1 = (left.floor() - 3).clamp(0, image.width - 1);
+  final y1 = (top.floor() - 3).clamp(0, image.height - 1);
+  final x2 = (right.ceil() + 3).clamp(x1 + 1, image.width);
+  final y2 = (bottom.ceil() + 3).clamp(y1 + 1, image.height);
   img.fillRect(
     image,
     x1: x1,
@@ -554,20 +699,137 @@ void _replaceToken(
     y2: y2 - 1,
     color: background,
   );
-  final font = (y2 - y1) >= 35 ? img.arial24 : img.arial14;
-  final textWidth = replacement.codeUnits.fold<int>(
-    0,
-    (width, char) => width + font.characterXAdvance(String.fromCharCode(char)),
-  );
-  final drawX = (((left + right) / 2) - textWidth / 2).round();
-  final drawY = (((top + bottom) / 2) - font.lineHeight / 2).round();
-  img.drawString(
-    image,
+  final glyph = _scaledFretGlyph(
     replacement,
-    font: font,
-    x: drawX,
-    y: drawY,
+    targetHeight: (staffSpacing * 1.08).round().clamp(11, 44),
+    background: background,
+    foreground: foreground,
+  );
+  final centerX = (left + right) / 2;
+  final drawX = (centerX - glyph.width / 2).round();
+  final drawY = (targetLineY - glyph.height / 2).round();
+  // Raster review can correctly label a sustain as `(0)` while its geometry
+  // encloses only the central digit. Clear a staff-relative footprint around
+  // the routed string before drawing; otherwise the surviving source zero and
+  // the new 3 combine visually into a 6. Keep the footprint tight enough not
+  // to erase the neighbouring tie.
+  final replacementIsParenthesized =
+      replacement.startsWith('(') && replacement.endsWith(')');
+  final clearHalfWidth = math.max(
+    glyph.width / 2 + 2,
+    staffSpacing * (replacementIsParenthesized ? 1.4 : 0.58),
+  );
+  final clearHalfHeight = math.max(
+    glyph.height / 2 + 2,
+    staffSpacing * (replacementIsParenthesized ? 0.68 : 0.54),
+  );
+  final clearLeft = (centerX - clearHalfWidth)
+      .floor()
+      .clamp(0, image.width - 1);
+  final clearTop = (targetLineY - clearHalfHeight)
+      .floor()
+      .clamp(0, image.height - 1);
+  final clearRight = (centerX + clearHalfWidth)
+      .ceil()
+      .clamp(0, image.width - 1);
+  final clearBottom = (targetLineY + clearHalfHeight)
+      .ceil()
+      .clamp(0, image.height - 1);
+  if (seam != null && (originalTop + originalBottom) / 2 >= seam) {
+    // The inserted band is copied row-by-row. A tall sustain glyph can cross
+    // the seam even when its centre belongs to the lower string, leaving its
+    // upper arc at the pre-insertion position. Clear that ghost footprint as
+    // well as the routed footprint below.
+    // Clear around the actual source string, not the OCR rectangle centre.
+    // Positioned-PDF text boxes for parenthesized sustains are often anchored
+    // below the string even though the upper parenthesis crosses the seam.
+    final originalCenterY = sourceLineY;
+    img.fillRect(
+      image,
+      x1: clearLeft,
+      y1: (originalCenterY - clearHalfHeight)
+          .floor()
+          .clamp(0, image.height - 1),
+      x2: clearRight,
+      y2: (originalCenterY + clearHalfHeight)
+          .ceil()
+          .clamp(0, image.height - 1),
+      color: background,
+    );
+  }
+  img.fillRect(
+    image,
+    x1: clearLeft,
+    y1: clearTop,
+    x2: clearRight,
+    y2: clearBottom,
+    color: background,
+  );
+  img.compositeImage(
+    image,
+    glyph,
+    dstX: drawX,
+    dstY: drawY,
+    blend: img.BlendMode.direct,
+  );
+}
+
+img.Image _scaledFretGlyph(
+  String value, {
+  required int targetHeight,
+  required img.Color background,
+  required img.Color foreground,
+}) {
+  final textWidth = value.codeUnits.fold<int>(
+    0,
+    (width, char) =>
+        width + img.arial48.characterXAdvance(String.fromCharCode(char)),
+  );
+  final canvas = img.Image(
+    width: math.max(1, textWidth + 8),
+    height: img.arial48.lineHeight + 8,
+  );
+  img.fill(canvas, color: background);
+  img.drawString(
+    canvas,
+    value,
+    font: img.arial48,
+    x: 4,
+    y: 4,
     color: foreground,
+  );
+  var left = canvas.width;
+  var top = canvas.height;
+  var right = 0;
+  var bottom = 0;
+  final backgroundLuminance = _luminance(background);
+  for (var y = 0; y < canvas.height; y += 1) {
+    for (var x = 0; x < canvas.width; x += 1) {
+      if ((_luminance(canvas.getPixel(x, y)) - backgroundLuminance).abs() <
+          18) {
+        continue;
+      }
+      left = math.min(left, x);
+      top = math.min(top, y);
+      right = math.max(right, x + 1);
+      bottom = math.max(bottom, y + 1);
+    }
+  }
+  if (right <= left || bottom <= top) return canvas;
+  final ink = img.copyCrop(
+    canvas,
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  );
+  final height = math.max(1, targetHeight);
+  final width = math.max(1, (ink.width * height / ink.height).round());
+  return img.copyResize(
+    ink,
+    width: width,
+    height: height,
+    interpolation: img.Interpolation.cubic,
   );
 }
 
@@ -612,12 +874,18 @@ img.Image _insertHorizontalBand(
   return output;
 }
 
-double _insertionSeam(List<double> sourceLines, int unusedTopToBottom) {
+double _insertionSeam(
+  List<double> sourceLines,
+  int unusedTopToBottom,
+  double sourceHeight,
+) {
   if (unusedTopToBottom == 0) {
-    return math.max(0, sourceLines.first - _medianSpacing(sourceLines) / 2);
+    return 0;
   }
   if (unusedTopToBottom == sourceLines.length) {
-    return sourceLines.last + _medianSpacing(sourceLines) / 2;
+    // Append the new string below the complete source system. Splitting at a
+    // midpoint would move or clip rhythm and measure context below the staff.
+    return sourceHeight;
   }
   return (sourceLines[unusedTopToBottom - 1] + sourceLines[unusedTopToBottom]) /
       2;

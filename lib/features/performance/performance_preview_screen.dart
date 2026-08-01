@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
 import '../../application/app_services.dart';
+import '../../application/gig_viewport_layout.dart';
 import '../../application/performance_deck.dart';
 import '../../domain/device_preferences.dart';
 import '../../domain/library_models.dart';
@@ -31,6 +32,7 @@ class _PerformancePreviewScreenState extends State<PerformancePreviewScreen> {
   late Future<PerformanceDeck> _deck;
   final _focusNode = FocusNode(debugLabel: 'performance-preview');
   var _pageIndex = 0;
+  var _pageDirection = 1;
 
   @override
   void initState() {
@@ -49,7 +51,12 @@ class _PerformancePreviewScreenState extends State<PerformancePreviewScreen> {
 
   void _move(int delta, int pageCount) {
     final next = (_pageIndex + delta).clamp(0, pageCount - 1);
-    if (next != _pageIndex) setState(() => _pageIndex = next);
+    if (next != _pageIndex) {
+      setState(() {
+        _pageDirection = delta >= 0 ? 1 : -1;
+        _pageIndex = next;
+      });
+    }
   }
 
   KeyEventResult _handleKey(KeyEvent event, int pageCount) {
@@ -96,9 +103,9 @@ class _PerformancePreviewScreenState extends State<PerformancePreviewScreen> {
           );
         }
         final background =
-            widget.preferences.gigTheme == GigThemePreference.lightOnBlack
+            widget.preferences.appTheme == AppThemePreference.dark
             ? Colors.black
-            : const Color(0xFFE8E8E8);
+            : Colors.white;
         final page = deck.pages[_pageIndex];
         return Scaffold(
           backgroundColor: background,
@@ -112,8 +119,25 @@ class _PerformancePreviewScreenState extends State<PerformancePreviewScreen> {
                   Positioned.fill(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 72),
-                      child: Center(
-                        child: PerformanceDeckPageView(deck: deck, page: page),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: Offset(_pageDirection * 0.10, 0),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: PerformanceDeckPageView(
+                          key: ValueKey('preview-page-$_pageIndex'),
+                          deck: deck,
+                          page: page,
+                        ),
                       ),
                     ),
                   ),
@@ -177,42 +201,114 @@ class PerformanceDeckPageView extends StatelessWidget {
   Widget build(BuildContext context) {
     final contentWidth = deck.pageWidth - deck.margin * 2;
     final contentHeight = deck.pageHeight - deck.margin * 2;
-    return FittedBox(
-      fit: BoxFit.contain,
-      child: SizedBox(
-        width: deck.pageWidth,
-        height: deck.pageHeight,
-        child: ColoredBox(
-          color: Colors.white,
-          child: Padding(
-            padding: EdgeInsets.all(deck.margin),
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: SizedBox(
-                width: contentWidth,
-                height: contentHeight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (
-                      var index = 0;
-                      index < page.elements.length;
-                      index += 1
-                    ) ...[
-                      if (index > 0) SizedBox(height: deck.gap),
-                      _PerformanceElementView(
-                        element: page.elements[index],
-                        annotationTool: annotationTool,
-                        onStrokeCompleted: onStrokeCompleted,
-                        onEraseAt: onEraseAt,
-                      ),
+    // `Center` gives its child loose constraints. A bare FittedBox therefore
+    // shrink-wraps to the PDF point size and never scales a performance page
+    // up on a large monitor/tablet. Occupy the viewport first, then fit the
+    // page into it.
+    return SizedBox.expand(
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: deck.pageWidth,
+          height: deck.pageHeight,
+          child: ColoredBox(
+            color: Colors.white,
+            child: Padding(
+              padding: EdgeInsets.all(deck.margin),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: contentWidth,
+                  height: contentHeight,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (
+                        var index = 0;
+                        index < page.elements.length;
+                        index += 1
+                      ) ...[
+                        if (index > 0) SizedBox(height: deck.gap),
+                        _PerformanceElementView(
+                          element: page.elements[index],
+                          annotationTool: annotationTool,
+                          onStrokeCompleted: onStrokeCompleted,
+                          onEraseAt: onEraseAt,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class PerformanceViewportPageView extends StatelessWidget {
+  const PerformanceViewportPageView({
+    super.key,
+    required this.page,
+    required this.width,
+    required this.height,
+    this.annotationTool = AnnotationTool.none,
+    this.onStrokeCompleted,
+    this.onEraseAt,
+  });
+
+  final GigViewportPage page;
+  final double width;
+  final double height;
+  final AnnotationTool annotationTool;
+  final PerformanceStrokeCallback? onStrokeCompleted;
+  final PerformanceEraseCallback? onEraseAt;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (final item in page.items)
+            Positioned(
+              left: item.left,
+              top: item.top,
+              width: item.width,
+              height: item.height,
+              child: ClipRect(
+                child: item.element.kind == PerformanceElementKind.strip
+                    ? FittedBox(
+                        fit: BoxFit.fill,
+                        child: _PerformanceElementView(
+                          element: item.element,
+                          annotationTool: annotationTool,
+                          onStrokeCompleted: onStrokeCompleted,
+                          onEraseAt: onEraseAt,
+                          foregroundColor:
+                              Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white
+                              : Colors.black,
+                        ),
+                      )
+                    : _PerformanceElementView(
+                        element: item.element,
+                        annotationTool: annotationTool,
+                        onStrokeCompleted: onStrokeCompleted,
+                        onEraseAt: onEraseAt,
+                        viewportMode: true,
+                        foregroundColor:
+                            Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white
+                            : Colors.black,
+                      ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -224,12 +320,16 @@ class _PerformanceElementView extends StatefulWidget {
     required this.annotationTool,
     this.onStrokeCompleted,
     this.onEraseAt,
+    this.foregroundColor = Colors.black,
+    this.viewportMode = false,
   });
 
   final PerformanceDeckElement element;
   final AnnotationTool annotationTool;
   final PerformanceStrokeCallback? onStrokeCompleted;
   final PerformanceEraseCallback? onEraseAt;
+  final Color foregroundColor;
+  final bool viewportMode;
 
   @override
   State<_PerformanceElementView> createState() =>
@@ -347,36 +447,67 @@ class _PerformanceElementViewState extends State<_PerformanceElementView> {
   Widget build(BuildContext context) {
     final element = widget.element;
     final visual = switch (element.kind) {
-      PerformanceElementKind.header => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: FittedBox(
-              alignment: Alignment.centerLeft,
-              fit: BoxFit.scaleDown,
-              child: Text(
-                element.title ?? 'Untitled chart',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+      PerformanceElementKind.header => Padding(
+        padding: widget.viewportMode
+            ? const EdgeInsets.symmetric(horizontal: 8, vertical: 3)
+            : EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: widget.viewportMode
+                  ? Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        element.title ?? 'Untitled chart',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: widget.foregroundColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    )
+                  : FittedBox(
+                      alignment: Alignment.centerLeft,
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        element.title ?? 'Untitled chart',
+                        style: TextStyle(
+                          color: widget.foregroundColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
             ),
-          ),
-          if ((element.artist ?? '').isNotEmpty)
-            SizedBox(
-              height: 9,
-              child: FittedBox(
-                alignment: Alignment.centerLeft,
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  element.artist!,
-                  style: const TextStyle(color: Colors.black, fontSize: 8),
-                ),
-              ),
-            ),
-        ],
+            if ((element.artist ?? '').isNotEmpty)
+              widget.viewportMode
+                  ? Text(
+                      element.artist!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: widget.foregroundColor,
+                      ),
+                    )
+                  : SizedBox(
+                      height: 9,
+                      child: FittedBox(
+                        alignment: Alignment.centerLeft,
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          element.artist!,
+                          style: TextStyle(
+                            color: widget.foregroundColor,
+                            fontSize: 8,
+                          ),
+                        ),
+                      ),
+                    ),
+          ],
+        ),
       ),
       PerformanceElementKind.boundary => const DecoratedBox(
         decoration: BoxDecoration(

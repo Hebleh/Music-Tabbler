@@ -62,11 +62,13 @@ void main() {
       ),
     );
 
-    final origin = tester.getTopLeft(find.byType(Image));
+    final image = find.byType(Image);
+    final imageBox = tester.renderObject<RenderBox>(image);
+    Offset point(double x, double y) => imageBox.localToGlobal(Offset(x, y));
     await tester.sendEventToBinding(
       PointerDownEvent(
         pointer: 1,
-        position: origin + const Offset(20, 20),
+        position: point(20, 20),
         kind: PointerDeviceKind.stylus,
         pressure: 0.25,
         pressureMin: 0,
@@ -76,15 +78,15 @@ void main() {
     await tester.sendEventToBinding(
       PointerDownEvent(
         pointer: 2,
-        position: origin + const Offset(100, 80),
+        position: point(100, 80),
         kind: PointerDeviceKind.touch,
       ),
     );
     await tester.sendEventToBinding(
       PointerMoveEvent(
         pointer: 1,
-        position: origin + const Offset(180, 80),
-        delta: const Offset(160, 60),
+        position: point(180, 80),
+        delta: point(180, 80) - point(20, 20),
         kind: PointerDeviceKind.stylus,
         pressure: 0.75,
         pressureMin: 0,
@@ -94,7 +96,7 @@ void main() {
     await tester.sendEventToBinding(
       PointerUpEvent(
         pointer: 1,
-        position: origin + const Offset(180, 80),
+        position: point(180, 80),
         kind: PointerDeviceKind.stylus,
       ),
     );
@@ -105,6 +107,40 @@ void main() {
     expect(captured!.last.pressure, 0.75);
     expect(captured!.last.x, closeTo(0.9, 0.01));
     expect(capturedTool, AnnotationTool.draw);
+  });
+
+  testWidgets('performance page expands to the available stage viewport', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(20),
+            child: PerformanceDeckPageView(deck: deck, page: page),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getSize(find.byType(PerformanceDeckPageView)),
+      const Size(1160, 860),
+    );
+    final image = find.byType(Image);
+    final imageBox = tester.renderObject<RenderBox>(image);
+    final paintedTopLeft = imageBox.localToGlobal(Offset.zero);
+    final paintedBottomRight = imageBox.localToGlobal(const Offset(200, 100));
+    expect(
+      paintedBottomRight - paintedTopLeft,
+      const Offset(1160, 580),
+      reason: 'The 2:1 stage page should scale up to the viewport width.',
+    );
   });
 
   testWidgets('inverted stylus uses the eraser without changing tools', (
@@ -128,26 +164,28 @@ void main() {
       ),
     );
 
-    final origin = tester.getTopLeft(find.byType(Image));
+    final image = find.byType(Image);
+    final imageBox = tester.renderObject<RenderBox>(image);
+    Offset point(double x, double y) => imageBox.localToGlobal(Offset(x, y));
     await tester.sendEventToBinding(
       PointerDownEvent(
         pointer: 3,
-        position: origin + const Offset(100, 50),
+        position: point(100, 50),
         kind: PointerDeviceKind.invertedStylus,
       ),
     );
     await tester.sendEventToBinding(
       PointerMoveEvent(
         pointer: 3,
-        position: origin + const Offset(120, 55),
-        delta: const Offset(20, 5),
+        position: point(120, 55),
+        delta: point(120, 55) - point(100, 50),
         kind: PointerDeviceKind.invertedStylus,
       ),
     );
     await tester.sendEventToBinding(
       PointerUpEvent(
         pointer: 3,
-        position: origin + const Offset(120, 55),
+        position: point(120, 55),
         kind: PointerDeviceKind.invertedStylus,
       ),
     );

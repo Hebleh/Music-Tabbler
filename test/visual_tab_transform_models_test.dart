@@ -119,10 +119,24 @@ void main() {
     expect(restored.sourceType, VisualTabSourceType.positionedPdf);
     expect(restored.systems.single.tokens.single.text, '(12)');
     expect(restored.systems.single.tokens.single.enabled, isFalse);
+    expect(restored.keepUnchanged, isFalse);
     expect(restored.systems.single.stringLines, [0.3, 0.4, 0.5, 0.6]);
     expect(
       restored.systems.single.connectedNotationRisks.single.side,
       VisualConnectedComponentSide.upper,
     );
+  });
+
+  test('analysis round-trips an explicit keep-unchanged review decision', () {
+    const analysis = VisualTabAnalysis(
+      stripId: 'blank-row',
+      sourceType: VisualTabSourceType.rasterOcr,
+      keepUnchanged: true,
+    );
+
+    final restored = VisualTabAnalysis.fromJson(analysis.toJson());
+    expect(restored.keepUnchanged, isTrue);
+    expect(restored.isReviewed, isTrue);
+    expect(restored.isSourceUsable, isFalse);
   });
 }

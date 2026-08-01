@@ -31,6 +31,7 @@ void main() {
     expect(preferences.showTitle, isTrue);
     expect(preferences.showTab, isTrue);
     expect(preferences.showNotation, isTrue);
+    expect(preferences.gigZoom, 0.75);
   });
 
   test('preferences survive a new store instance', () async {
@@ -39,12 +40,25 @@ void main() {
       gigTheme: GigThemePreference.darkOnLight,
       showTitle: false,
       showNotation: false,
+      gigZoom: 0.55,
     );
 
     await store.save(saved);
     final reopened = await FileDevicePreferencesStore(file).load();
 
     expect(reopened, saved);
+  });
+
+  test('schema-v1 preferences migrate with the default gig zoom', () async {
+    await file.parent.create(recursive: true);
+    await file.writeAsString(
+      '{"schemaVersion":1,"appTheme":"dark","gigTheme":"lightOnBlack",'
+      '"showTitle":true,"showTab":true,"showNotation":true}',
+    );
+
+    final migrated = await store.load();
+
+    expect(migrated.gigZoom, 0.75);
   });
 
   test('corrupt preferences fall back without changing the file', () async {

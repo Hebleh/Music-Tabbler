@@ -1,6 +1,6 @@
 # Music Tabbler handover
 
-Updated: 1 August 2026
+Updated: 2 August 2026
 
 This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset user work; inspect the current branch and working tree before starting a contract.
 
@@ -18,13 +18,18 @@ order, the user-testing gate, and the reusable implementation cycle.
   branch contains the follow-up real-9mm semantic segmentation and review
   repairs.
 - Immutable MVP archive branch: `mvp/v0.1.0`
-- Release checkpoint: Windows MVP `v0.1.0`
+- Release checkpoint: Android beta `v0.2.0-beta.2`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Latest automated checkpoint: the complete suite passes 225/225 and
+- Latest automated checkpoint: the complete suite passes 249/249 and
   `flutter analyze` is clean after MT-602 Apple validation plus Windows
   reviewed-visual semantic segmentation, measure-local proposal positioning,
-  dead-note rendering, and source-crop repairs.
+  dead-note rendering, source-crop repairs, and live gig reflow repairs.
+- Gig mode now reflows rows for the actual viewport, horizontally centers each
+  packed line, keeps each song on a fresh screen, persists zoom, anchors zoom
+  changes to the visible source strip, provides a stage-control lock, animates
+  page changes, and renders readable non-stretched song headers. The setlist
+  editor exposes the persistent app light/dark toggle directly in its app bar.
 - Latest Windows Computer Use checkpoint: the disposable mixed setlist opens
   in Balanced (8 pages) and Stage-readable (15 pages) Gig mode without the old
   density-floor error. Song boundaries, duplicate entries, the red
