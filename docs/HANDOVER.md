@@ -18,10 +18,10 @@ order, the user-testing gate, and the reusable implementation cycle.
   branch contains the follow-up real-9mm semantic segmentation and review
   repairs.
 - Immutable MVP archive branch: `mvp/v0.1.0`
-- Release checkpoint: Android beta `v0.2.0-beta.2`
+- Release checkpoint: Android beta `v0.2.0-beta.3`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Latest automated checkpoint: the complete suite passes 249/249 and
+- Latest automated checkpoint: the complete suite passes 251/251 and
   `flutter analyze` is clean after MT-602 Apple validation plus Windows
   reviewed-visual semantic segmentation, measure-local proposal positioning,
   dead-note rendering, source-crop repairs, and live gig reflow repairs.
@@ -30,6 +30,10 @@ order, the user-testing gate, and the reusable implementation cycle.
   changes to the visible source strip, provides a stage-control lock, animates
   page changes, and renders readable non-stretched song headers. The setlist
   editor exposes the persistent app light/dark toggle directly in its app bar.
+- Android `.mtstate` and `.mtsong` imports deliberately use an unfiltered
+  system document picker because Android cannot map Music Tabbler's private
+  extensions to registered MIME types. Container kind, schema, path, size, and
+  checksum validation still occurs before any import mutation.
 - Latest Windows Computer Use checkpoint: the disposable mixed setlist opens
   in Balanced (8 pages) and Stage-readable (15 pages) Gig mode without the old
   density-floor error. Song boundaries, duplicate entries, the red

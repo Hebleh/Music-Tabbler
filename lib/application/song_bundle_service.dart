@@ -11,6 +11,7 @@ import '../domain/music_models.dart';
 import '../domain/visual_chart_models.dart';
 import '../infrastructure/local_library.dart';
 import 'portable_container.dart';
+import 'portable_file_picker.dart';
 import 'service_contracts.dart';
 
 class SongBundleService implements SongBundleTransfer {
@@ -334,9 +335,13 @@ class SongBundleService implements SongBundleTransfer {
 
   @override
   Future<SongBundleImportResult?> importSongWithPicker() async {
+    final pickerOptions = portableImportPickerOptions(
+      isAndroid: Platform.isAndroid,
+      extension: 'mtsong',
+    );
     final selected = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['mtsong'],
+      type: pickerOptions.type,
+      allowedExtensions: pickerOptions.allowedExtensions,
       withData: true,
     );
     if (selected == null) return null;

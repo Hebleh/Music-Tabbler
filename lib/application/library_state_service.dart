@@ -11,6 +11,7 @@ import '../domain/music_models.dart';
 import '../domain/visual_chart_models.dart';
 import '../infrastructure/local_library.dart';
 import 'portable_container.dart';
+import 'portable_file_picker.dart';
 import 'service_contracts.dart';
 
 class LibraryStateService implements LibraryStateTransfer {
@@ -441,9 +442,13 @@ class LibraryStateService implements LibraryStateTransfer {
   Future<LibraryStateImportResult?> importStateWithPicker(
     StateImportMode mode,
   ) async {
+    final pickerOptions = portableImportPickerOptions(
+      isAndroid: Platform.isAndroid,
+      extension: 'mtstate',
+    );
     final selected = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['mtstate'],
+      type: pickerOptions.type,
+      allowedExtensions: pickerOptions.allowedExtensions,
       withData: true,
     );
     if (selected == null) return null;
