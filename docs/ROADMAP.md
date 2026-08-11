@@ -37,8 +37,9 @@ are archived in Git and release/validation documents; they are not future work.
 
 1. Split the largest presentation files by existing session boundaries. The
    first Windows Gig-viewport, analysis-placeholder, and full analysis-review
-   goldens are now in place. The analysis canvas, row list, toolbar, and
-   inspector are separated from route/session coordination; extend the
+   goldens are now in place. The Gig setlist drawer has its own full-shell
+   golden and is separated from route/session coordination. The analysis
+   canvas, row list, toolbar, and inspector are likewise separated; extend the
    relevant surface before each remaining extraction.
 2. [x] Split the monolithic widget regression file by product workflow without
    weakening behavior-level assertions. Visual/import, setlist, and performance

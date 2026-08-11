@@ -13,7 +13,7 @@ import '../../application/setlist_edit_session.dart';
 import '../../domain/device_preferences.dart';
 import '../../domain/library_models.dart';
 import '../../domain/visual_chart_models.dart';
-import '../setlists/setlist_sidebar.dart';
+import 'gig_setlist_drawer.dart';
 import 'performance_preview_screen.dart';
 
 class GigModeScreen extends StatefulWidget {
@@ -656,63 +656,18 @@ class _GigModeScreenState extends State<GigModeScreen>
                   drawerEnableOpenDragGesture: !_viewport.stageLocked,
                   drawer: _viewport.stageLocked
                       ? null
-                      : Drawer(
-                          width: 420,
-                          child: SafeArea(
-                            child: Column(
-                              children: [
-                                ListTile(
-                                  title: Text(
-                                    _setlist.name,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleLarge,
-                                  ),
-                                  subtitle: const Text(
-                                    'Tap a song to jump to it.',
-                                  ),
-                                  trailing: IconButton(
-                                    tooltip: 'Close setlist sidebar',
-                                    onPressed: () => Navigator.pop(context),
-                                    icon: const Icon(Icons.close),
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  child: Wrap(
-                                    spacing: 8,
-                                    children: [
-                                      FilledButton.tonalIcon(
-                                        onPressed: _chooseSong,
-                                        icon: const Icon(Icons.playlist_add),
-                                        label: const Text('Add song'),
-                                      ),
-                                      FilledButton.tonalIcon(
-                                        onPressed: _addPlaceholder,
-                                        icon: const Icon(Icons.not_interested),
-                                        label: const Text('Add placeholder'),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Expanded(
-                                  child: SetlistSidebar(
-                                    setlist: _setlist,
-                                    draftsByVariant: _draftsByVariant,
-                                    selectedEntryId: selectedEntryId,
-                                    onEntryTap: (index) =>
-                                        _jumpToEntry(gigPages, index),
-                                    onRemove: _remove,
-                                    onEditPlaceholder: _editPlaceholder,
-                                    onReorder: _reorder,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                      : GigSetlistDrawer(
+                          setlist: _setlist,
+                          draftsByVariant: _draftsByVariant,
+                          selectedEntryId: selectedEntryId,
+                          titleStyle: Theme.of(context).textTheme.titleLarge,
+                          onClose: () => Navigator.pop(context),
+                          onAddSong: _chooseSong,
+                          onAddPlaceholder: _addPlaceholder,
+                          onEntryTap: (index) => _jumpToEntry(gigPages, index),
+                          onRemove: _remove,
+                          onEditPlaceholder: _editPlaceholder,
+                          onReorder: _reorder,
                         ),
                   body: SafeArea(
                     child: Stack(
