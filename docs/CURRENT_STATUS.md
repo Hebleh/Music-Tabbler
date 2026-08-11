@@ -73,8 +73,8 @@ removed with the product subsystem. Migration, legacy archive, title,
 edit-session, Gig viewport/annotation, OCR review, PDF, and widget tests protect
 the active behavior. Windows visual goldens now protect representative Gig
 viewport composition and analysis waiting/failure states before further
-presentation extraction. The current visual-only suite passes 231/231 with
-clean strict analysis and 71.1% line coverage (7,115 of 10,014 lines).
+presentation extraction. The current visual-only suite passes 232/232 with
+clean strict analysis and 71.1% line coverage (7,122 of 10,021 lines).
 
 ## Intentionally unchanged
 

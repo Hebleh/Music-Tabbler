@@ -20,8 +20,9 @@ large. Their coordination rules are moving into tested sessions; further
 splitting should follow those boundaries. A mechanical widget/file shuffle
 without stronger screenshot/golden coverage would move complexity rather than
 reduce it. Windows goldens currently protect representative Gig viewport
-composition and analysis waiting/failure cards; each extracted surface still
-needs its own representative baseline.
+composition, analysis waiting/failure cards, and the complete analysis review
+layout. The review inspector is now isolated from route/session coordination;
+each remaining extracted surface still needs its own representative baseline.
 
 The former monolithic widget regression entrypoint is now organized into
 visual/import, setlist, and performance workflow parts with shared test support.

@@ -194,6 +194,56 @@ void _registerVisualWorkflowTests() {
   });
 
   testWidgets(
+    'visual tab review screen keeps row canvas and inspector visible',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final library = _FakeLibrary();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                onPressed: () => showVisualTabAnalysisReview(
+                  context: context,
+                  library: library,
+                  analyzer: _SeamRiskVisualTabAnalyzer(library),
+                  strips: const [
+                    VisualStrip(
+                      id: 'golden-row',
+                      assetHash: 'golden',
+                      assetExtension: 'png',
+                      pixelWidth: 1200,
+                      pixelHeight: 180,
+                    ),
+                  ],
+                  sourceStringCount: 4,
+                ),
+                child: const Text('Open review'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open review'));
+      for (var index = 0; index < 4; index += 1) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      await expectLater(
+        find.byType(Scaffold).last,
+        matchesGoldenFile('goldens/windows/analysis_review_screen.png'),
+      );
+    },
+    skip: !Platform.isWindows,
+  );
+
+  testWidgets(
     'visual tab review can explicitly preserve a tokenless row unchanged',
     (tester) async {
       tester.view.physicalSize = const Size(1400, 900);

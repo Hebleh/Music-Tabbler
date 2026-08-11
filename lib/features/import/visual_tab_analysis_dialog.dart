@@ -9,6 +9,7 @@ import '../../application/visual_tab_analysis_service.dart';
 import '../../domain/visual_chart_models.dart';
 import '../../domain/visual_tab_transform_models.dart';
 import 'visual_analysis_canvas.dart';
+import 'visual_analysis_inspector.dart';
 
 Future<List<VisualTabAnalysis>?> showVisualTabAnalysisReview({
   required BuildContext context,
@@ -380,172 +381,12 @@ class _VisualTabAnalysisReviewScreenState
                   },
                 ),
               ),
-              SizedBox(
-                width: 330,
-                child: Material(
-                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border(
-                        left: BorderSide(color: Theme.of(context).dividerColor),
-                      ),
-                    ),
-                    child: ListView(
-                      padding: const EdgeInsets.all(8),
-                      children: [
-                        if (_currentAnalysis == null)
-                          const ListTile(
-                            title: Text('Select a completed row to review it.'),
-                          )
-                        else if (_analysis.warnings.isNotEmpty) ...[
-                          for (final warning in _analysis.warnings)
-                            ListTile(
-                              dense: true,
-                              leading: const Icon(Icons.warning_amber_outlined),
-                              title: Text(warning),
-                            ),
-                          const Divider(),
-                        ],
-                        if (_currentAnalysis != null)
-                          for (final system in _analysis.systems) ...[
-                            ListTile(
-                              dense: true,
-                              title: Text(
-                                'System ${_analysis.systems.indexOf(system) + 1}',
-                              ),
-                              subtitle: Text(
-                                '${system.stringLines.length} strings · '
-                                '${system.barLines.length} bar lines · '
-                                '${system.connectedNotationRisks.length} seam risk(s)',
-                              ),
-                            ),
-                            if (system.connectedNotationRisks.isNotEmpty)
-                              const ListTile(
-                                dense: true,
-                                leading: Icon(
-                                  Icons.location_on_outlined,
-                                  color: Colors.redAccent,
-                                ),
-                                title: Text(
-                                  'Find the matching red numbered marker.',
-                                ),
-                                subtitle: Text(
-                                  'Its dashed line shows the seam between two strings.',
-                                ),
-                              ),
-                            for (
-                              var riskIndex = 0;
-                              riskIndex < system.connectedNotationRisks.length;
-                              riskIndex += 1
-                            )
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child:
-                                          DropdownButtonFormField<
-                                            VisualConnectedComponentSide
-                                          >(
-                                            isExpanded: true,
-                                            initialValue: system
-                                                .connectedNotationRisks[riskIndex]
-                                                .side,
-                                            decoration: InputDecoration(
-                                              isDense: true,
-                                              labelText: visualRiskLocationLabel(
-                                                system
-                                                    .connectedNotationRisks[riskIndex],
-                                                riskIndex,
-                                              ),
-                                              helperText:
-                                                  'Choose which side moves as one piece.',
-                                              helperMaxLines: 2,
-                                            ),
-                                            items: const [
-                                              DropdownMenuItem(
-                                                value:
-                                                    VisualConnectedComponentSide
-                                                        .unresolved,
-                                                child: Text('Needs review'),
-                                              ),
-                                              DropdownMenuItem(
-                                                value:
-                                                    VisualConnectedComponentSide
-                                                        .upper,
-                                                child: Text(
-                                                  'Move with upper string',
-                                                ),
-                                              ),
-                                              DropdownMenuItem(
-                                                value:
-                                                    VisualConnectedComponentSide
-                                                        .lower,
-                                                child: Text(
-                                                  'Move with lower string',
-                                                ),
-                                              ),
-                                            ],
-                                            onChanged: (side) {
-                                              if (side != null) {
-                                                _setRiskSide(
-                                                  system.id,
-                                                  system
-                                                      .connectedNotationRisks[riskIndex]
-                                                      .id,
-                                                  side,
-                                                );
-                                              }
-                                            },
-                                          ),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Remove seam marker',
-                                      onPressed: () => _removeRisk(
-                                        system.id,
-                                        system
-                                            .connectedNotationRisks[riskIndex]
-                                            .id,
-                                      ),
-                                      icon: const Icon(
-                                        Icons.close,
-                                        color: Colors.redAccent,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            for (final token in system.tokens)
-                              CheckboxListTile(
-                                dense: true,
-                                value: _selectedTokenIds.contains(token.id),
-                                onChanged: (_) => _toggleToken(token.id),
-                                secondary: Icon(
-                                  token.enabled
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined,
-                                ),
-                                title: Text(
-                                  token.text,
-                                  style: TextStyle(
-                                    decoration: token.enabled
-                                        ? null
-                                        : TextDecoration.lineThrough,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '${token.kind.name} · '
-                                  '${token.stringIndex == null ? "no string" : "string ${token.stringIndex! + 1}"}',
-                                ),
-                              ),
-                          ],
-                      ],
-                    ),
-                  ),
-                ),
+              VisualAnalysisInspector(
+                analysis: _currentAnalysis,
+                selectedTokenIds: _selectedTokenIds,
+                onToggleToken: _toggleToken,
+                onSetRiskSide: _setRiskSide,
+                onRemoveRisk: _removeRisk,
               ),
             ],
           ),
