@@ -8,8 +8,9 @@ import '../../application/visual_analysis_review_session.dart';
 import '../../application/visual_tab_analysis_service.dart';
 import '../../domain/visual_chart_models.dart';
 import '../../domain/visual_tab_transform_models.dart';
-import 'visual_analysis_canvas.dart';
 import 'visual_analysis_inspector.dart';
+import 'visual_analysis_row_list.dart';
+import 'visual_analysis_toolbar.dart';
 
 Future<List<VisualTabAnalysis>?> showVisualTabAnalysisReview({
   required BuildContext context,
@@ -165,104 +166,27 @@ class _VisualTabAnalysisReviewScreenState
                 : _processed / widget.strips.length,
           ),
         if (_currentAnalysis != null)
-          Material(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  DropdownButton<int>(
-                    value: _currentIndex,
-                    items: [
-                      for (var index = 0; index < _analyses.length; index += 1)
-                        DropdownMenuItem(
-                          value: index,
-                          enabled: _analyses[index] != null,
-                          child: Text('Row ${index + 1}'),
-                        ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _currentIndex = value;
-                        _selectedTokenIds.clear();
-                      });
-                    },
-                  ),
-                  Chip(
-                    avatar: Icon(
-                      _analysis.sourceType == VisualTabSourceType.positionedPdf
-                          ? Icons.picture_as_pdf_outlined
-                          : Icons.document_scanner_outlined,
-                    ),
-                    label: Text(
-                      _analysis.sourceType == VisualTabSourceType.positionedPdf
-                          ? 'Positioned PDF text'
-                          : 'Raster / OCR',
-                    ),
-                  ),
-                  Text(
-                    '${_analysis.systems.length} system(s), '
-                    '${_analysis.enabledFretTokenCount} fret/dead-note token(s)',
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _rerunningSource ? null : _rerunCurrentWithOcr,
-                    icon: _rerunningSource
-                        ? const SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.document_scanner_outlined),
-                    label: const Text('Use raster / OCR'),
-                  ),
-                  OutlinedButton.icon(
-                    key: const ValueKey('raster-ocr-all-rows'),
-                    onPressed: _rerunningSource || widget.strips.isEmpty
-                        ? null
-                        : _rerunAllWithOcr,
-                    icon: const Icon(Icons.document_scanner),
-                    label: const Text('Raster / OCR all rows'),
-                  ),
-                  FilterChip(
-                    selected: _drawing,
-                    avatar: const Icon(Icons.add_box_outlined),
-                    label: const Text('Draw missing token'),
-                    onSelected: (value) => setState(() => _drawing = value),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _selectedTokenIds.length == 1
-                        ? _editSelected
-                        : null,
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('Edit'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _selectedTokenIds.length > 1
-                        ? _mergeSelected
-                        : null,
-                    icon: const Icon(Icons.call_merge),
-                    label: const Text('Merge'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _selectedTokenIds.length == 1
-                        ? _splitSelected
-                        : null,
-                    icon: const Icon(Icons.call_split),
-                    label: const Text('Separate'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _selectedTokenIds.isEmpty
-                        ? null
-                        : _deleteSelected,
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Delete'),
-                  ),
-                ],
-              ),
-            ),
+          VisualAnalysisToolbar(
+            analyses: _analyses,
+            currentIndex: _currentIndex,
+            analysis: _analysis,
+            rerunningSource: _rerunningSource,
+            drawing: _drawing,
+            stripCount: widget.strips.length,
+            selectedTokenCount: _selectedTokenIds.length,
+            onRowSelected: (value) {
+              setState(() {
+                _currentIndex = value;
+                _selectedTokenIds.clear();
+              });
+            },
+            onRerunCurrent: _rerunCurrentWithOcr,
+            onRerunAll: _rerunAllWithOcr,
+            onDrawingChanged: (value) => setState(() => _drawing = value),
+            onEdit: _editSelected,
+            onMerge: _mergeSelected,
+            onSplit: _splitSelected,
+            onDelete: _deleteSelected,
           ),
         Expanded(
           child: Row(
@@ -270,115 +194,30 @@ class _VisualTabAnalysisReviewScreenState
             children: [
               Expanded(
                 flex: 7,
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: widget.strips.length,
-                  itemBuilder: (context, index) {
-                    final analysis = _analyses[index];
-                    if (analysis == null) {
-                      return AnalysisRowPlaceholder(
-                        key: ValueKey('analysis-placeholder-$index'),
-                        rowNumber: index + 1,
-                        strip: widget.strips[index],
-                        state: _rowStates[index],
-                        error: _rowErrors[index],
-                        onRetry:
-                            _rowStates[index] == VisualAnalysisRowState.failed
-                            ? () => _analyzeIndex(index)
-                            : null,
-                      );
-                    }
-                    final confidence = _analysisConfidence(analysis);
-                    final ambiguities = analysis.systems.fold<int>(
-                      0,
-                      (total, system) =>
-                          total +
-                          system.tokens
-                              .where(
-                                (token) =>
-                                    token.enabled &&
-                                    (token.kind ==
-                                            VisualTabTokenKind.ambiguous ||
-                                        token.stringIndex == null),
-                              )
-                              .length +
-                          system.connectedNotationRisks
-                              .where(
-                                (risk) =>
-                                    risk.side ==
-                                    VisualConnectedComponentSide.unresolved,
-                              )
-                              .length,
-                    );
-                    return Card(
-                      key: ValueKey('analysis-row-$index'),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      color: index == _currentIndex
-                          ? Theme.of(context).colorScheme.secondaryContainer
-                                .withValues(alpha: 0.28)
-                          : null,
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: () => _activateRow(index),
-                        child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Wrap(
-                                spacing: 12,
-                                runSpacing: 4,
-                                children: [
-                                  Text(
-                                    'Row ${index + 1}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleSmall,
-                                  ),
-                                  Text('${analysis.systems.length} system(s)'),
-                                  Text(
-                                    '${analysis.enabledFretTokenCount} fret/dead-note token(s)',
-                                  ),
-                                  Text(
-                                    '${(confidence * 100).round()}% confidence',
-                                  ),
-                                  Text('$ambiguities unresolved'),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              VisualAnalysisCanvas(
-                                library: widget.library,
-                                strip: widget.strips[index],
-                                analysis: analysis,
-                                selectedTokenIds: index == _currentIndex
-                                    ? _selectedTokenIds
-                                    : const {},
-                                drawing: index == _currentIndex && _drawing,
-                                drawStart: index == _currentIndex
-                                    ? _drawStart
-                                    : null,
-                                drawEnd: index == _currentIndex
-                                    ? _drawEnd
-                                    : null,
-                                onTokenTap: (id) =>
-                                    _activateAndToggle(index, id),
-                                onDrawStart: (position) {
-                                  _activateRow(index);
-                                  setState(() {
-                                    _drawStart = position;
-                                    _drawEnd = position;
-                                  });
-                                },
-                                onDrawUpdate: (position) =>
-                                    setState(() => _drawEnd = position),
-                                onDrawEnd: _finishDraw,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
+                child: VisualAnalysisRowList(
+                  library: widget.library,
+                  strips: widget.strips,
+                  analyses: _analyses,
+                  rowStates: _rowStates,
+                  rowErrors: _rowErrors,
+                  currentIndex: _currentIndex,
+                  selectedTokenIds: _selectedTokenIds,
+                  drawing: _drawing,
+                  drawStart: _drawStart,
+                  drawEnd: _drawEnd,
+                  onRetry: _analyzeIndex,
+                  onActivateRow: _activateRow,
+                  onTokenTap: _activateAndToggle,
+                  onDrawStart: (index, position) {
+                    _activateRow(index);
+                    setState(() {
+                      _drawStart = position;
+                      _drawEnd = position;
+                    });
                   },
+                  onDrawUpdate: (position) =>
+                      setState(() => _drawEnd = position),
+                  onDrawEnd: _finishDraw,
                 ),
               ),
               VisualAnalysisInspector(
@@ -465,14 +304,6 @@ class _VisualTabAnalysisReviewScreenState
       }
       if (!_selectedTokenIds.add(id)) _selectedTokenIds.remove(id);
     });
-  }
-
-  double _analysisConfidence(VisualTabAnalysis analysis) {
-    if (analysis.systems.isEmpty) return 0;
-    return analysis.systems
-            .map((system) => system.confidence)
-            .reduce((left, right) => left + right) /
-        analysis.systems.length;
   }
 
   Future<void> _rerunCurrentWithOcr() async {

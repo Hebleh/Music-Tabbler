@@ -74,7 +74,7 @@ edit-session, Gig viewport/annotation, OCR review, PDF, and widget tests protect
 the active behavior. Windows visual goldens now protect representative Gig
 viewport composition and analysis waiting/failure states before further
 presentation extraction. The current visual-only suite passes 232/232 with
-clean strict analysis and 71.1% line coverage (7,122 of 10,021 lines).
+clean strict analysis and 71.2% line coverage (7,152 of 10,049 lines).
 
 ## Intentionally unchanged
 
