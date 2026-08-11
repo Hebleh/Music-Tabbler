@@ -22,9 +22,10 @@ without stronger screenshot/golden coverage would move complexity rather than
 reduce it. Windows goldens currently protect representative Gig viewport
 composition, the open Gig setlist drawer, the unlocked Gig toolbar, analysis
 waiting/failure cards, and the complete analysis review layout. The Gig setlist
-drawer, zoom controls, and command bar, plus the review canvas, row list,
-toolbar, and inspector, are now isolated from route/session coordination; each
-remaining extracted surface still needs its own representative baseline.
+drawer, stage surface, zoom controls, and command bar, plus the review canvas,
+row list, toolbar, and inspector, are now isolated from route/session
+coordination; each remaining extracted surface still needs its own
+representative baseline.
 
 The former monolithic widget regression entrypoint is now organized into
 visual/import, setlist, and performance workflow parts with shared test support.

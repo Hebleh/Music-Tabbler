@@ -15,6 +15,7 @@ import '../../domain/library_models.dart';
 import '../../domain/visual_chart_models.dart';
 import 'gig_command_bar.dart';
 import 'gig_setlist_drawer.dart';
+import 'gig_stage_surface.dart';
 import 'gig_zoom_controls.dart';
 import 'performance_preview_screen.dart';
 
@@ -735,71 +736,20 @@ class _GigModeScreenState extends State<GigModeScreen>
                   body: SafeArea(
                     child: Stack(
                       children: [
-                        Positioned.fill(
-                          child: GestureDetector(
-                            key: const Key('gig-stage-surface'),
-                            behavior: HitTestBehavior.opaque,
-                            onTap:
-                                !_viewport.stageLocked &&
-                                    _annotationTool == AnnotationTool.none
-                                ? () => setState(_viewport.toggleToolbar)
-                                : null,
-                            onHorizontalDragEnd:
-                                (_viewport.stageLocked ||
-                                    _annotationTool == AnnotationTool.none)
-                                ? (details) {
-                                    final velocity =
-                                        details.primaryVelocity ?? 0;
-                                    if (velocity < -250) {
-                                      _move(1, gigPages.length);
-                                    }
-                                    if (velocity > 250) {
-                                      _move(-1, gigPages.length);
-                                    }
-                                  }
-                                : null,
-                            child: Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                8,
-                                8,
-                                8,
-                                _viewport.stageLocked ||
-                                        !_viewport.toolbarVisible
-                                    ? 8
-                                    : 174,
-                              ),
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 220),
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
-                                transitionBuilder: (child, animation) =>
-                                    FadeTransition(
-                                      opacity: animation,
-                                      child: SlideTransition(
-                                        position: Tween<Offset>(
-                                          begin: Offset(
-                                            _viewport.pageDirection * 0.10,
-                                            0,
-                                          ),
-                                          end: Offset.zero,
-                                        ).animate(animation),
-                                        child: child,
-                                      ),
-                                    ),
-                                child: PerformanceViewportPageView(
-                                  key: ValueKey('gig-page-$safePageIndex'),
-                                  page: page,
-                                  width: viewportWidth,
-                                  height: viewportHeight,
-                                  annotationTool: _viewport.stageLocked
-                                      ? AnnotationTool.none
-                                      : _annotationTool,
-                                  onStrokeCompleted: _addStroke,
-                                  onEraseAt: _eraseAt,
-                                ),
-                              ),
-                            ),
-                          ),
+                        GigStageSurface(
+                          page: page,
+                          pageIndex: safePageIndex,
+                          width: viewportWidth,
+                          height: viewportHeight,
+                          stageLocked: _viewport.stageLocked,
+                          toolbarVisible: _viewport.toolbarVisible,
+                          pageDirection: _viewport.pageDirection,
+                          annotationTool: _annotationTool,
+                          onToggleToolbar: () =>
+                              setState(_viewport.toggleToolbar),
+                          onMove: (delta) => _move(delta, gigPages.length),
+                          onStrokeCompleted: _addStroke,
+                          onEraseAt: _eraseAt,
                         ),
                         if (!_viewport.stageLocked && _viewport.toolbarVisible)
                           Positioned(

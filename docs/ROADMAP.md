@@ -39,10 +39,10 @@ are archived in Git and release/validation documents; they are not future work.
    first Windows Gig-viewport, analysis-placeholder, and full analysis-review
    goldens are now in place. The Gig setlist drawer has its own full-shell
    golden and is separated from route/session coordination; the Gig zoom
-   controls and command bar likewise share an unlocked-toolbar golden and have
-   isolated widgets. The analysis canvas, row list, toolbar, and inspector are
-   also separated; extend the relevant surface before each remaining
-   extraction.
+   stage surface, zoom controls, and command bar likewise share an
+   unlocked-toolbar golden and have isolated widgets. The analysis canvas, row
+   list, toolbar, and inspector are also separated; extend the relevant surface
+   before each remaining extraction.
 2. [x] Split the monolithic widget regression file by product workflow without
    weakening behavior-level assertions. Visual/import, setlist, and performance
    regressions now share one entrypoint and common test support through Dart
