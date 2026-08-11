@@ -88,9 +88,10 @@ Use the development launcher only for smoke testing; do not package a release.
   review coordination. Windows goldens now protect representative Gig viewport
   composition, the open Gig setlist drawer, analysis waiting/failure cards, and
   the unlocked Gig toolbar, and the complete analysis review layout. The Gig
-  setlist drawer and zoom controls are isolated from route/session coordination.
-  Extend the relevant visual baseline before each remaining presentation
-  extraction; avoid a mechanical shuffle that only relocates complexity.
+  setlist drawer, zoom controls, and command bar are isolated from route/session
+  coordination. Extend the relevant visual baseline before each remaining
+  presentation extraction; avoid a mechanical shuffle that only relocates
+  complexity.
 - Gig annotation persistence, deck patching, and one-step undo now live in
   `GigAnnotationSession`; stroke capture and dialogs remain presentation work.
 - The canonical cached performance-deck builder exposes local cache diagnostics

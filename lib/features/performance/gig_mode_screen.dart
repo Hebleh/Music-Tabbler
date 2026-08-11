@@ -13,6 +13,7 @@ import '../../application/setlist_edit_session.dart';
 import '../../domain/device_preferences.dart';
 import '../../domain/library_models.dart';
 import '../../domain/visual_chart_models.dart';
+import 'gig_command_bar.dart';
 import 'gig_setlist_drawer.dart';
 import 'gig_zoom_controls.dart';
 import 'performance_preview_screen.dart';
@@ -835,240 +836,62 @@ class _GigModeScreenState extends State<GigModeScreen>
                                     onSetWideZoomChangeEnd: (value) =>
                                         unawaited(_saveGigZoom(value)),
                                   ),
-                                  SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          tooltip: 'Open setlist sidebar',
-                                          onPressed: () => _scaffoldKey
-                                              .currentState
-                                              ?.openDrawer(),
-                                          color: Colors.white,
-                                          icon: const Icon(Icons.queue_music),
-                                        ),
-                                        TextButton(
-                                          onPressed: _exit,
-                                          child: const Text('Exit'),
-                                        ),
-                                        IconButton(
-                                          tooltip: dark
-                                              ? 'Use dark-on-light gig theme'
-                                              : 'Use light-on-black gig theme',
-                                          onPressed: () => unawaited(
-                                            _setGigTheme(
-                                              dark
-                                                  ? GigThemePreference
-                                                        .darkOnLight
-                                                  : GigThemePreference
-                                                        .lightOnBlack,
-                                            ),
-                                          ),
-                                          color: Colors.white,
-                                          icon: Icon(
-                                            dark
-                                                ? Icons.light_mode
-                                                : Icons.dark_mode,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Lock stage controls',
-                                          onPressed: () => setState(() {
-                                            _viewport.lockStage();
-                                            _annotationTool =
-                                                AnnotationTool.none;
-                                          }),
-                                          color: Colors.white,
-                                          icon: const Icon(Icons.lock_open),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Align bars left',
-                                          onPressed: () => setState(
-                                            () => _viewport.setAlignment(
-                                              GigHorizontalAlignment.left,
-                                            ),
-                                          ),
-                                          color:
-                                              _viewport.alignment ==
-                                                  GigHorizontalAlignment.left
-                                              ? Colors.amber
-                                              : Colors.white,
-                                          icon: const Icon(
-                                            Icons.format_align_left,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Align bars center',
-                                          onPressed: () => setState(
-                                            () => _viewport.setAlignment(
-                                              GigHorizontalAlignment.center,
-                                            ),
-                                          ),
-                                          color:
-                                              _viewport.alignment ==
-                                                  GigHorizontalAlignment.center
-                                              ? Colors.amber
-                                              : Colors.white,
-                                          icon: const Icon(
-                                            Icons.format_align_center,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Align bars right',
-                                          onPressed: () => setState(
-                                            () => _viewport.setAlignment(
-                                              GigHorizontalAlignment.right,
-                                            ),
-                                          ),
-                                          color:
-                                              _viewport.alignment ==
-                                                  GigHorizontalAlignment.right
-                                              ? Colors.amber
-                                              : Colors.white,
-                                          icon: const Icon(
-                                            Icons.format_align_right,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Draw annotations',
-                                          onPressed: annotationElement == null
-                                              ? null
-                                              : () => setState(
-                                                  () => _annotationTool =
-                                                      _annotationTool ==
-                                                          AnnotationTool.draw
-                                                      ? AnnotationTool.none
-                                                      : AnnotationTool.draw,
-                                                ),
-                                          color:
-                                              _annotationTool ==
-                                                  AnnotationTool.draw
-                                              ? Colors.amber
-                                              : Colors.white,
-                                          icon: const Icon(Icons.draw),
-                                        ),
-                                        IconButton(
-                                          tooltip:
-                                              'Highlight performance notes',
-                                          onPressed: annotationElement == null
-                                              ? null
-                                              : () => setState(
-                                                  () => _annotationTool =
-                                                      _annotationTool ==
-                                                          AnnotationTool
-                                                              .highlight
-                                                      ? AnnotationTool.none
-                                                      : AnnotationTool
-                                                            .highlight,
-                                                ),
-                                          color:
-                                              _annotationTool ==
-                                                  AnnotationTool.highlight
-                                              ? Colors.amber
-                                              : Colors.white,
-                                          icon: const Icon(Icons.border_color),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Erase annotations',
-                                          onPressed: annotationElement == null
-                                              ? null
-                                              : () => setState(
-                                                  () => _annotationTool =
-                                                      _annotationTool ==
-                                                          AnnotationTool.erase
-                                                      ? AnnotationTool.none
-                                                      : AnnotationTool.erase,
-                                                ),
-                                          color:
-                                              _annotationTool ==
-                                                  AnnotationTool.erase
-                                              ? Colors.amber
-                                              : Colors.white,
-                                          icon: const Icon(
-                                            Icons.auto_fix_normal,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Undo annotation',
-                                          onPressed: undoElement == null
-                                              ? null
-                                              : () => _undoAnnotation(
-                                                  undoElement,
-                                                ),
-                                          color: Colors.white,
-                                          icon: const Icon(Icons.undo),
-                                        ),
-                                        IconButton(
-                                          tooltip: pageAnnotationsVisible
-                                              ? 'Hide annotations'
-                                              : 'Show annotations',
-                                          onPressed: annotationTargets.isEmpty
-                                              ? null
-                                              : () => _setPageAnnotationVisibility(
-                                                  annotationTargets,
-                                                  visible:
-                                                      !pageAnnotationsVisible,
-                                                ),
-                                          color: Colors.white,
-                                          icon: Icon(
-                                            pageAnnotationsVisible
-                                                ? Icons.visibility
-                                                : Icons.visibility_off,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: pageAnnotationsIncludedInPdf
-                                              ? 'Exclude annotations from PDF'
-                                              : 'Include annotations in PDF',
-                                          onPressed: annotationTargets.isEmpty
-                                              ? null
-                                              : () => _setPageAnnotationPdfInclusion(
-                                                  annotationTargets,
-                                                  included:
-                                                      !pageAnnotationsIncludedInPdf,
-                                                ),
-                                          color: pageAnnotationsIncludedInPdf
-                                              ? Colors.amber
-                                              : Colors.white,
-                                          icon: const Icon(
-                                            Icons.picture_as_pdf_outlined,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip:
-                                              'Clear all performance notes',
-                                          onPressed: _clearAllPerformanceNotes,
-                                          color: Colors.white,
-                                          icon: const Icon(Icons.layers_clear),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Previous page',
-                                          onPressed: safePageIndex == 0
-                                              ? null
-                                              : () =>
-                                                    _move(-1, gigPages.length),
-                                          color: Colors.white,
-                                          icon: const Icon(Icons.arrow_back),
-                                        ),
-                                        Text(
-                                          '${safePageIndex + 1} / ${gigPages.length}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Next page',
-                                          onPressed:
-                                              safePageIndex + 1 ==
-                                                  gigPages.length
-                                              ? null
-                                              : () => _move(1, gigPages.length),
-                                          color: Colors.white,
-                                          icon: const Icon(Icons.arrow_forward),
-                                        ),
-                                      ],
+                                  GigCommandBar(
+                                    dark: dark,
+                                    alignment: _viewport.alignment,
+                                    annotationTool: _annotationTool,
+                                    canAnnotate: annotationElement != null,
+                                    canUndo: undoElement != null,
+                                    annotationsVisible: pageAnnotationsVisible,
+                                    annotationsIncludedInPdf:
+                                        pageAnnotationsIncludedInPdf,
+                                    pageNumber: safePageIndex + 1,
+                                    pageCount: gigPages.length,
+                                    onOpenSetlist: () =>
+                                        _scaffoldKey.currentState?.openDrawer(),
+                                    onExit: _exit,
+                                    onToggleTheme: () => unawaited(
+                                      _setGigTheme(
+                                        dark
+                                            ? GigThemePreference.darkOnLight
+                                            : GigThemePreference.lightOnBlack,
+                                      ),
                                     ),
+                                    onLockStage: () => setState(() {
+                                      _viewport.lockStage();
+                                      _annotationTool = AnnotationTool.none;
+                                    }),
+                                    onAlignmentChanged: (value) => setState(
+                                      () => _viewport.setAlignment(value),
+                                    ),
+                                    onAnnotationToolChanged: (value) =>
+                                        setState(() => _annotationTool = value),
+                                    onUndo: undoElement == null
+                                        ? null
+                                        : () => _undoAnnotation(undoElement),
+                                    onToggleAnnotationVisibility:
+                                        annotationTargets.isEmpty
+                                        ? null
+                                        : () => _setPageAnnotationVisibility(
+                                            annotationTargets,
+                                            visible: !pageAnnotationsVisible,
+                                          ),
+                                    onToggleAnnotationPdfInclusion:
+                                        annotationTargets.isEmpty
+                                        ? null
+                                        : () => _setPageAnnotationPdfInclusion(
+                                            annotationTargets,
+                                            included:
+                                                !pageAnnotationsIncludedInPdf,
+                                          ),
+                                    onClearAllPerformanceNotes:
+                                        _clearAllPerformanceNotes,
+                                    onPrevious: safePageIndex == 0
+                                        ? null
+                                        : () => _move(-1, gigPages.length),
+                                    onNext: safePageIndex + 1 == gigPages.length
+                                        ? null
+                                        : () => _move(1, gigPages.length),
                                   ),
                                 ],
                               ),
