@@ -38,8 +38,10 @@ are archived in Git and release/validation documents; they are not future work.
 1. Split the largest presentation files by existing session boundaries. The
    first Windows Gig-viewport and analysis-placeholder goldens are now in
    place; extend the relevant surface before each extraction.
-2. Split the monolithic widget regression file by product workflow without
-   weakening behavior-level assertions.
+2. [x] Split the monolithic widget regression file by product workflow without
+   weakening behavior-level assertions. Visual/import, setlist, and performance
+   regressions now share one entrypoint and common test support through Dart
+   parts.
 3. [x] Add explicit cache/eviction diagnostics for very large performance
    decks while preserving the current canonical deck builder and output.
 

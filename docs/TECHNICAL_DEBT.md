@@ -23,6 +23,11 @@ reduce it. Windows goldens currently protect representative Gig viewport
 composition and analysis waiting/failure cards; each extracted surface still
 needs its own representative baseline.
 
+The former monolithic widget regression entrypoint is now organized into
+visual/import, setlist, and performance workflow parts with shared test support.
+This is test-structure cleanup only; presentation extraction still requires the
+surface-specific golden coverage described above.
+
 ## Unicode PDF headers
 
 The `pdf` package's built-in Helvetica fonts do not cover Japanese or general
