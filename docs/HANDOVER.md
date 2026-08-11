@@ -1,6 +1,6 @@
 # Music Tabbler handover
 
-Updated: 2 August 2026
+Updated: 11 August 2026
 
 This is the fastest restart document for a new Codex task. Read this file, then `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and `ARCHITECTURE.md`. Do not discard or reset user work; inspect the current branch and working tree before starting a contract.
 
@@ -21,15 +21,59 @@ order, the user-testing gate, and the reusable implementation cycle.
 - Release checkpoint: Android beta `v0.2.0-beta.3`
 - Git remote: private `Hebleh/Music-Tabbler`
 - License: intentionally undecided pending source terms and content-rights review; the private repository grants no public license
-- Latest automated checkpoint: the complete suite passes 251/251 and
+- Latest automated checkpoint: the complete suite passes 268/268 and
   `flutter analyze` is clean after MT-602 Apple validation plus Windows
   reviewed-visual semantic segmentation, measure-local proposal positioning,
   dead-note rendering, source-crop repairs, and live gig reflow repairs.
-- Gig mode now reflows rows for the actual viewport, horizontally centers each
-  packed line, keeps each song on a fresh screen, persists zoom, anchors zoom
-  changes to the visible source strip, provides a stage-control lock, animates
-  page changes, and renders readable non-stretched song headers. The setlist
-  editor exposes the persistent app light/dark toggle directly in its app bar.
+- Gig mode now reflows rows for the actual viewport and temporarily splits
+  reliably detected tab rows into individual bars without changing saved rows,
+  preview, or PDF output. Bar crops tile with no horizontal gap or duplicated
+  boundary pixels, maximizing each live row. Packed bar lines default to left alignment and offer
+  left/center/right controls that are frozen with the stage-control lock. It
+  keeps each song on a fresh screen, persists zoom, anchors zoom changes to the
+  visible source strip, animates page changes, and renders readable
+  non-stretched song headers. Gig mode itself exposes its persistent,
+  lock-aware light-on-black/dark-on-light control.
+- Edge-aligned opening/closing bar lines are now retained as canonical Gig bar
+  boundaries, fixing real Motion Sickness rows that previously remained whole.
+  Gig controls expose a per-song zoom above the persisted whole-set zoom, and a
+  plain chart tap hides/restores unlocked controls. Stage lock still wins.
+- The semantic editor, semantic sample, and semantic recognition action are
+  sunset from the active UI/service container. Legacy semantic tables and
+  bundle payloads remain intact for backward-compatible library loading.
+- Android accepts `application/pdf` through the system share sheet and routes
+  the shared bytes through the canonical visual PDF importer. Incoming files
+  are local, user-initiated, content-URI reads capped at 100 MB.
+- Visual-tab seam detection now rejects opening time signatures and narrow
+  rhythm/rest stems, exact-source verification recovers the outlined A-string
+  fret 12 in Motion Sickness measure 92, and review markers use unfilled boxes
+  plus out-of-ink leader labels. Reviewers can explicitly remove a false seam
+  marker. Parenthesized sustain frets now inherit the preceding played fret
+  across detected source rows; exact bars 113-120 therefore remain Drop-D open
+  notes and render as fret 3 on the target low B string instead of trusting
+  tie-crossed OCR readings such as `(8)` or `(10)`.
+- Visual tuning controls now follow physical tab order (highest string first),
+  allow source and target strings to be added or removed at either outer edge,
+  and safely rerun recognition when the source count changes. Presets include
+  standard six-string guitar and Drop-C# six-string to Drop-A seven-string.
+  Adding above G defaults to B, and adding above B defaults to E.
+  Added string lines stop at the detected tab boundaries, and rewritten fret
+  cleanup restores every neighboring string line.
+- Page-aware **Detect rows** uses a tight eight-pixel safety edge for cross-row
+  sustain hooks on both sides. Exact-source Motion Sickness QA retains the opening
+  tuning/time-signature ink and every final bar line while removing the former
+  page-width side gutters. Nearby notation ink outside the staff scan and a
+  small bottom safety margin preserve cross-row sustain curves without adding
+  large blank gutters.
+- The main visual-editor control row now has one chart-level **Detect rows**
+  button. It processes every eligible unsplit, non-deskewed full page in one
+  pass, preserves existing split/manual rows, and commits the result as one
+  undoable edit. Full-page eligibility is coordinate-based, so saved and
+  reopened PDF pages remain detectable after JSON persistence.
+- Gig light-on-black/dark-on-light selection now lives in Gig mode itself,
+  persists independently of the editor theme, and disappears with the other
+  stage controls when the user locks the performance view. The redundant
+  setlist-editor theme button was removed.
 - Android `.mtstate` and `.mtsong` imports deliberately use an unfiltered
   system document picker because Android cannot map Music Tabbler's private
   extensions to registered MIME types. Container kind, schema, path, size, and

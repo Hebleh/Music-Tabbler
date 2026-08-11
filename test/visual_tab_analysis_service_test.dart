@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -43,7 +44,7 @@ void main() {
       expect(geometry.systems, hasLength(2));
     });
 
-    test('flags a non-bar component crossing a string insertion gap', () {
+    test('ignores a narrow rest stem crossing a string insertion gap', () {
       final image = img.decodePng(
         _tabFixture(
           background: img.ColorRgb8(255, 255, 255),
@@ -53,8 +54,34 @@ void main() {
       img.drawLine(
         image,
         x1: 300,
-        y1: 47,
+        y1: 46,
         x2: 300,
+        y2: 60,
+        color: img.ColorRgb8(0, 0, 0),
+        thickness: 2,
+      );
+
+      final geometry = detectVisualTabGeometry(
+        Uint8List.fromList(img.encodePng(image)),
+        crop: const NormalizedRect.full(),
+        expectedStringCount: 4,
+      );
+
+      expect(geometry.systems.first.connectedNotationRisks, isEmpty);
+    });
+
+    test('flags a diagonal connector joining neighboring strings', () {
+      final image = img.decodePng(
+        _tabFixture(
+          background: img.ColorRgb8(255, 255, 255),
+          foreground: img.ColorRgb8(0, 0, 0),
+        ),
+      )!;
+      img.drawLine(
+        image,
+        x1: 288,
+        y1: 47,
+        x2: 312,
         y2: 59,
         color: img.ColorRgb8(0, 0, 0),
         thickness: 2,
@@ -350,6 +377,13 @@ void main() {
     expect(result.enabledFretTokenCount, greaterThanOrEqualTo(1));
   });
 
+  test('Songsterr open-string glyph is not promoted to fret eight', () {
+    final glyphBytes = base64Decode(_songsterrZeroGlyph);
+
+    expect(correctVisualTabRasterZeroEight('8', glyphBytes), '0');
+    expect(correctVisualTabRasterZeroEight('7', glyphBytes), '7');
+  });
+
   test(
     'deterministic glyph classifier rejects a disagreeing platform label',
     () async {
@@ -472,6 +506,7 @@ void main() {
         .where((token) => token.isFretLike && token.stringIndex == 0)
         .toList();
     expect(lowStringTokens, hasLength(greaterThanOrEqualTo(4)));
+    expect(lowStringTokens.map((token) => token.text), contains('12'));
   });
 
   test(
@@ -703,3 +738,9 @@ Uint8List _tabFixture({
   }
   return Uint8List.fromList(img.encodePng(image));
 }
+
+// A tiny crop from the reported Songsterr source. It contains one open-string
+// zero and its adjacent string segment, preserving the typography that was
+// previously confused with an eight without retaining any song content.
+const _songsterrZeroGlyph =
+    'iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAGKADAAQAAAABAAAAGAAAAADiNXWtAAABtklEQVRIDe1TOa4CMQz1jD5USFCwVRyBnQJoKUGCeq4CgtNQcQgKShpoEesNkFgktvzYEtbAmDAUdFiK5uX52W/kJJbSAV8M+4u9qfXP4O2Evz6iP9Mv7HY76Pf7MBqNSFatVsFxHAiFQqayxxxeUyk2m43KZDJ4hR9WOp1W6/VaKhE5EFlNNhoNblwoFFSxWOR9vV5/VebhRYPFYqEsy6KG5XJZnU4nWpVKhTjMzedzTzOJEA95MBigMc2y1WpBIBCg1Ww2icMcavyEaKD/jmv1OTDW82e8XC4Zm4BooA+Ra5LJJONEIsF4tVoxNgHxmu73e7FGz5754/HI2A2u1ysMh0OmRAN3I1Y+gVea8/kMtVqN1aJBPB5nweVyEXEsFmPeDYLBIIzHY6ZEg1QqxYLZbAb5fJ72iO/h1tw5/Nq2DfrdMCUeci6XY8FkMhFxNptl3gikx3E4HFQkEqFHFY1GlTZR0+lUIdbNKIcaPyG+ZCzsdDrUDBs+r3a77ac3aV4a3G431ev1lH7FbIC42+0qzPkNC4WmGW63W7oVKCuVShAOh01yT+6tgafiQ0K8RR/2MMr/AXcEKrciD6DzAAAAAElFTkSuQmCC';

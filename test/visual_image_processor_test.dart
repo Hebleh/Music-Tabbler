@@ -480,6 +480,74 @@ void main() {
     expect(proposal.masterRight, closeTo(0.91, 0.04));
   });
 
+  test('page-aware side crops stop immediately after outer staff ink', () {
+    final source = img.Image(width: 1000, height: 760);
+    img.fill(source, color: img.ColorRgb8(250, 250, 250));
+    for (final top in [120, 340, 560]) {
+      for (var line = 0; line < 4; line += 1) {
+        img.fillRect(
+          source,
+          x1: 100,
+          y1: top + line * 12,
+          x2: 902,
+          y2: top + line * 12 + 1,
+          color: img.ColorRgb8(25, 25, 25),
+        );
+      }
+      img.fillRect(
+        source,
+        x1: 76,
+        y1: top,
+        x2: 82,
+        y2: top + 36,
+        color: img.ColorRgb8(25, 25, 25),
+      );
+      img.fillRect(
+        source,
+        x1: 900,
+        y1: top,
+        x2: 902,
+        y2: top + 36,
+        color: img.ColorRgb8(25, 25, 25),
+      );
+    }
+    // A cross-row sustain can begin just outside the first bar line and below
+    // the staff-band scan. It is real notation and must survive the side crop.
+    img.drawLine(
+      source,
+      x1: 68,
+      y1: 392,
+      x2: 104,
+      y2: 398,
+      color: img.ColorRgb8(25, 25, 25),
+      thickness: 2,
+    );
+
+    final proposal = const HorizontalRowDetector().detectPageAware(
+      Uint8List.fromList(img.encodePng(source)),
+    );
+
+    expect(proposal.rows, hasLength(3));
+    expect(
+      proposal.masterLeft * source.width,
+      lessThanOrEqualTo(60.01),
+      reason:
+          'A cross-row sustain needs an eight-pixel left safety edge so its '
+          'anti-aliased hook is not clipped.',
+    );
+    expect(proposal.masterRight * source.width, inInclusiveRange(909, 912));
+    expect(
+      proposal.rows.every(
+        (row) =>
+            row.right * source.width >= 909 && row.right * source.width <= 912,
+      ),
+      isTrue,
+      reason:
+          'The final bar line and a cross-row sustain hook need a minimal '
+          'right safety edge.',
+    );
+  });
+
   test('stage density refuses an unprepared portrait page', () {
     final source = img.Image(width: 600, height: 900);
     img.fill(source, color: img.ColorRgb8(250, 250, 250));

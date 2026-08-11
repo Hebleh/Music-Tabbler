@@ -2,6 +2,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 
 void main() {
+  test('full-page crop remains identifiable after persistence', () {
+    const strip = VisualStrip(
+      id: 'full-page',
+      assetHash: 'asset',
+      assetExtension: 'png',
+      pixelWidth: 1200,
+      pixelHeight: 800,
+    );
+
+    final restored = VisualStrip.fromJson(strip.toJson());
+
+    expect(restored.crop.isFull, isTrue);
+    expect(const NormalizedRect(0, 0.1, 1, 1).isFull, isFalse);
+  });
+
   test('split master crop controls survive strip persistence', () {
     const strip = VisualStrip(
       id: 'split-row',

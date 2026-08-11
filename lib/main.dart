@@ -8,7 +8,6 @@ import 'app.dart';
 import 'application/app_services.dart';
 import 'application/pdf_export_service.dart';
 import 'application/song_bundle_service.dart';
-import 'application/semantic_pdf_export_service.dart';
 import 'application/library_state_service.dart';
 import 'application/text_recognition_service.dart';
 import 'application/visual_import_service.dart';
@@ -16,6 +15,7 @@ import 'infrastructure/local_library.dart';
 import 'infrastructure/device_preferences_store.dart';
 import 'infrastructure/external_url_opener.dart';
 import 'infrastructure/performance_mode_controller.dart';
+import 'infrastructure/incoming_pdf_receiver.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,11 +35,9 @@ Future<void> main() async {
         services: AppServices(
           library: library,
           songVariants: library,
-          semanticCharts: library,
           setlists: library,
           importer: VisualImportService(library),
           exporter: pdfExporter,
-          semanticExporter: const SemanticPdfExportService(),
           setlistExporter: pdfExporter,
           performanceDeckBuilder: pdfExporter,
           textRecognition: NativeTextRecognitionService(library),
@@ -48,6 +46,9 @@ Future<void> main() async {
           externalUrlOpener: const MethodChannelExternalUrlOpener(),
           songBundles: songBundles,
           libraryState: libraryState,
+          incomingPdf: Platform.isAndroid
+              ? MethodChannelIncomingPdfReceiver()
+              : null,
         ),
       ),
     );

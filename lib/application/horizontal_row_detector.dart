@@ -75,11 +75,26 @@ class HorizontalRowDetector {
     final rights = sideBounds.map((value) => value.$2).toList()..sort();
     final medianLeft = lefts[lefts.length ~/ 2];
     final medianRight = rights[rights.length ~/ 2];
-    final padding = sourceRect.width * 0.012;
-    final masterLeft = (medianLeft - padding)
+    // A tie or parenthesized sustain can cross just beyond the first/last bar
+    // line without touching the staff-line scan. Retain nearby real row ink,
+    // but cap a single row's influence so a distant speck cannot restore the
+    // old page-width gutters.
+    final maximumInkExpansion = (24 / image.width).clamp(6 / image.width, 0.02);
+    final outerLeft = lefts.first
+        .clamp(medianLeft - maximumInkExpansion, medianLeft)
+        .toDouble();
+    final outerRight = rights.last
+        .clamp(medianRight, medianRight + maximumInkExpansion)
+        .toDouble();
+    // The staff-band bounds already include the complete outer ink. Cross-row
+    // sustain hooks can meet either outermost detected pixel, so retain a
+    // small safety edge on both sides without restoring page-width gutters.
+    final leftPadding = 8 / image.width;
+    final rightPadding = 8 / image.width;
+    final masterLeft = (outerLeft - leftPadding)
         .clamp(sourceRect.left, sourceRect.right - 0.02)
         .toDouble();
-    final masterRight = (medianRight + padding)
+    final masterRight = (outerRight + rightPadding)
         .clamp(masterLeft + 0.02, sourceRect.right)
         .toDouble();
     return PageRowProposal(
@@ -352,12 +367,29 @@ class HorizontalRowDetector {
     }
     final topGuard = (image.height * 0.035).round().clamp(4, 90);
     final bottomGuard = (image.height * 0.045).round().clamp(6, 110);
+    final bottomNotationPadding = (image.height * 0.003).round().clamp(4, 8);
     final tightenedTop = (staffBand.$1 - topGuard)
         .clamp(top, bottom - 1)
         .toInt();
     final tightenedBottom = (staffBand.$2 + bottomGuard)
-        .clamp(tightenedTop + 1, bottom)
+        .clamp(
+          tightenedTop + 1,
+          (bottom + bottomNotationPadding).clamp(
+            tightenedTop + 1,
+            image.height,
+          ),
+        )
         .toInt();
+    // Include strong notation outside the staff band itself, notably the
+    // leading edge of cross-row ties and parenthesized sustain glyphs.
+    for (var y = tightenedTop; y < tightenedBottom; y += 1) {
+      for (var x = left; x < right; x += stepX) {
+        final distance = (_luminance(image.getPixel(x, y)) - background).abs();
+        if (distance < 16) continue;
+        inkLeft = mathMin(inkLeft, x);
+        inkRight = mathMax(inkRight, x);
+      }
+    }
     return (
       NormalizedRect(
         row.left,

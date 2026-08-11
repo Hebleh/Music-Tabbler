@@ -11,13 +11,9 @@ import '../../application/app_services.dart';
 import '../../application/draft_edit_session.dart';
 import '../../application/highlight_geometry.dart';
 import '../../application/horizontal_row_detector.dart';
-import '../../application/recognition_review.dart';
-import '../../application/reviewed_visual_recognition.dart';
-import '../../application/semantic_recognition_service.dart';
 import '../../application/service_contracts.dart';
 import '../../application/visual_tab_analysis_service.dart';
 import '../../application/visual_tab_transform_service.dart';
-import '../../domain/music_models.dart';
 import '../../domain/visual_chart_models.dart';
 import '../../domain/visual_tab_transform_models.dart';
 import 'multi_row_split_dialog.dart';
@@ -33,12 +29,10 @@ class VisualImportScreen extends StatefulWidget {
     super.key,
     required this.services,
     this.initialDraft,
-    this.onSemanticProposalCreated,
   });
 
   final AppServices services;
   final VisualChartDraft? initialDraft;
-  final ValueChanged<SongChart>? onSemanticProposalCreated;
 
   @override
   State<VisualImportScreen> createState() => _VisualImportScreenState();
@@ -116,100 +110,6 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     _commitDraft(restored, recordUndo: false);
   }
 
-  Future<void> _recognizeSemanticProposal() async {
-    if (_busy || _draft.strips.isEmpty) return;
-    final settings = await _chooseRecognitionSettings();
-    if (settings == null || !mounted) return;
-    setState(() => _busy = true);
-    try {
-      final reviewedInputs = _reviewedRecognitionInputs(settings);
-      final inputs = reviewedInputs ?? <RecognitionStripInput>[];
-      var sourceComplete = reviewedInputs != null;
-      if (reviewedInputs == null) {
-        sourceComplete = true;
-        for (final strip in _draft.strips) {
-          final recognition = await widget.services.textRecognition.recognize(
-            strip,
-          );
-          if (recognition.regions.isEmpty) sourceComplete = false;
-          inputs.add(
-            RecognitionStripInput(
-              sourceId: '${strip.assetHash}.${strip.assetExtension}',
-              regions: recognition.regions,
-              stringCount: settings.tuning.strings.length,
-              tabBand: settings.combinedNotationAndTab
-                  ? const NormalizedRect(0, 0.5, 1, 0.99)
-                  : const NormalizedRect(0, 0.05, 1, 0.95),
-            ),
-          );
-        }
-      }
-      final chartId = 'semantic-${_draft.id}';
-      final fresh = const SemanticRecognitionService().propose(
-        chartId: chartId,
-        title: _draft.title,
-        artist: _draft.artist,
-        strips: inputs,
-        tuning: settings.tuning,
-      );
-      final freshChart = fresh.chart.copyWith(
-        recognitionSourceComplete: sourceComplete,
-      );
-      final prior = await widget.services.semanticCharts.loadSemanticChart(
-        chartId,
-      );
-      final proposal = prior == null
-          ? freshChart
-          : mergeRecognitionRerun(prior, freshChart);
-      final identity = await widget.services.songVariants.identityForDraft(
-        _draft.id,
-      );
-      await widget.services.semanticCharts.saveSemanticChart(
-        proposal,
-        songId: identity?.songId ?? 'song-${_draft.id}',
-        updatedAt: DateTime.now().toUtc(),
-      );
-      if (!mounted) return;
-      widget.onSemanticProposalCreated?.call(proposal);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Created ${fresh.proposedEvents} local recognition proposal(s). '
-            '${fresh.diagnostics.length} row(s) need extra review.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Semantic recognition failed: $error')),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  List<RecognitionStripInput>? _reviewedRecognitionInputs(
-    _RecognitionSettings settings,
-  ) {
-    final record = _draft.visualTabTransform;
-    if (record == null || record.analyses.isEmpty) return null;
-    final analyses = record.analyses
-        .map(VisualTabAnalysis.fromJson)
-        .toList(growable: false);
-    if (analyses.length != record.baseStrips.length ||
-        analyses.any((analysis) => !analysis.isSourceUsable)) {
-      throw StateError(
-        'Reviewed visual analysis is incomplete. Re-open Visual tab transform '
-        'and repair or retry every source row before semantic recognition.',
-      );
-    }
-    return reviewedVisualRecognitionInputs(
-      record: record,
-      tuning: settings.tuning,
-    );
-  }
-
   Future<void> _reviewVisualTabAnalysis({
     List<VisualStrip>? stripsOverride,
   }) async {
@@ -217,24 +117,38 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     if (_busy || strips.isEmpty) return;
     final sourceStringCount = await _chooseSourceStringCount();
     if (sourceStringCount == null || !mounted) return;
-    final result = await showVisualTabAnalysisReview(
-      context: context,
-      library: widget.services.library,
-      analyzer: VisualTabAnalysisService(
-        library: widget.services.library,
-        textRecognition: widget.services.textRecognition,
-      ),
-      strips: strips,
-      sourceStringCount: sourceStringCount,
-    );
+    final result = await _reviewStripsAtStringCount(strips, sourceStringCount);
     if (result == null || !mounted) return;
     final configuration = await showVisualTabTransformDialog(
       context: context,
       sourceStringCount: sourceStringCount,
     );
     if (configuration == null || !mounted) return;
-    await _applyVisualTabTransform(result, configuration);
+    var reviewed = result;
+    if (configuration.sourceLabels.length != sourceStringCount) {
+      final rereviewed = await _reviewStripsAtStringCount(
+        strips,
+        configuration.sourceLabels.length,
+      );
+      if (rereviewed == null || !mounted) return;
+      reviewed = rereviewed;
+    }
+    await _applyVisualTabTransform(reviewed, configuration);
   }
+
+  Future<List<VisualTabAnalysis>?> _reviewStripsAtStringCount(
+    List<VisualStrip> strips,
+    int sourceStringCount,
+  ) => showVisualTabAnalysisReview(
+    context: context,
+    library: widget.services.library,
+    analyzer: VisualTabAnalysisService(
+      library: widget.services.library,
+      textRecognition: widget.services.textRecognition,
+    ),
+    strips: strips,
+    sourceStringCount: sourceStringCount,
+  );
 
   Future<void> _applyVisualTabTransform(
     List<VisualTabAnalysis> analyses,
@@ -343,7 +257,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       await _reviewVisualTabAnalysis(stripsOverride: record.baseStrips);
       return;
     }
-    final analyses = savedAnalyses;
+    var analyses = savedAnalyses;
     final initial = VisualTabTransformConfiguration.fromJson(
       record.configuration,
     );
@@ -353,6 +267,14 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       initialValue: initial,
     );
     if (configuration != null && mounted) {
+      if (configuration.sourceLabels.length != initial.sourceLabels.length) {
+        final reviewed = await _reviewStripsAtStringCount(
+          record.baseStrips,
+          configuration.sourceLabels.length,
+        );
+        if (reviewed == null || !mounted) return;
+        analyses = reviewed;
+      }
       await _applyVisualTabTransform(analyses, configuration);
     }
   }
@@ -412,81 +334,6 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     return result;
   }
 
-  Future<_RecognitionSettings?> _chooseRecognitionSettings() async {
-    var tuning = BassTuning.eadg;
-    var combinedNotationAndTab = true;
-    return showDialog<_RecognitionSettings>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Recognition source layout'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<BassTuning>(
-                initialValue: tuning,
-                decoration: const InputDecoration(
-                  labelText: 'Original source tuning',
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: BassTuning.eadg,
-                    child: Text('4-string EADG'),
-                  ),
-                  DropdownMenuItem(
-                    value: BassTuning.beadg,
-                    child: Text('5-string BEADG'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => tuning = value);
-                },
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<bool>(
-                initialValue: combinedNotationAndTab,
-                decoration: const InputDecoration(labelText: 'Row layout'),
-                items: const [
-                  DropdownMenuItem(
-                    value: true,
-                    child: Text('Notation above tablature'),
-                  ),
-                  DropdownMenuItem(value: false, child: Text('Tablature only')),
-                ],
-                onChanged: (value) {
-                  if (value != null) {
-                    setDialogState(() => combinedNotationAndTab = value);
-                  }
-                },
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Recognition creates editable proposals only. Review every '
-                'note before using transpose or gig-ready.',
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(
-                context,
-                _RecognitionSettings(
-                  tuning: tuning,
-                  combinedNotationAndTab: combinedNotationAndTab,
-                ),
-              ),
-              child: const Text('Recognize'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _titleController.removeListener(_metadataChanged);
@@ -532,13 +379,6 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                             ? Icons.alt_route
                             : Icons.transform,
                       ),
-                    ),
-                    IconButton(
-                      tooltip: 'Recognize semantic proposal',
-                      onPressed: _busy || _draft.strips.isEmpty
-                          ? null
-                          : _recognizeSemanticProposal,
-                      icon: const Icon(Icons.auto_fix_high),
                     ),
                     IconButton(
                       tooltip: _draft.provenance == null
@@ -751,6 +591,14 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                                   ),
                                   label: const Text('Add PDF'),
                                 ),
+                                FilledButton.tonalIcon(
+                                  key: const ValueKey('detect-all-rows'),
+                                  onPressed: _busy || _draft.strips.isEmpty
+                                      ? null
+                                      : _detectRowsAcrossChart,
+                                  icon: const Icon(Icons.view_stream_outlined),
+                                  label: const Text('Detect rows'),
+                                ),
                                 if (defaultTargetPlatform ==
                                     TargetPlatform.windows)
                                   FilledButton.tonalIcon(
@@ -959,7 +807,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   Future<void> _autoPrepareImportedPages(List<VisualStrip> additions) async {
     final proposals = <String, Map<String, Object?>>{};
     for (final strip in additions) {
-      if (strip.crop != const NormalizedRect.full()) continue;
+      if (!strip.crop.isFull) continue;
       try {
         final proposal = await compute(_detectImportedPageRows, {
           'path': widget.services.library.assetPath(
@@ -982,7 +830,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     var createdRows = 0;
     for (final strip in _draft.strips) {
       final proposal = proposals[strip.id];
-      if (proposal == null || strip.crop != const NormalizedRect.full()) {
+      if (proposal == null || !strip.crop.isFull) {
         prepared.add(strip);
         continue;
       }
@@ -1011,6 +859,104 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _detectRowsAcrossChart() async {
+    if (_busy || _draft.strips.isEmpty) return;
+    final eligible = [
+      for (final strip in _draft.strips)
+        if (strip.crop.isFull && strip.deskewDegrees.abs() < 0.0001) strip,
+    ];
+    if (eligible.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No unsplit full pages are available. Existing rows were left '
+            'unchanged.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _busy = true);
+    final proposals = <String, Map<String, Object?>>{};
+    var failures = 0;
+    try {
+      for (final strip in eligible) {
+        try {
+          final proposal = await compute(_detectImportedPageRows, {
+            'path': widget.services.library.assetPath(
+              strip.assetHash,
+              strip.assetExtension,
+            ),
+          });
+          if ((proposal['rows']! as List).length > 1) {
+            proposals[strip.id] = proposal;
+          }
+        } catch (_) {
+          failures += 1;
+        }
+      }
+      if (!mounted) return;
+      if (proposals.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              failures == 0
+                  ? 'No additional multi-row pages were detected. Existing '
+                        'rows were left unchanged.'
+                  : 'Could not detect rows in $failures page(s). Use Split '
+                        'into rows for those pages.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final currentIds = _draft.strips.map((strip) => strip.id).toSet();
+      proposals.removeWhere((id, _) => !currentIds.contains(id));
+      final prepared = <VisualStrip>[];
+      var createdRows = 0;
+      var preparedPages = 0;
+      for (final strip in _draft.strips) {
+        final proposal = proposals[strip.id];
+        if (proposal == null ||
+            !strip.crop.isFull ||
+            strip.deskewDegrees.abs() >= 0.0001) {
+          prepared.add(strip);
+          continue;
+        }
+        final rows = [
+          for (final value in proposal['rows']! as List)
+            NormalizedRect.fromJson((value as Map).cast<String, Object?>()),
+        ];
+        final masterLeft = (proposal['masterLeft']! as num).toDouble();
+        final masterRight = (proposal['masterRight']! as num).toDouble();
+        for (final row in rows) {
+          prepared.add(
+            _resplitStrip(row, [strip]).copyWith(
+              splitMasterLeft: masterLeft,
+              splitMasterRight: masterRight,
+            ),
+          );
+        }
+        createdRows += rows.length;
+        preparedPages += 1;
+      }
+      _commitDraft(_draft.copyWith(strips: prepared));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Detected $createdRows rows from $preparedPages full page(s). '
+            'Ctrl+Z restores the original pages.'
+            '${failures == 0 ? '' : ' $failures page(s) still need manual splitting.'}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _recognizeMetadata(VisualStrip strip) async {
@@ -1660,16 +1606,6 @@ class _StripCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _RecognitionSettings {
-  const _RecognitionSettings({
-    required this.tuning,
-    required this.combinedNotationAndTab,
-  });
-
-  final BassTuning tuning;
-  final bool combinedNotationAndTab;
 }
 
 class _DesktopDropRegion extends StatelessWidget {

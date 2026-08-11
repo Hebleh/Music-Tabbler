@@ -20,7 +20,26 @@ Future<VisualTabTransformConfiguration?> showVisualTabTransformDialog({
   );
 }
 
-enum _TransformPreset { custom, allStrings, dropDToBeadg, halfStepDownToBeadg }
+enum _TransformPreset {
+  custom,
+  allStrings,
+  standardGuitar,
+  dropCSharpToDropA7,
+  dropDToBeadg,
+  halfStepDownToBeadg,
+}
+
+enum _TuningEdge { high, low }
+
+class _TuningEdit {
+  const _TuningEdit(this.value, {this.edge, this.delta = 0});
+
+  final String value;
+  final _TuningEdge? edge;
+  final int delta;
+
+  bool get changedStringCount => delta != 0;
+}
 
 class _VisualTabTransformDialog extends StatefulWidget {
   const _VisualTabTransformDialog({
@@ -76,7 +95,11 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
       text: initial == null
           ? ''
           : initial.selectedStringPitchChanges.entries
-                .map((entry) => '${entry.key + 1}:${_signed(entry.value)}')
+                .map(
+                  (entry) =>
+                      '${initial.sourceLabels.length - entry.key}:'
+                      '${_signed(entry.value)}',
+                )
                 .join(', '),
     );
     _routeTargets =
@@ -125,6 +148,14 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                     child: Text('All strings: pitch change only'),
                   ),
                   DropdownMenuItem(
+                    value: _TransformPreset.standardGuitar,
+                    child: Text('Standard guitar EADGBE 6-string → 6-string'),
+                  ),
+                  DropdownMenuItem(
+                    value: _TransformPreset.dropCSharpToDropA7,
+                    child: Text('Drop-C# 6-string → Drop-A 7-string'),
+                  ),
+                  DropdownMenuItem(
                     value: _TransformPreset.dropDToBeadg,
                     child: Text('Drop-D 4-string → BEADG 5-string'),
                   ),
@@ -139,12 +170,13 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
               ),
               const SizedBox(height: 10),
               _TuningOffsetRows(
-                label: 'Source open-string tuning · low → high',
+                id: 'source-tuning',
+                label: 'Source open-string tuning · high → low',
                 tuningSpec: _source.text,
-                onChanged: (value) {
-                  _source.text = value;
+                onChanged: (edit) {
+                  _source.text = edit.value;
                   _preset = _TransformPreset.custom;
-                  _refreshRoutes();
+                  _refreshRoutes(reset: edit.changedStringCount);
                 },
               ),
               const SizedBox(height: 10),
@@ -152,12 +184,13 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                 children: [
                   Expanded(
                     child: _TuningOffsetRows(
-                      label: 'Target open-string tuning · low → high',
+                      id: 'target-tuning',
+                      label: 'Target open-string tuning · high → low',
                       tuningSpec: _target.text,
-                      onChanged: (value) {
-                        _target.text = value;
+                      onChanged: (edit) {
+                        _target.text = edit.value;
                         _preset = _TransformPreset.custom;
-                        _refreshRoutes();
+                        _refreshRoutes(reset: edit.changedStringCount);
                       },
                     ),
                   ),
@@ -218,7 +251,7 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                       decoration: const InputDecoration(
                         labelText: 'Selected-string overrides (optional)',
                         helperText:
-                            'Low-to-high string number:change, e.g. 1:+3',
+                            'Tab string number (top to bottom):change, e.g. 1:+3',
                       ),
                     ),
                   ),
@@ -230,7 +263,8 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                 onChanged: (value) => setState(() => _advancedTunings = value),
                 title: const Text('Advanced arbitrary tuning / octave entry'),
                 subtitle: const Text(
-                  'Edit confirmed low-to-high label:MIDI values directly.',
+                  'Edit confirmed internal low-to-high label:MIDI values '
+                  'directly.',
                 ),
               ),
               if (_advancedTunings) ...[
@@ -249,7 +283,7 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                   decoration: const InputDecoration(
                     labelText: 'Advanced target tuning, low → high',
                     helperText:
-                        'Target may have the same strings or one extra.',
+                        'Target may have the same or more strings, up to 12.',
                   ),
                 ),
               ],
@@ -261,18 +295,17 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  routePreview.targetLabels.length ==
-                          routePreview.sourceLabels.length + 1
-                      ? 'Five-string result: choose exactly one unused target '
-                            'string. The other four receive the source strings '
-                            'in order.'
-                      : 'Every target string is used for this transform.',
+                  routePreview.unusedTargetStrings.isEmpty
+                      ? 'Every target string is used for this transform.'
+                      : '${routePreview.unusedTargetStrings.length} added '
+                            'target string(s) stay blank until music is routed '
+                            'to them.',
                 ),
                 const SizedBox(height: 4),
                 for (
-                  var targetIndex = 0;
-                  targetIndex < routePreview.targetLabels.length;
-                  targetIndex += 1
+                  var targetIndex = routePreview.targetLabels.length - 1;
+                  targetIndex >= 0;
+                  targetIndex -= 1
                 )
                   SwitchListTile(
                     key: ValueKey('target-string-enabled-$targetIndex'),
@@ -291,7 +324,7 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                           )
                         : null,
                     title: Text(
-                      '${targetIndex + 1}. '
+                      '${routePreview.targetLabels.length - targetIndex}. '
                       '${routePreview.targetLabels[targetIndex]}',
                     ),
                     subtitle: Text(
@@ -299,7 +332,7 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                             (route) => route.targetString == targetIndex,
                           )
                           ? 'Used by source string '
-                                '${routePreview.routes.indexWhere((route) => route.targetString == targetIndex) + 1}'
+                                '${routePreview.sourceLabels.length - routePreview.routes.indexWhere((route) => route.targetString == targetIndex)}'
                           : 'Added target string - unused',
                     ),
                   ),
@@ -310,17 +343,17 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
                 ),
                 const SizedBox(height: 6),
                 for (
-                  var sourceIndex = 0;
-                  sourceIndex < routePreview.sourceLabels.length;
-                  sourceIndex += 1
+                  var sourceIndex = routePreview.sourceLabels.length - 1;
+                  sourceIndex >= 0;
+                  sourceIndex -= 1
                 )
                   _routeRow(routePreview, sourceIndex),
-                if (routePreview.unusedTargetString case final unused?)
+                if (routePreview.unusedTargetStrings.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                      'Unused target string: ${unused + 1} '
-                      '(${routePreview.targetLabels[unused]}).',
+                      'Unused target strings: '
+                      '${routePreview.unusedTargetStrings.map((unused) => '${routePreview.targetLabels.length - unused} (${routePreview.targetLabels[unused]})').join(', ')}.',
                     ),
                   ),
               ],
@@ -385,7 +418,8 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
           SizedBox(
             width: 180,
             child: Text(
-              '${sourceIndex + 1}. ${preview.sourceLabels[sourceIndex]}',
+              '${preview.sourceLabels.length - sourceIndex}. '
+              '${preview.sourceLabels[sourceIndex]}',
             ),
           ),
           const Icon(Icons.arrow_forward, size: 18),
@@ -400,13 +434,16 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
               ),
               items: [
                 for (
-                  var index = 0;
-                  index < preview.targetLabels.length;
-                  index += 1
+                  var index = preview.targetLabels.length - 1;
+                  index >= 0;
+                  index -= 1
                 )
                   DropdownMenuItem(
                     value: index,
-                    child: Text('${index + 1}. ${preview.targetLabels[index]}'),
+                    child: Text(
+                      '${preview.targetLabels.length - index}. '
+                      '${preview.targetLabels[index]}',
+                    ),
                   ),
               ],
               onChanged: (value) {
@@ -467,6 +504,22 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
             widget.sourceStringCount,
             (index) => index,
           );
+        case _TransformPreset.standardGuitar:
+          _source.text = 'E:40, A:45, D:50, G:55, B:59, E:64';
+          _target.text = _source.text;
+          _sourceCapo.text = '0';
+          _targetCapo.text = '0';
+          _pitchChange.text = '0';
+          _selectedChanges.clear();
+          _routeTargets = List.generate(6, (index) => index);
+        case _TransformPreset.dropCSharpToDropA7:
+          _source.text = 'C#:37, G#:44, C#:49, F#:54, A#:58, D#:63';
+          _target.text = 'A:33, E:40, A:45, D:50, G:55, B:59, E:64';
+          _sourceCapo.text = '0';
+          _targetCapo.text = '0';
+          _pitchChange.text = '0';
+          _selectedChanges.clear();
+          _routeTargets = [0, 1, 2, 3, 4, 5];
         case _TransformPreset.dropDToBeadg:
           _source.text = 'D:26, A:33, D:38, G:43';
           _target.text = 'B:23, E:28, A:33, D:38, G:43';
@@ -521,15 +574,15 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
     });
   }
 
-  void _refreshRoutes() {
+  void _refreshRoutes({bool reset = false}) {
     setState(() {
       try {
         final source = parseVisualTuningSpec(_source.text);
         final target = parseVisualTuningSpec(_target.text);
-        if (_routeTargets.length != source.labels.length) {
-          _routeTargets = List.generate(
-            source.labels.length,
-            (index) => index.clamp(0, target.labels.length - 1),
+        if (reset || _routeTargets.length != source.labels.length) {
+          _routeTargets = _defaultRouteTargets(
+            source.openMidis,
+            target.openMidis,
           );
         } else {
           _routeTargets = [
@@ -554,10 +607,14 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
       if (sourceCapo == null || targetCapo == null || globalPitch == null) {
         return null;
       }
-      final selected = parseSelectedStringPitchChanges(
+      final displayedSelected = parseSelectedStringPitchChanges(
         _selectedChanges.text,
         sourceStringCount: source.labels.length,
       );
+      final selected = {
+        for (final entry in displayedSelected.entries)
+          source.labels.length - 1 - entry.key: entry.value,
+      };
       final routes = <VisualStringRoute>[];
       for (
         var sourceIndex = 0;
@@ -594,12 +651,6 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
   VisualTabTransformConfiguration _configuration() {
     final source = parseVisualTuningSpec(_source.text);
     final target = parseVisualTuningSpec(_target.text);
-    if (source.labels.length != widget.sourceStringCount) {
-      throw FormatException(
-        'Reviewed analysis has ${widget.sourceStringCount} strings, but the '
-        'source tuning has ${source.labels.length}.',
-      );
-    }
     if (_routeTargets.length != source.labels.length) {
       throw const FormatException('Every source string needs a target route.');
     }
@@ -612,10 +663,14 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
     if (globalPitch < -24 || globalPitch > 24) {
       throw const FormatException('Pitch change must be -24 to +24.');
     }
-    final selected = parseSelectedStringPitchChanges(
+    final displayedSelected = parseSelectedStringPitchChanges(
       _selectedChanges.text,
       sourceStringCount: source.labels.length,
     );
+    final selected = {
+      for (final entry in displayedSelected.entries)
+        source.labels.length - 1 - entry.key: entry.value,
+    };
     final routes = <VisualStringRoute>[];
     for (
       var sourceIndex = 0;
@@ -668,14 +723,16 @@ class _VisualTabTransformDialogState extends State<_VisualTabTransformDialog> {
 
 class _TuningOffsetRows extends StatefulWidget {
   const _TuningOffsetRows({
+    required this.id,
     required this.label,
     required this.tuningSpec,
     required this.onChanged,
   });
 
+  final String id;
   final String label;
   final String tuningSpec;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<_TuningEdit> onChanged;
 
   @override
   State<_TuningOffsetRows> createState() => _TuningOffsetRowsState();
@@ -743,59 +800,93 @@ class _TuningOffsetRowsState extends State<_TuningOffsetRows> {
       ),
       child: Column(
         children: [
-          for (var index = 0; index < _baseMidis.length; index += 1)
+          _StringEdgeControls(
+            addKey: ValueKey('${widget.id}-add-high-string'),
+            removeKey: ValueKey('${widget.id}-remove-high-string'),
+            addLabel:
+                'Add string above ${_calculatedName(_baseMidis.length - 1)}',
+            removeTooltip: 'Remove highest string',
+            canAdd: _baseMidis.length < 12,
+            canRemove: _baseMidis.length > 2,
+            onAdd: () => _changeStringCount(_TuningEdge.high, 1),
+            onRemove: () => _changeStringCount(_TuningEdge.high, -1),
+          ),
+          const SizedBox(height: 4),
+          for (
+            var displayIndex = 0;
+            displayIndex < _baseMidis.length;
+            displayIndex += 1
+          )
             Padding(
               padding: EdgeInsets.only(
-                bottom: index == _baseMidis.length - 1 ? 0 : 6,
+                bottom: displayIndex == _baseMidis.length - 1 ? 0 : 6,
               ),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 88,
-                    child: Text(
-                      '${index + 1}. ${_baseLabels[index]}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Lower string ${index + 1} by one semitone',
-                    onPressed: () => _step(index, -1),
-                    icon: const Icon(Icons.remove),
-                  ),
-                  SizedBox(
-                    width: 72,
-                    child: TextField(
-                      controller: _offsets[index],
-                      textAlign: TextAlign.center,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        signed: true,
+              child: Builder(
+                builder: (context) {
+                  final index = _baseMidis.length - 1 - displayIndex;
+                  return Row(
+                    children: [
+                      SizedBox(
+                        width: 88,
+                        child: Text(
+                          '${displayIndex + 1}. ${_baseLabels[index]}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      onChanged: (_) {
-                        setState(() {});
-                        _emit();
-                      },
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        labelText: 'semitones',
+                      IconButton(
+                        tooltip:
+                            'Lower string ${displayIndex + 1} by one semitone',
+                        onPressed: () => _step(index, -1),
+                        icon: const Icon(Icons.remove),
                       ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Raise string ${index + 1} by one semitone',
-                    onPressed: () => _step(index, 1),
-                    icon: const Icon(Icons.add),
-                  ),
-                  const Icon(Icons.arrow_forward, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _calculatedLabel(index),
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                  ),
-                ],
+                      SizedBox(
+                        width: 72,
+                        child: TextField(
+                          controller: _offsets[index],
+                          textAlign: TextAlign.center,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            signed: true,
+                          ),
+                          onChanged: (_) {
+                            setState(() {});
+                            _emit();
+                          },
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            labelText: 'semitones',
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip:
+                            'Raise string ${displayIndex + 1} by one semitone',
+                        onPressed: () => _step(index, 1),
+                        icon: const Icon(Icons.add),
+                      ),
+                      const Icon(Icons.arrow_forward, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _calculatedLabel(index),
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
+          const SizedBox(height: 4),
+          _StringEdgeControls(
+            addKey: ValueKey('${widget.id}-add-low-string'),
+            removeKey: ValueKey('${widget.id}-remove-low-string'),
+            addLabel: 'Add string below ${_calculatedName(0)}',
+            removeTooltip: 'Remove lowest string',
+            canAdd: _baseMidis.length < 12,
+            canRemove: _baseMidis.length > 2,
+            onAdd: () => _changeStringCount(_TuningEdge.low, 1),
+            onRemove: () => _changeStringCount(_TuningEdge.low, -1),
+          ),
         ],
       ),
     );
@@ -823,7 +914,53 @@ class _TuningOffsetRowsState extends State<_TuningOffsetRows> {
             '${(_baseMidis[index] + _offset(index)).clamp(0, 127).toInt()}',
     ].join(', ');
     _lastEmitted = value;
-    widget.onChanged(value);
+    widget.onChanged(_TuningEdit(value));
+  }
+
+  String _calculatedName(int index) =>
+      _noteName((_baseMidis[index] + _offset(index)).clamp(0, 127).toInt());
+
+  void _changeStringCount(_TuningEdge edge, int delta) {
+    if (delta > 0 && _baseMidis.length >= 12) return;
+    if (delta < 0 && _baseMidis.length <= 2) return;
+    final midis = [
+      for (var index = 0; index < _baseMidis.length; index += 1)
+        (_baseMidis[index] + _offset(index)).clamp(0, 127).toInt(),
+    ];
+    if (delta > 0) {
+      if (edge == _TuningEdge.high) {
+        final interval = midis.last % 12 == 7 ? 4 : 5;
+        midis.add((midis.last + interval).clamp(0, 127));
+      } else {
+        midis.insert(0, (midis.first - 5).clamp(0, 127));
+      }
+    } else if (edge == _TuningEdge.high) {
+      midis.removeLast();
+    } else {
+      midis.removeAt(0);
+    }
+    _replaceMidis(midis);
+    widget.onChanged(_TuningEdit(_lastEmitted!, edge: edge, delta: delta));
+  }
+
+  void _replaceMidis(List<int> midis) {
+    for (final controller in _offsets) {
+      controller.dispose();
+    }
+    setState(() {
+      _baseMidis = [...midis];
+      _baseLabels = [for (final midi in midis) _noteName(midi)];
+      _offsets
+        ..clear()
+        ..addAll([
+          for (var index = 0; index < midis.length; index += 1)
+            TextEditingController(text: '0'),
+        ]);
+      _lastEmitted = [
+        for (var index = 0; index < midis.length; index += 1)
+          '${_baseLabels[index]}:${midis[index]}',
+      ].join(', ');
+    });
   }
 
   String _noteName(int midi) => const [
@@ -840,6 +977,76 @@ class _TuningOffsetRowsState extends State<_TuningOffsetRows> {
     'A#',
     'B',
   ][midi % 12];
+}
+
+class _StringEdgeControls extends StatelessWidget {
+  const _StringEdgeControls({
+    required this.addKey,
+    required this.removeKey,
+    required this.addLabel,
+    required this.removeTooltip,
+    required this.canAdd,
+    required this.canRemove,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final Key addKey;
+  final Key removeKey;
+  final String addLabel;
+  final String removeTooltip;
+  final bool canAdd;
+  final bool canRemove;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      TextButton.icon(
+        key: addKey,
+        onPressed: canAdd ? onAdd : null,
+        icon: const Icon(Icons.add),
+        label: Text(addLabel),
+      ),
+      const Spacer(),
+      IconButton(
+        key: removeKey,
+        tooltip: removeTooltip,
+        onPressed: canRemove ? onRemove : null,
+        icon: const Icon(Icons.remove_circle_outline),
+      ),
+    ],
+  );
+}
+
+List<int> _defaultRouteTargets(List<int> source, List<int> target) {
+  if (source.isEmpty || target.isEmpty) return const [];
+  final exact = <int>[];
+  var prior = -1;
+  for (final midi in source) {
+    var match = -1;
+    for (var index = prior + 1; index < target.length; index += 1) {
+      if (target[index] == midi) {
+        match = index;
+        break;
+      }
+    }
+    if (match < 0) {
+      exact.clear();
+      break;
+    }
+    exact.add(match);
+    prior = match;
+  }
+  if (exact.length == source.length) return exact;
+  final offset = target.length >= source.length && target.first < source.first
+      ? target.length - source.length
+      : 0;
+  return [
+    for (var index = 0; index < source.length; index += 1)
+      (index + offset).clamp(0, target.length - 1),
+  ];
 }
 
 String _defaultSource(int count) => switch (count) {
@@ -869,12 +1076,16 @@ class _TransformRoutePreview {
   final List<String> targetLabels;
   final List<VisualStringRoute> routes;
 
-  int? get unusedTargetString {
-    if (targetLabels.length != sourceLabels.length + 1) return null;
+  List<int> get unusedTargetStrings {
     final used = routes.map((route) => route.targetString).toSet();
-    for (var index = 0; index < targetLabels.length; index += 1) {
-      if (!used.contains(index)) return index;
-    }
-    return null;
+    return [
+      for (var index = 0; index < targetLabels.length; index += 1)
+        if (!used.contains(index)) index,
+    ];
+  }
+
+  int? get unusedTargetString {
+    final unused = unusedTargetStrings;
+    return unused.length == 1 ? unused.single : null;
   }
 }

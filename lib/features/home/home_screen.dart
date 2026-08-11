@@ -1,13 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../application/app_services.dart';
-import '../../application/recognition_review.dart';
 import '../../application/service_contracts.dart';
 import '../../domain/library_models.dart';
 import '../../domain/device_preferences.dart';
-import '../../domain/music_models.dart';
 import '../../domain/visual_chart_models.dart';
-import '../chart/chart_editor_screen.dart';
 import '../import/visual_import_screen.dart';
 import '../performance/performance_preview_screen.dart';
 import '../performance/gig_mode_screen.dart';
@@ -33,39 +32,84 @@ class _HomeScreenState extends State<HomeScreen> {
   var _selectedIndex = 0;
   var _libraryRevision = 0;
   late Future<List<VisualChartDraft>> _drafts;
-  late Future<List<SongChart>> _semanticCharts;
+  StreamSubscription<void>? _incomingPdfSubscription;
+  var _handlingIncomingPdf = false;
 
   @override
   void initState() {
     super.initState();
     _reloadDrafts();
+    final receiver = widget.services.incomingPdf;
+    if (receiver != null) {
+      _incomingPdfSubscription = receiver.available.listen(
+        (_) => unawaited(_consumeIncomingPdf()),
+      );
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(_consumeIncomingPdf()),
+      );
+    }
   }
 
   void _reloadDrafts() {
     _drafts = widget.services.library.listDrafts();
-    _semanticCharts = widget.services.semanticCharts.listSemanticCharts().then(
-      (charts) => [
-        for (final chart in charts) normalizeRecognitionProposals(chart),
-      ],
-    );
   }
 
   Future<void> _openVisualEditor([VisualChartDraft? draft]) async {
-    final proposal = await Navigator.of(context).push<SongChart>(
-      MaterialPageRoute<SongChart>(
-        builder: (routeContext) => VisualImportScreen(
-          services: widget.services,
-          initialDraft: draft,
-          onSemanticProposalCreated: (chart) =>
-              Navigator.of(routeContext).pop(chart),
-        ),
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (routeContext) =>
+            VisualImportScreen(services: widget.services, initialDraft: draft),
       ),
     );
     if (!mounted) return;
     setState(_reloadDrafts);
-    if (proposal != null) {
-      await _openSemanticEditor(proposal);
+  }
+
+  Future<void> _consumeIncomingPdf() async {
+    final receiver = widget.services.incomingPdf;
+    if (receiver == null || _handlingIncomingPdf || !mounted) return;
+    _handlingIncomingPdf = true;
+    try {
+      while (mounted) {
+        final incoming = await receiver.takePendingPdf();
+        if (incoming == null) break;
+        final strips = await widget.services.importer.importPdfBytes(
+          incoming.bytes,
+        );
+        if (!mounted) return;
+        final now = DateTime.now().toUtc();
+        await _openVisualEditor(
+          VisualChartDraft(
+            id: IdFactory.next('chart'),
+            title: _sharedPdfTitle(incoming.fileName),
+            artist: '',
+            createdAt: now,
+            updatedAt: now,
+            strips: strips,
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Shared PDF could not be imported: $error')),
+        );
+      }
+    } finally {
+      _handlingIncomingPdf = false;
     }
+  }
+
+  String _sharedPdfTitle(String? fileName) {
+    final value = fileName?.trim();
+    if (value == null || value.isEmpty) return 'Shared PDF';
+    return value.replaceFirst(RegExp(r'\.pdf$', caseSensitive: false), '');
+  }
+
+  @override
+  void dispose() {
+    unawaited(_incomingPdfSubscription?.cancel());
+    super.dispose();
   }
 
   Future<void> _deleteVisualDraft(VisualChartDraft draft) async {
@@ -341,39 +385,11 @@ class _HomeScreenState extends State<HomeScreen> {
     ).showSnackBar(SnackBar(content: Text(error.toString())));
   }
 
-  Future<void> _openSemanticEditor([SongChart? requested]) async {
-    final chartId = requested?.id ?? 'semantic-foundation';
-    final chart =
-        requested ??
-        await widget.services.semanticCharts.loadSemanticChart(chartId) ??
-        SongChart.foundationExample();
-    final reviewChart = normalizeRecognitionProposals(chart);
-    final identity = await widget.services.songVariants.identityForDraft(
-      reviewChart.id,
-    );
-    final songId = identity?.songId ?? 'song-${reviewChart.id}';
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ChartEditorScreen(
-          preferences: widget.preferences,
-          onPreferencesChanged: widget.onPreferencesChanged,
-          repository: widget.services.semanticCharts,
-          pdfExporter: widget.services.semanticExporter,
-          chart: reviewChart,
-          songId: songId,
-          sourceLibrary: widget.services.library,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final pages = [
       _SongPool(
         drafts: _drafts,
-        semanticCharts: _semanticCharts,
         onOpenVisual: _openVisualEditor,
         onDeleteVisual: _deleteVisualDraft,
         onExportPortable: widget.services.songBundles == null
@@ -382,13 +398,11 @@ class _HomeScreenState extends State<HomeScreen> {
         onImportPortable: widget.services.songBundles == null
             ? null
             : _importPortableSong,
-        onOpenSemantic: _openSemanticEditor,
       ),
       _GigsAndSetlists(
         key: ValueKey(_libraryRevision),
         services: widget.services,
         preferences: widget.preferences,
-        onPreferencesChanged: widget.onPreferencesChanged,
       ),
       _ImportSource(onStartVisual: _openVisualEditor),
     ];
@@ -492,21 +506,17 @@ class _HomeScreenState extends State<HomeScreen> {
 class _SongPool extends StatelessWidget {
   const _SongPool({
     required this.drafts,
-    required this.semanticCharts,
     required this.onOpenVisual,
     required this.onDeleteVisual,
     required this.onExportPortable,
     required this.onImportPortable,
-    required this.onOpenSemantic,
   });
 
   final Future<List<VisualChartDraft>> drafts;
-  final Future<List<SongChart>> semanticCharts;
   final ValueChanged<VisualChartDraft?> onOpenVisual;
   final ValueChanged<VisualChartDraft> onDeleteVisual;
   final ValueChanged<VisualChartDraft>? onExportPortable;
   final VoidCallback? onImportPortable;
-  final ValueChanged<SongChart?> onOpenSemantic;
 
   @override
   Widget build(BuildContext context) {
@@ -524,7 +534,7 @@ class _SongPool extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Saved visual charts and semantic song variants.',
+                  'Saved visual charts.',
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
               ],
@@ -627,45 +637,6 @@ class _SongPool extends StatelessWidget {
               ],
             );
           },
-        ),
-        const SizedBox(height: 16),
-        FutureBuilder<List<SongChart>>(
-          future: semanticCharts,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) return const SizedBox.shrink();
-            return Column(
-              children: [
-                for (final chart in snapshot.data!)
-                  _ResponsiveSongCard(
-                    leading: CircleAvatar(
-                      child: Icon(
-                        chart.gigReady ? Icons.verified : Icons.auto_fix_high,
-                      ),
-                    ),
-                    title: chart.title,
-                    subtitle: [
-                      if (chart.artist.trim().isNotEmpty) chart.artist.trim(),
-                      '${chart.measures.length} semantic measure(s)',
-                      chart.gigReady ? 'Gig-ready' : 'Needs review',
-                    ].join(' | '),
-                    actions: FilledButton(
-                      onPressed: () => onOpenSemantic(chart),
-                      child: const Text('Open semantic'),
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        _ResponsiveSongCard(
-          leading: const CircleAvatar(child: Icon(Icons.music_note)),
-          title: 'Foundation Groove',
-          subtitle: 'Music Tabbler - 5-string BEADG - Semantic sample',
-          actions: FilledButton(
-            onPressed: () => onOpenSemantic(null),
-            child: const Text('Open sample chart'),
-          ),
         ),
       ],
     );
@@ -780,12 +751,10 @@ class _GigsAndSetlists extends StatefulWidget {
     super.key,
     required this.services,
     required this.preferences,
-    required this.onPreferencesChanged,
   });
 
   final AppServices services;
   final DevicePreferences preferences;
-  final ValueChanged<DevicePreferences> onPreferencesChanged;
 
   @override
   State<_GigsAndSetlists> createState() => _GigsAndSetlistsState();
@@ -874,7 +843,6 @@ class _GigsAndSetlistsState extends State<_GigsAndSetlists> {
           services: widget.services,
           setlistId: setlist.id,
           preferences: widget.preferences,
-          onPreferencesChanged: widget.onPreferencesChanged,
         ),
       ),
     );
@@ -1008,12 +976,10 @@ class _SetlistEditorScreen extends StatefulWidget {
     required this.services,
     required this.setlistId,
     required this.preferences,
-    required this.onPreferencesChanged,
   });
   final AppServices services;
   final String setlistId;
   final DevicePreferences preferences;
-  final ValueChanged<DevicePreferences> onPreferencesChanged;
 
   @override
   State<_SetlistEditorScreen> createState() => _SetlistEditorScreenState();
@@ -1034,21 +1000,12 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
     _load();
   }
 
-  void _toggleTheme() {
-    final updated = _preferences.copyWith(
-      appTheme: _preferences.appTheme == AppThemePreference.dark
-          ? AppThemePreference.light
-          : AppThemePreference.dark,
-    );
-    setState(() => _preferences = updated);
-    widget.onPreferencesChanged(updated);
-  }
-
   Future<void> _load() async {
     try {
       final setlist = await widget.services.setlists.loadSetlist(
         widget.setlistId,
       );
+      final preferences = await widget.services.preferences.load();
       final drafts = await widget.services.library.listDrafts();
       final byVariant = <String, VisualChartDraft>{};
       for (final draft in drafts) {
@@ -1064,6 +1021,7 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
         _setlist = setlist;
         _availableDrafts = drafts;
         _draftsByVariant = byVariant;
+        _preferences = preferences;
         _error = null;
       });
     } catch (error) {
@@ -1337,17 +1295,6 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
         title: Text(setlist.name),
         actions: [
           IconButton(
-            tooltip: _preferences.appTheme == AppThemePreference.dark
-                ? 'Use light theme'
-                : 'Use dark theme',
-            onPressed: _toggleTheme,
-            icon: Icon(
-              _preferences.appTheme == AppThemePreference.dark
-                  ? Icons.light_mode
-                  : Icons.dark_mode,
-            ),
-          ),
-          IconButton(
             tooltip: 'Start gig mode',
             onPressed: _exporting ? null : _startGigMode,
             icon: const Icon(Icons.play_circle_outline),
@@ -1497,15 +1444,6 @@ class _ImportSourceState extends State<_ImportSource> {
               detail:
                   'Import images, clipboard screenshots, or PDF pages; crop and arrange rows.',
               buttonLabel: 'Start',
-              onPressed: () => widget.onStartVisual(null),
-            ),
-            _ImportCard(
-              icon: Icons.auto_fix_high_outlined,
-              title: 'Semantic recognition',
-              detail:
-                  'Start a visual chart, import and crop its rows, then use '
-                  'Recognize semantic proposal in the editor toolbar.',
-              buttonLabel: 'Start visual source',
               onPressed: () => widget.onStartVisual(null),
             ),
             const _ImportCard(

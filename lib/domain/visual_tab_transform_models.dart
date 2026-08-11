@@ -355,12 +355,16 @@ class VisualTabTransformConfiguration {
       selectedStringPitchChanges[sourceString] ?? globalPitchChange;
 
   int? get unusedTargetString {
-    if (targetLabels.length == sourceLabels.length) return null;
+    final unused = unusedTargetStrings;
+    return unused.length == 1 ? unused.single : null;
+  }
+
+  List<int> get unusedTargetStrings {
     final used = routes.map((route) => route.targetString).toSet();
-    for (var index = 0; index < targetLabels.length; index += 1) {
-      if (!used.contains(index)) return index;
-    }
-    return null;
+    return List.unmodifiable([
+      for (var index = 0; index < targetLabels.length; index += 1)
+        if (!used.contains(index)) index,
+    ]);
   }
 
   Map<String, Object?> toJson() => {
@@ -423,10 +427,13 @@ void validateMonotonicVisualRoutes(
   required int sourceStringCount,
   required int targetStringCount,
 }) {
-  if (targetStringCount != sourceStringCount &&
-      targetStringCount != sourceStringCount + 1) {
+  if (sourceStringCount < 2 ||
+      sourceStringCount > 12 ||
+      targetStringCount < sourceStringCount ||
+      targetStringCount > 12) {
     throw const FormatException(
-      'Visual routing supports the same number of strings or one added string.',
+      'Visual routing supports 2 to 12 source strings and the same or a '
+      'larger target string count, up to 12.',
     );
   }
   if (routes.length != sourceStringCount) {

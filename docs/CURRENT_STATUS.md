@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 2 August 2026
+Updated: 11 August 2026
 
 ## Repository state
 
@@ -21,7 +21,7 @@ Updated: 2 August 2026
 - Windows uses Visual Studio Build Tools 2022 17.14.25 and Windows SDK 10.0.26100.0.
 - Android uses API 36, Build Tools 36.0.0, Platform Tools 37.0.0, Emulator 36.6.11, NDK 28.2.13676358, CMake 3.22.1, and JDK 21.0.10.
 - `flutter analyze` passes with no issues, and the current source suite passes
-  251/251 tests.
+  268/268 tests.
 - The post-Apple Windows repair pass has automated coverage for fresh-page
   setlist boundaries, density-floor compaction, duplicate `.mtsong` identities,
   measure-local source-spaced semantic proposals, per-proposal source review,
@@ -46,7 +46,10 @@ Updated: 2 August 2026
 - Song pool, chart variants, setlists/gigs, and new/import areas.
 - Direct chosen URL is the primary online intake; search/scouring is secondary.
 - PDF/image/screenshot crop-and-arrange is the reliable baseline.
-- Whole-chart semantic conversion is the durable goal.
+- Visual OCR/review and nondestructive visual transforms are the active
+  recognition path. The semantic editor/recognition UI is sunset; legacy
+  semantic data remains readable in SQLite and portable bundles so existing
+  libraries are not destructively migrated.
 - Independent tab/standard-notation toggles; title/artist overlay toggle; provenance never rendered.
 - Default bass profile BEADG, custom per-string tunings, separate transpose and re-tab operations, ranked fingering alternatives.
 - Editable syllable-aligned lyrics and backing-vocal emphasis mode.
@@ -92,9 +95,17 @@ Updated: 2 August 2026
   tokens, and 62 dead notes while excluding measure numbers. A compact +1
   visual transform has been exported and visually inspected locally.
 - Visual transforms support global and selected-string pitch offsets, arbitrary
-  confirmed tunings/capos, monotonic same-count or one-added-string routing,
-  frets 0 to 36, immutable base strips, persistent edit/remove, and one-step
-  undo. Source assets remain unchanged.
+  confirmed tunings/capos, and monotonic routing from 2-12 source strings to an
+  equal or larger target (up to 12). Tuning controls display highest-to-lowest
+  like physical tab, offer add/remove controls at both outer edges, and include
+  standard-guitar plus Drop-C# six-string to Drop-A seven-string presets.
+  Source-count changes trigger a fresh reviewed analysis before application.
+  Frets remain limited to 0-36; base strips stay immutable with persistent
+  edit/remove and one-step undo.
+- Parenthesized sustain frets inherit the preceding played fret across source
+  row boundaries. Exact Motion Sickness bars 113-120 resolve the tie-crossed
+  `(8)`/`(10)` OCR proposals back to the carried Drop-D open note and render
+  as fret 3 on the target low B string.
 - Components crossing an internal added-string seam are highlighted during
   analysis and require an explicit upper/lower assignment; unresolved relevant
   components block the transform instead of being silently split.
@@ -130,6 +141,17 @@ Updated: 2 August 2026
 - Images, PDFs, and whole screenshot folders can be dragged onto the editor; supported files are recursively collected and imported in stable path order.
 - Any imported page or screenshot has a **Split into rows** workspace. Reopening it from any already-split sibling restores every row box from that source page instead of showing only the clicked crop. It supports up to 32 evenly divided rows and keeps every box visible and independently movable/resizable on the same page.
 - **Detect rows** proposes editable boxes from repeated tab/staff systems and guarded blank bands. Dark-theme line thresholds cover Songsterr-style pages as well as white score pages.
+- Page-aware side proposals keep an eight-pixel safety edge for cross-row
+  sustain hooks on either side, retaining
+  opening notation and final bar lines without page-width gutters.
+- A single chart-level **Detect rows** button on the main editor applies those
+  proposals to every eligible full page while leaving existing split/manual
+  rows untouched; Ctrl+Z restores all replaced source pages together. Its
+  full-page check uses persisted coordinates, so reopened PDF pages remain
+  eligible instead of being rejected because their crop object was reloaded.
+- Row-side tightening retains nearby real notation outside the staff scan, and
+  a small bottom safety margin prevents sustain/tie curves from touching or
+  crossing the crop edge while preserving the compact page-aware layout.
 - Two sticky master side-crop bars now live in a fixed control rail above the scrollable page. They catch a row only when an inward drag actually crosses that row edge, retain their positions through detect/even/add/delete actions, then pull caught edges together in either direction. Individual row-box resizing remains independent. Selected row boxes delete with Backspace/Delete.
 - Crop, manual-highlight, and split-row rectangles use direct PowerPoint-style movement plus eight edge/corner handles. Gesture calculations use total pointer travel from the drag start, avoiding lost movement during fast drags. The old separate lyric-area workflow is retained only for loading older saved drafts; new highlight editing happens in the chart highlighter.
 - On-device OCR runs through ML Kit on Android and WinRT on Windows. Windows tries installed English, Japanese, and profile recognizers, preserves non-Latin words, and chooses the result with the most recognized content. Metadata parsing accepts Japanese titles. Detection always reruns against the original full page, even after its title row has been removed.
@@ -152,6 +174,21 @@ Updated: 2 August 2026
 - Desktop preview and Android gig mode provide explicit next/previous/exit
   behavior. Android fullscreen and keep-awake state are active only during gig
   mode and are released on exit or lifecycle changes.
+- Android registers as a local PDF share target. A user-shared content URI is
+  read once through the host activity, capped at 100 MB, and passed into the
+  existing visual PDF importer; raw filesystem paths and source-site access are
+  not used.
+- Live Gig mode conservatively crops reliably detected tab rows into individual
+  bars for denser packing without mutating the source chart or shared PDF and
+  preview deck. Adjacent bar crops tile directly without artificial horizontal
+  gaps or duplicate edge pixels, then wrap only when the next bar cannot fit.
+  Bar lines default to left alignment and can be switched to center or right
+  until stage controls are locked. Gig light-on-black/dark-on-light selection
+  is available in the same control rail, persists separately from the editor
+  theme, and is frozen with the other controls by the stage lock.
+- Gig mode has a session-local per-song zoom above the persisted whole-set
+  zoom. Tapping the chart hides or restores unlocked controls; the stage lock
+  remains authoritative and cannot be bypassed by a chart tap.
 - The gig sidebar shows the complete editable set order, supports placeholders,
   reordering, and direct jumps.
 - Vector annotations use normalized coordinates, autosave without changing

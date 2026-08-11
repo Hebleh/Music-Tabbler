@@ -144,6 +144,66 @@ void main() {
     );
   });
 
+  test(
+    'renders multiple added edge strings as complete bounded tab lines',
+    () async {
+      final fixture = _fourStringFixture();
+      final asset = await library.storeAsset(fixture, 'png');
+      final now = DateTime.utc(2026, 8, 11);
+      final draft = VisualChartDraft(
+        id: 'six-string-target',
+        title: 'Guitar expansion',
+        artist: '',
+        createdAt: now,
+        updatedAt: now,
+        strips: [
+          VisualStrip(
+            id: 'source-strip',
+            assetHash: asset.hash,
+            assetExtension: 'png',
+            pixelWidth: 600,
+            pixelHeight: 120,
+          ),
+        ],
+      );
+      final configuration = VisualTabTransformConfiguration(
+        sourceLabels: const ['E', 'A', 'D', 'G'],
+        sourceOpenMidis: const [28, 33, 38, 43],
+        sourceCapo: 0,
+        targetLabels: const ['E', 'A', 'D', 'G', 'B', 'E'],
+        targetOpenMidis: const [28, 33, 38, 43, 47, 52],
+        targetCapo: 0,
+        globalPitchChange: 0,
+        routes: const [
+          VisualStringRoute(sourceString: 0, targetString: 0, fretOffset: 0),
+          VisualStringRoute(sourceString: 1, targetString: 1, fretOffset: 0),
+          VisualStringRoute(sourceString: 2, targetString: 2, fretOffset: 0),
+          VisualStringRoute(sourceString: 3, targetString: 3, fretOffset: 0),
+        ],
+      );
+
+      final transformed = await VisualTabTransformService(library).apply(
+        draft: draft,
+        analyses: [_analysis(tokenText: '5', tokenString: 0)],
+        configuration: configuration,
+      );
+      final outputBytes = await File(
+        library.assetPath(
+          transformed.strips.single.assetHash,
+          transformed.strips.single.assetExtension,
+        ),
+      ).readAsBytes();
+      expect(_longHorizontalInkRows(outputBytes), hasLength(6));
+      final output = img.decodePng(outputBytes)!;
+      final rows = _longHorizontalInkRows(outputBytes);
+      for (final y in rows) {
+        expect(_hasDarkPixel(output, y: y, left: 24, right: 50), isTrue);
+        expect(_hasDarkPixel(output, y: y, left: 550, right: 577), isTrue);
+        expect(_isDark(output.getPixel(5, y)), isFalse);
+      }
+    },
+  );
+
   test('infers a seam component attached only to the lower string', () async {
     final fixture = _fourStringFixture();
     final asset = await library.storeAsset(fixture, 'png');
@@ -468,6 +528,64 @@ void main() {
     expect(repaired.strips.single.assetHash, expected.strips.single.assetHash);
   });
 
+  test('parenthesized sustain inherits across detected source rows', () async {
+    final fixture = _fourStringFixtureWithNarrowSustain();
+    final asset = await library.storeAsset(fixture, 'png');
+    final now = DateTime.utc(2026, 8, 11);
+    VisualChartDraft draft(String id) => VisualChartDraft(
+      id: id,
+      title: 'Cross-row sustain repair',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      strips: [
+        VisualStrip(
+          id: 'played-row',
+          assetHash: asset.hash,
+          assetExtension: 'png',
+          pixelWidth: 600,
+          pixelHeight: 120,
+        ),
+        VisualStrip(
+          id: 'sustain-row',
+          assetHash: asset.hash,
+          assetExtension: 'png',
+          pixelWidth: 600,
+          pixelHeight: 120,
+        ),
+      ],
+    );
+    List<VisualTabAnalysis> analyses(String sustainText) => [
+      _analysis(stripId: 'played-row', tokenText: '0', tokenString: 0),
+      _analysis(stripId: 'sustain-row', tokenText: sustainText, tokenString: 0),
+    ];
+
+    final service = VisualTabTransformService(library);
+    final expected = await service.apply(
+      draft: draft('correct-cross-row-sustain'),
+      analyses: analyses('(0)'),
+      configuration: _dropDToFiveStringConfiguration(),
+    );
+    final repaired = await service.apply(
+      draft: draft('misread-cross-row-sustain'),
+      analyses: analyses('(10)'),
+      configuration: _dropDToFiveStringConfiguration(),
+    );
+
+    expect(repaired.strips[1].assetHash, expected.strips[1].assetHash);
+    final repairedAnalysis = VisualTabAnalysis.fromJson(
+      repaired.visualTabTransform!.analyses[1],
+    );
+    expect(repairedAnalysis.systems.single.tokens.single.text, '(0)');
+    expect(
+      repaired.visualTabTransform!.audit,
+      contains(
+        'Resolved 1 parenthesized sustain fret(s) from the preceding played '
+        'fret across source rows.',
+      ),
+    );
+  });
+
   test('parenthesized sustain clears the complete source glyph', () async {
     final fixture = _fourStringFixtureWithNarrowSustain();
     final asset = await library.storeAsset(fixture, 'png');
@@ -702,4 +820,18 @@ int _redPixelsInRect(
     }
   }
   return count;
+}
+
+bool _isDark(img.Pixel pixel) => pixel.r < 90 && pixel.g < 90 && pixel.b < 90;
+
+bool _hasDarkPixel(
+  img.Image image, {
+  required int y,
+  required int left,
+  required int right,
+}) {
+  for (var x = left; x < right; x += 1) {
+    if (_isDark(image.getPixel(x, y))) return true;
+  }
+  return false;
 }

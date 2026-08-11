@@ -80,6 +80,22 @@ void main() {
         throwsFormatException,
       );
     });
+
+    test('accepts multiple unused target strings at the outer edges', () {
+      expect(
+        () => validateMonotonicVisualRoutes(
+          const [
+            VisualStringRoute(sourceString: 0, targetString: 1, fretOffset: 0),
+            VisualStringRoute(sourceString: 1, targetString: 2, fretOffset: 0),
+            VisualStringRoute(sourceString: 2, targetString: 3, fretOffset: 0),
+            VisualStringRoute(sourceString: 3, targetString: 4, fretOffset: 0),
+          ],
+          sourceStringCount: 4,
+          targetStringCount: 6,
+        ),
+        returnsNormally,
+      );
+    });
   });
 
   test('analysis round-trips reviewed tokens', () {

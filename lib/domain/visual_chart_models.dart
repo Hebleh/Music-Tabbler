@@ -113,6 +113,12 @@ class NormalizedRect {
   double get width => right - left;
   double get height => bottom - top;
 
+  bool get isFull =>
+      left.abs() < 0.0000001 &&
+      top.abs() < 0.0000001 &&
+      (right - 1).abs() < 0.0000001 &&
+      (bottom - 1).abs() < 0.0000001;
+
   NormalizedRect clamp() {
     final nextLeft = left.clamp(0.0, 0.99);
     final nextTop = top.clamp(0.0, 0.99);

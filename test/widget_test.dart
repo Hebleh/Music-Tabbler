@@ -156,6 +156,61 @@ void main() {
     expect(find.text('2 / 2'), findsOneWidget);
   });
 
+  testWidgets('visual tab review matches seam risks to numbered markers', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final library = _FakeLibrary();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () => showVisualTabAnalysisReview(
+                context: context,
+                library: library,
+                analyzer: _SeamRiskVisualTabAnalyzer(library),
+                strips: const [
+                  VisualStrip(
+                    id: 'risk-row',
+                    assetHash: 'risk',
+                    assetExtension: 'png',
+                    pixelWidth: 400,
+                    pixelHeight: 100,
+                  ),
+                ],
+                sourceStringCount: 4,
+              ),
+              child: const Text('Open review'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open review'));
+    for (var index = 0; index < 4; index += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Find the matching red numbered marker.'), findsOneWidget);
+    expect(
+      find.text('Its dashed line shows the seam between two strings.'),
+      findsOneWidget,
+    );
+    expect(find.text('Marker 1 · between strings 2 and 3'), findsOneWidget);
+    expect(find.byTooltip('Remove seam marker'), findsNWidgets(2));
+    await tester.tap(find.byTooltip('Remove seam marker').first);
+    await tester.pump();
+    expect(find.text('Marker 1 · between strings 2 and 3'), findsOneWidget);
+    expect(find.byTooltip('Remove seam marker'), findsOneWidget);
+    expect(find.text('Marker 2 · between strings 2 and 3'), findsNothing);
+  });
+
   testWidgets(
     'visual tab review can explicitly preserve a tokenless row unchanged',
     (tester) async {
@@ -224,7 +279,7 @@ void main() {
     },
   );
 
-  testWidgets('opens the semantic sample chart from the song pool', (
+  testWidgets('semantic workflows are absent from the visual-first UI', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1200, 1400);
@@ -241,24 +296,9 @@ void main() {
     expect(find.text('Gigs'), findsOneWidget);
     expect(find.text('New / Import'), findsOneWidget);
 
-    await tester.tap(find.text('Open sample chart'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('Foundation Groove'), findsWidgets);
-    expect(find.text('Tablature'), findsOneWidget);
-    expect(find.text('Standard notation'), findsOneWidget);
-    expect(find.text('Backing vocal mode'), findsOneWidget);
-    expect(find.text('Add note'), findsOneWidget);
-    expect(find.text('Add rest'), findsOneWidget);
-    expect(find.text('Add measure'), findsOneWidget);
-    expect(find.text('Instrument and tuning'), findsOneWidget);
-    expect(find.text('Song structure'), findsOneWidget);
-    expect(find.byTooltip('MusicXML interchange'), findsOneWidget);
-    expect(find.byTooltip('Transpose chart'), findsOneWidget);
-    expect(find.byTooltip('Adapt tuning / strings'), findsOneWidget);
-    expect(find.byTooltip('Compare fingerings'), findsOneWidget);
-    expect(find.textContaining('Recognition review:'), findsOneWidget);
+    expect(find.text('Foundation Groove'), findsNothing);
+    expect(find.textContaining('semantic', findRichText: true), findsNothing);
+    expect(find.text('New visual chart'), findsOneWidget);
   });
 
   testWidgets('Song Pool fits a portrait iPhone viewport', (tester) async {
@@ -273,63 +313,7 @@ void main() {
 
     expect(find.text('Song Pool'), findsWidgets);
     expect(find.text('New visual chart'), findsOneWidget);
-    expect(
-      tester.getSize(find.text('Foundation Groove')).width,
-      greaterThan(100),
-    );
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('keeps tablature visible when notation is toggled off', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1200, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final services = await _testServices();
-    await tester.pumpWidget(MusicTabblerApp(services: services));
-    await tester.pump();
-    await tester.pump();
-    await tester.tap(find.text('Open sample chart'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.text('Standard notation'));
-    await tester.pump();
-
-    final tabChip = tester.widget<FilterChip>(
-      find.widgetWithText(FilterChip, 'Tablature'),
-    );
-    final notationChip = tester.widget<FilterChip>(
-      find.widgetWithText(FilterChip, 'Standard notation'),
-    );
-    expect(tabChip.selected, isTrue);
-    expect(notationChip.selected, isFalse);
-  });
-
-  testWidgets('semantic editor adds a measure and undo restores the chart', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1200, 1000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final services = await _testServices();
-    await tester.pumpWidget(MusicTabblerApp(services: services));
-    await tester.pump();
-    await tester.pump();
-    await tester.tap(find.text('Open sample chart'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Add measure'));
-    await tester.pump();
-    expect(find.text('Measure 3'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('Undo semantic edit'));
-    await tester.pump();
-    expect(find.text('Measure 3'), findsNothing);
   });
 
   testWidgets('Ctrl+V pastes a screenshot into the visual editor', (
@@ -356,6 +340,13 @@ void main() {
 
     expect(importer.pasteCalls, 1);
     expect(find.text('Row 1'), findsOneWidget);
+    expect(find.byKey(const ValueKey('detect-all-rows')), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const ValueKey('detect-all-rows')))
+          .onPressed,
+      isNotNull,
+    );
   });
 
   testWidgets(
@@ -420,30 +411,54 @@ void main() {
     expect(find.text('Music Tabbler never fetches the link.'), findsNothing);
   });
 
-  testWidgets(
-    'semantic recognition intake explains and opens its source flow',
-    (tester) async {
-      tester.view.physicalSize = const Size(1200, 900);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.pumpWidget(MusicTabblerApp(services: await _testServices()));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('New / Import'));
-      await tester.pumpAndSettle();
+  testWidgets('new import exposes only the visual recognition workflow', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(MusicTabblerApp(services: await _testServices()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New / Import'));
+    await tester.pumpAndSettle();
 
-      expect(
-        find.textContaining('Recognize semantic proposal'),
-        findsOneWidget,
-      );
-      await tester.ensureVisible(find.text('Start visual source'));
-      await tester.tap(find.text('Start visual source'));
-      await tester.pumpAndSettle();
+    expect(find.textContaining('semantic'), findsNothing);
+    await tester.ensureVisible(find.text('Visual chart workflow'));
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
 
-      expect(find.text('Visual chart editor'), findsOneWidget);
-      expect(find.byTooltip('Recognize semantic proposal'), findsOneWidget);
-    },
-  );
+    expect(find.text('Visual chart editor'), findsOneWidget);
+    expect(find.byTooltip('Recognize semantic proposal'), findsNothing);
+  });
+
+  testWidgets('an Android-shared PDF opens in the visual editor', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final importer = _RecordingImporter();
+    final receiver = _PendingPdfReceiver(
+      IncomingPdf(bytes: Uint8List.fromList([1, 2, 3]), fileName: 'Set.pdf'),
+    );
+
+    await tester.pumpWidget(
+      MusicTabblerApp(
+        services: await _testServices(
+          importer: importer,
+          incomingPdf: receiver,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Visual chart editor'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Set'), findsOneWidget);
+    expect(importer.sharedPdfCalls, 1);
+  });
 
   testWidgets('library transfer exposes export merge replace and restore', (
     tester,
@@ -604,7 +619,7 @@ void main() {
     },
   );
 
-  testWidgets('setlist editor can switch and persist the app theme', (
+  testWidgets('setlist editor leaves theme selection to gig mode', (
     tester,
   ) async {
     final library = _FakeLibrary()..setlists.add(_setlist('set-1', 'Gig'));
@@ -626,16 +641,9 @@ void main() {
     await tester.tap(find.text('Gig'));
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Use light theme'), findsOneWidget);
-    await tester.tap(find.byTooltip('Use light theme'));
-    await tester.pumpAndSettle();
-
-    expect(preferences.value.appTheme, AppThemePreference.light);
-    expect(find.byTooltip('Use dark theme'), findsOneWidget);
-    expect(
-      Theme.of(tester.element(find.text('Gig').first)).brightness,
-      Brightness.light,
-    );
+    expect(find.byTooltip('Use light theme'), findsNothing);
+    expect(find.byTooltip('Use dark theme'), findsNothing);
+    expect(preferences.value.appTheme, AppThemePreference.dark);
   });
 
   testWidgets('setlist supports duplicate songs and removing one occurrence', (
@@ -965,6 +973,28 @@ void main() {
     expect(find.byTooltip('Erase annotations'), findsOneWidget);
     expect(find.byTooltip('Undo annotation'), findsOneWidget);
     expect(find.byTooltip('Clear all performance notes'), findsOneWidget);
+    expect(find.byTooltip('Align bars left'), findsOneWidget);
+    expect(find.byTooltip('Align bars center'), findsOneWidget);
+    expect(find.byTooltip('Align bars right'), findsOneWidget);
+    expect(find.byTooltip('Use dark-on-light gig theme'), findsOneWidget);
+    await tester.tap(find.byTooltip('Use dark-on-light gig theme'));
+    await tester.pumpAndSettle();
+    expect(preferences.value.gigTheme, GigThemePreference.darkOnLight);
+    expect(find.byTooltip('Use light-on-black gig theme'), findsOneWidget);
+    expect(
+      Theme.of(tester.element(find.text('1 / 2'))).brightness,
+      Brightness.light,
+    );
+    expect(find.byKey(const Key('gig-zoom-slider')), findsOneWidget);
+    expect(find.byKey(const Key('gig-song-zoom-slider')), findsOneWidget);
+    expect(find.text('This song'), findsOneWidget);
+    expect(find.text('Whole set'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('gig-stage-surface')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('gig-zoom-slider')), findsNothing);
+    expect(find.byKey(const Key('gig-song-zoom-slider')), findsNothing);
+    await tester.tap(find.byKey(const Key('gig-stage-surface')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('gig-zoom-slider')), findsOneWidget);
     await tester.drag(
       find.byKey(const Key('gig-zoom-slider')),
@@ -981,6 +1011,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('Open setlist sidebar'), findsNothing);
     expect(find.byKey(const Key('gig-zoom-slider')), findsNothing);
+    expect(find.byKey(const Key('gig-song-zoom-slider')), findsNothing);
+    expect(find.byTooltip('Align bars left'), findsNothing);
+    expect(find.byTooltip('Align bars center'), findsNothing);
+    expect(find.byTooltip('Align bars right'), findsNothing);
+    expect(find.byTooltip('Use light-on-black gig theme'), findsNothing);
+    expect(find.byTooltip('Use dark-on-light gig theme'), findsNothing);
     expect(find.byTooltip('Unlock stage controls'), findsOneWidget);
     await tester.tap(find.byTooltip('Unlock stage controls'));
     await tester.pumpAndSettle();
@@ -1234,24 +1270,40 @@ Future<AppServices> _testServices({
   PerformanceModeController? performanceMode,
   LibraryStateTransfer? libraryState,
   DevicePreferencesStore? preferences,
+  IncomingPdfReceiver? incomingPdf,
 }) async {
   final resolvedLibrary = library ?? _FakeLibrary();
   const unusedExporter = _UnusedExporter();
   return AppServices(
     library: resolvedLibrary,
     songVariants: resolvedLibrary,
-    semanticCharts: resolvedLibrary,
     setlists: resolvedLibrary,
     importer: importer ?? const _UnusedImporter(),
     exporter: unusedExporter,
-    semanticExporter: unusedExporter,
     setlistExporter: setlistExporter ?? unusedExporter,
     performanceDeckBuilder: performanceDeckBuilder ?? unusedExporter,
     textRecognition: const _UnusedTextRecognition(),
     preferences: preferences ?? _MemoryPreferencesStore(),
     performanceMode: performanceMode ?? _RecordingPerformanceModeController(),
     libraryState: libraryState,
+    incomingPdf: incomingPdf,
   );
+}
+
+class _PendingPdfReceiver implements IncomingPdfReceiver {
+  _PendingPdfReceiver(this._pending);
+
+  IncomingPdf? _pending;
+
+  @override
+  Stream<void> get available => const Stream<void>.empty();
+
+  @override
+  Future<IncomingPdf?> takePendingPdf() async {
+    final value = _pending;
+    _pending = null;
+    return value;
+  }
 }
 
 class _RecordingLibraryStateTransfer implements LibraryStateTransfer {
@@ -1315,6 +1367,13 @@ class _RecordingImporter implements VisualImporter {
 
   final int rowCount;
   int pasteCalls = 0;
+  int sharedPdfCalls = 0;
+
+  @override
+  Future<List<VisualStrip>> importPdfBytes(Uint8List bytes) async {
+    sharedPdfCalls += 1;
+    return pasteImages();
+  }
 
   @override
   Future<List<VisualStrip>> pasteImages() async {
@@ -1516,6 +1575,9 @@ class _UnusedImporter implements VisualImporter {
   @override
   Future<List<VisualStrip>> pickPdf() => throw UnimplementedError();
   @override
+  Future<List<VisualStrip>> importPdfBytes(Uint8List bytes) =>
+      throw UnimplementedError();
+  @override
   Future<List<VisualStrip>> pasteImages() => throw UnimplementedError();
   @override
   Future<List<VisualStrip>> importPaths(Iterable<String> paths) =>
@@ -1588,6 +1650,42 @@ class _BlockedVisualTabAnalyzer extends _RecordingVisualTabAnalyzer {
       strip,
       sourceStringCount: sourceStringCount,
       preferPositionedPdf: preferPositionedPdf,
+    );
+  }
+}
+
+class _SeamRiskVisualTabAnalyzer extends _RecordingVisualTabAnalyzer {
+  _SeamRiskVisualTabAnalyzer(super.library);
+
+  @override
+  Future<VisualTabAnalysis> analyze(
+    VisualStrip strip, {
+    required int sourceStringCount,
+    bool preferPositionedPdf = true,
+  }) async {
+    final analysis = await super.analyze(
+      strip,
+      sourceStringCount: sourceStringCount,
+      preferPositionedPdf: preferPositionedPdf,
+    );
+    final system = analysis.systems.single;
+    return analysis.copyWith(
+      systems: [
+        system.copyWith(
+          connectedNotationRisks: const [
+            VisualConnectedNotationRisk(
+              id: 'risk-1',
+              rect: NormalizedRect(0.3, 0.46, 0.32, 0.54),
+              gapIndex: 1,
+            ),
+            VisualConnectedNotationRisk(
+              id: 'risk-2',
+              rect: NormalizedRect(0.7, 0.46, 0.72, 0.54),
+              gapIndex: 1,
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -544,6 +544,7 @@ Future<MetadataSuggestion> _recognizeTabGlyphCandidates(
   for (var index = 0; index < candidates.length; index += 1) {
     final classified =
         _classifyParenthesizedRasterGlyph(candidates[index].image) ??
+        _classifySeparatedRasterDigits(candidates[index].image) ??
         _classifyRasterGlyph(candidates[index].image);
     final native = nativeLabels[index];
     final nativeLabel = native?.label;
@@ -915,7 +916,77 @@ List<_RasterGlyphTemplate>? _rasterGlyphTemplates;
   final confidence = ((bestScore - 0.35) / 0.45 * 0.72 + margin * 2.2)
       .clamp(0.05, 0.98)
       .toDouble();
+  final correctedLabel = _correctRasterZeroEight(bestLabel, image);
+  if (correctedLabel != bestLabel) {
+    // The compact Songsterr zero is closer to the bundled Arial `8` template
+    // than to Arial `0`, especially after the staff line has been removed.
+    // Topology is the stable distinction: an intact 8 has two enclosed loops,
+    // while the source zeroes in bars 98/137/138 have one. Keep this correction
+    // at glyph classification so every caller uses the same label.
+    return (
+      label: correctedLabel,
+      confidence: math.max(0.68, confidence * 0.96),
+    );
+  }
   return (label: bestLabel, confidence: confidence);
+}
+
+/// Disambiguates the visually similar compact zero and eight used by raster
+/// tab sources. Exposed for a typography-level regression fixture.
+String correctVisualTabRasterZeroEight(String candidate, Uint8List glyphBytes) {
+  final image = img.decodeImage(glyphBytes);
+  if (image == null) throw const FormatException('Raster glyph is invalid.');
+  return _correctRasterZeroEight(candidate, img.bakeOrientation(image));
+}
+
+String _correctRasterZeroEight(String candidate, img.Image image) =>
+    candidate == '8' && _countEnclosedRasterGlyphHoles(image) < 2
+    ? '0'
+    : candidate;
+
+int _countEnclosedRasterGlyphHoles(img.Image image) {
+  final bounds = _rasterGlyphInkBounds(image);
+  if (bounds == null) return 0;
+  final width = bounds.$3 - bounds.$1;
+  final height = bounds.$4 - bounds.$2;
+  if (width < 3 || height < 3) return 0;
+  final background = List<bool>.filled(width * height, false);
+  for (var y = 0; y < height; y += 1) {
+    for (var x = 0; x < width; x += 1) {
+      background[y * width + x] =
+          _luminance(image.getPixel(bounds.$1 + x, bounds.$2 + y)) >= 160;
+    }
+  }
+  final visited = List<bool>.filled(background.length, false);
+  var holes = 0;
+  for (var start = 0; start < background.length; start += 1) {
+    if (!background[start] || visited[start]) continue;
+    final queue = <int>[start];
+    visited[start] = true;
+    var touchesEdge = false;
+    var area = 0;
+    for (var cursor = 0; cursor < queue.length; cursor += 1) {
+      final current = queue[cursor];
+      final x = current % width;
+      final y = current ~/ width;
+      area += 1;
+      touchesEdge =
+          touchesEdge || x == 0 || y == 0 || x == width - 1 || y == height - 1;
+      for (final (dx, dy) in const [(1, 0), (-1, 0), (0, 1), (0, -1)]) {
+        final nextX = x + dx;
+        final nextY = y + dy;
+        if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) {
+          continue;
+        }
+        final next = nextY * width + nextX;
+        if (!background[next] || visited[next]) continue;
+        visited[next] = true;
+        queue.add(next);
+      }
+    }
+    if (!touchesEdge && area >= 2) holes += 1;
+  }
+  return holes;
 }
 
 ({String label, double confidence})? _classifyParenthesizedRasterGlyph(
@@ -963,6 +1034,69 @@ List<_RasterGlyphTemplate>? _rasterGlyphTemplates;
   return (
     label: '(${classified.label})',
     confidence: math.max(0.72, classified.confidence * 0.92),
+  );
+}
+
+({String label, double confidence})? _classifySeparatedRasterDigits(
+  img.Image image,
+) {
+  final bounds = _rasterGlyphInkBounds(image);
+  if (bounds == null) return null;
+  final height = bounds.$4 - bounds.$2;
+  if (height < 5) return null;
+  final occupied = <int>[];
+  for (var x = bounds.$1; x < bounds.$3; x += 1) {
+    var ink = 0;
+    for (var y = bounds.$2; y < bounds.$4; y += 1) {
+      if (_luminance(image.getPixel(x, y)) < 160) ink += 1;
+    }
+    if (ink >= math.max(1, (height * 0.08).round())) occupied.add(x);
+  }
+  final clusters = _clusterCoordinatesWithGap(occupied, 2)
+      .where((cluster) {
+        var top = bounds.$4;
+        var bottom = bounds.$2;
+        var area = 0;
+        for (var y = bounds.$2; y < bounds.$4; y += 1) {
+          for (var x = cluster.first; x <= cluster.last; x += 1) {
+            if (_luminance(image.getPixel(x, y)) >= 160) continue;
+            top = math.min(top, y);
+            bottom = math.max(bottom, y + 1);
+            area += 1;
+          }
+        }
+        return area >= 3 && bottom - top >= height * 0.58;
+      })
+      .toList(growable: false);
+  if (clusters.length != 2) return null;
+
+  final labels = <String>[];
+  final confidences = <double>[];
+  for (final cluster in clusters) {
+    final left = math.max(bounds.$1, cluster.first - 1);
+    final right = math.min(bounds.$3, cluster.last + 2);
+    final part = img.copyCrop(
+      image,
+      x: left,
+      y: bounds.$2,
+      width: right - left,
+      height: height,
+    );
+    final classified = part.width <= height * 0.24
+        ? (label: '1', confidence: 0.80)
+        : _classifyRasterGlyph(part);
+    if (classified == null || !RegExp(r'^\d$').hasMatch(classified.label)) {
+      return null;
+    }
+    labels.add(classified.label);
+    confidences.add(classified.confidence);
+  }
+  final label = labels.join();
+  final fret = int.tryParse(label);
+  if (fret == null || fret > 36) return null;
+  return (
+    label: label,
+    confidence: math.max(0.72, confidences.reduce(math.min) * 0.92),
   );
 }
 
@@ -1523,6 +1657,9 @@ List<VisualConnectedNotationRisk> _detectConnectedNotationRisks(
       (_luminance(image.getPixel(x, y)) - background).abs() >= threshold;
   final risks = <VisualConnectedNotationRisk>[];
   for (var gapIndex = 0; gapIndex < lines.length - 1; gapIndex += 1) {
+    final upperLine = lines[gapIndex];
+    final lowerLine = lines[gapIndex + 1];
+    final spacing = lowerLine - upperLine;
     final seam = ((lines[gapIndex] + lines[gapIndex + 1]) / 2).round();
     final radius = math.max(
       1,
@@ -1546,11 +1683,87 @@ List<VisualConnectedNotationRisk> _detectConnectedNotationRisks(
     for (final cluster in clusters) {
       final centerX = cluster.reduce((a, b) => a + b) / cluster.length;
       if (barLines.any((bar) => (bar - centerX).abs() <= 4)) continue;
-      final left = (cluster.first - 3).clamp(0, image.width - 1);
-      final right = (cluster.last + 4).clamp(left + 1, image.width);
-      final halfHeight = math.max(radius * 2, 3);
-      final top = (seam - halfHeight).clamp(0, image.height - 1);
-      final bottom = (seam + halfHeight + 1).clamp(top + 1, image.height);
+      if (barLines.isNotEmpty &&
+          (barLines.first - centerX).abs() <= spacing * 3.0) {
+        // The stacked opening time signature is the only common wide symbol
+        // immediately beside the first bar line. It is not notation joining
+        // two tab strings and must never become a seam decision.
+        continue;
+      }
+      final searchRadius = math.max(5, (spacing * 1.15).round());
+      final searchLeft = (centerX.round() - searchRadius).clamp(
+        0,
+        image.width - 1,
+      );
+      final searchRight = (centerX.round() + searchRadius).clamp(
+        searchLeft + 1,
+        image.width,
+      );
+      final lineBand = math.max(1, (spacing * 0.08).round());
+
+      List<int> inkColumnsNear(double y) {
+        final columns = <int>[];
+        final yStart = (y.round() - lineBand).clamp(0, image.height - 1);
+        final yEnd = (y.round() + lineBand).clamp(yStart + 1, image.height);
+        for (var x = searchLeft; x < searchRight; x += 1) {
+          var touches = false;
+          for (var row = yStart; row < yEnd; row += 1) {
+            if (isInk(x, row)) {
+              touches = true;
+              break;
+            }
+          }
+          if (touches) columns.add(x);
+        }
+        return columns;
+      }
+
+      List<int> nearestInkCluster(List<int> columns) {
+        final clusters = _clusterCoordinatesWithGap(columns, 2);
+        if (clusters.isEmpty) return const [];
+        clusters.sort((left, right) {
+          double distance(List<int> cluster) =>
+              ((cluster.first + cluster.last) / 2 - centerX).abs();
+          return distance(left).compareTo(distance(right));
+        });
+        return clusters.first;
+      }
+
+      // Sample just inside the gap rather than on the string pixels. Sampling
+      // the strings themselves would make every full-width horizontal line
+      // look connected to a narrow rest stem.
+      final upperColumns = nearestInkCluster(
+        inkColumnsNear(upperLine + spacing * 0.30),
+      );
+      final lowerColumns = nearestInkCluster(
+        inkColumnsNear(lowerLine - spacing * 0.30),
+      );
+      if (upperColumns.isEmpty || lowerColumns.isEmpty) continue;
+      final upperCenter =
+          upperColumns.reduce((a, b) => a + b) / upperColumns.length;
+      final lowerCenter =
+          lowerColumns.reduce((a, b) => a + b) / lowerColumns.length;
+      final horizontalTravel = (upperCenter - lowerCenter).abs();
+      final combinedLeft = math.min(upperColumns.first, lowerColumns.first);
+      final combinedRight = math.max(upperColumns.last, lowerColumns.last);
+      final horizontalSpan = combinedRight - combinedLeft + 1;
+
+      // A rest stem or a stacked time-signature digit can cross the midpoint
+      // between strings, but it does not connect musical ink at both strings
+      // with meaningful horizontal or diagonal travel. Only surface the seam
+      // when moving one string could visibly tear such a connector.
+      final hasConnectorShape =
+          horizontalTravel >= math.max(4.0, spacing * 0.48) ||
+          horizontalSpan >= math.max(10.0, spacing * 1.25);
+      if (!hasConnectorShape) continue;
+
+      final left = (combinedLeft - 2).clamp(0, image.width - 1);
+      final right = (combinedRight + 3).clamp(left + 1, image.width);
+      final top = (upperLine - lineBand).round().clamp(0, image.height - 1);
+      final bottom = (lowerLine + lineBand + 1).round().clamp(
+        top + 1,
+        image.height,
+      );
       risks.add(
         VisualConnectedNotationRisk(
           id: 'gap_${gapIndex}_risk_${riskIndex++}',

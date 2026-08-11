@@ -4,14 +4,18 @@
 
 Use Flutter/Dart for the shared Windows and Android application, with iOS and macOS left technically viable. Flutter owns navigation, editing, custom chart rendering, gig mode, and pointer/stylus interaction. Windows is implemented and packaged first; Android is a full target, not a separate viewer codebase.
 
-The semantic core must not depend on Flutter widgets, SQLite, PDF libraries, source websites, or a particular OCR engine.
+The active product path is visual import/OCR review/transform/Gig output. The
+existing semantic core remains isolated and persistence-compatible while its UI
+and runtime service wiring are sunset; no destructive schema removal is part of
+that sunset.
 
 ## Layers
 
 1. **Domain** - songs, variants, tracks, measures, events, lyrics, tunings, fingering candidates, setlists, provenance, annotations, validation, and migrations.
 2. **Application** - import jobs, recognition review, transformations, layout requests, exports, state transfer, backup/restore, and conflict policy.
 3. **Infrastructure** - SQLite repositories, content-addressed assets, archive/checksum handling, source adapters, OCR/OMR engine adapters, and platform file pickers.
-4. **Presentation** - song pool, setlists, new/import, semantic editor, recognition review, backing-vocal mode, chart preview, and gig mode.
+4. **Presentation** - song pool, setlists, visual import/OCR review,
+   backing-vocal highlighting, chart preview, and gig mode.
 
 ## Persistence and bundles
 

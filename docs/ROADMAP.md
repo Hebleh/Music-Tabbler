@@ -224,6 +224,13 @@ offline. It must not silently fetch or reproduce remote content.
 - [!] **LG-004 — Ultimate Guitar provider module**
 - [!] **LG-005 — YouTube provider/frame acquisition**
 - [!] **LG-006 — Search/scouring integrations**
+- [!] **LG-007 — Songsterr-origin PDF reuse/distribution terms**
+
+The generic Android `application/pdf` share receiver is implemented as a local,
+user-initiated file-import boundary. Treating a PDF exported by a named source
+as permission to reuse, transform, publish, or distribute its musical content
+is a separate rights question; Songsterr-specific product claims and workflows
+remain behind LG-007 pending human legal review.
 
 Automated fetching, scraping, downloading, browser control, indexing, or video
 frame acquisition stays outside normal feature sprints until the exact action

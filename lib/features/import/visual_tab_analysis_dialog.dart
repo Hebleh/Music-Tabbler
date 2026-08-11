@@ -442,50 +442,104 @@ class _VisualTabAnalysisReviewScreenState
                                 '${system.connectedNotationRisks.length} seam risk(s)',
                               ),
                             ),
-                            for (final risk in system.connectedNotationRisks)
+                            if (system.connectedNotationRisks.isNotEmpty)
+                              const ListTile(
+                                dense: true,
+                                leading: Icon(
+                                  Icons.location_on_outlined,
+                                  color: Colors.redAccent,
+                                ),
+                                title: Text(
+                                  'Find the matching red numbered marker.',
+                                ),
+                                subtitle: Text(
+                                  'Its dashed line shows the seam between two strings.',
+                                ),
+                              ),
+                            for (
+                              var riskIndex = 0;
+                              riskIndex < system.connectedNotationRisks.length;
+                              riskIndex += 1
+                            )
                               Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                 ),
-                                child:
-                                    DropdownButtonFormField<
-                                      VisualConnectedComponentSide
-                                    >(
-                                      initialValue: risk.side,
-                                      decoration: InputDecoration(
-                                        isDense: true,
-                                        labelText:
-                                            'Gap ${risk.gapIndex + 1} component',
-                                        helperText:
-                                            'Choose which side moves as one piece.',
-                                      ),
-                                      items: const [
-                                        DropdownMenuItem(
-                                          value: VisualConnectedComponentSide
-                                              .unresolved,
-                                          child: Text('Needs review'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: VisualConnectedComponentSide
-                                              .upper,
-                                          child: Text('Move with upper string'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: VisualConnectedComponentSide
-                                              .lower,
-                                          child: Text('Move with lower string'),
-                                        ),
-                                      ],
-                                      onChanged: (side) {
-                                        if (side != null) {
-                                          _setRiskSide(
-                                            system.id,
-                                            risk.id,
-                                            side,
-                                          );
-                                        }
-                                      },
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child:
+                                          DropdownButtonFormField<
+                                            VisualConnectedComponentSide
+                                          >(
+                                            isExpanded: true,
+                                            initialValue: system
+                                                .connectedNotationRisks[riskIndex]
+                                                .side,
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              labelText: _riskLocationLabel(
+                                                system
+                                                    .connectedNotationRisks[riskIndex],
+                                                riskIndex,
+                                              ),
+                                              helperText:
+                                                  'Choose which side moves as one piece.',
+                                              helperMaxLines: 2,
+                                            ),
+                                            items: const [
+                                              DropdownMenuItem(
+                                                value:
+                                                    VisualConnectedComponentSide
+                                                        .unresolved,
+                                                child: Text('Needs review'),
+                                              ),
+                                              DropdownMenuItem(
+                                                value:
+                                                    VisualConnectedComponentSide
+                                                        .upper,
+                                                child: Text(
+                                                  'Move with upper string',
+                                                ),
+                                              ),
+                                              DropdownMenuItem(
+                                                value:
+                                                    VisualConnectedComponentSide
+                                                        .lower,
+                                                child: Text(
+                                                  'Move with lower string',
+                                                ),
+                                              ),
+                                            ],
+                                            onChanged: (side) {
+                                              if (side != null) {
+                                                _setRiskSide(
+                                                  system.id,
+                                                  system
+                                                      .connectedNotationRisks[riskIndex]
+                                                      .id,
+                                                  side,
+                                                );
+                                              }
+                                            },
+                                          ),
                                     ),
+                                    IconButton(
+                                      tooltip: 'Remove seam marker',
+                                      onPressed: () => _removeRisk(
+                                        system.id,
+                                        system
+                                            .connectedNotationRisks[riskIndex]
+                                            .id,
+                                      ),
+                                      icon: const Icon(
+                                        Icons.close,
+                                        color: Colors.redAccent,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             for (final token in system.tokens)
                               CheckboxListTile(
@@ -652,6 +706,24 @@ class _VisualTabAnalysisReviewScreenState
               connectedNotationRisks: [
                 for (final risk in system.connectedNotationRisks)
                   if (risk.id == riskId) risk.copyWith(side: side) else risk,
+              ],
+            ),
+      ];
+      _analyses[_currentIndex] = _analysis.copyWith(systems: systems);
+    });
+  }
+
+  void _removeRisk(String systemId, String riskId) {
+    setState(() {
+      final systems = [
+        for (final system in _analysis.systems)
+          if (system.id != systemId)
+            system
+          else
+            system.copyWith(
+              connectedNotationRisks: [
+                for (final risk in system.connectedNotationRisks)
+                  if (risk.id != riskId) risk,
               ],
             ),
       ];
@@ -1226,25 +1298,57 @@ class _AnalysisOverlayPainter extends CustomPainter {
           linePaint,
         );
       }
-      for (final risk in system.connectedNotationRisks) {
+      final riskGaps = system.connectedNotationRisks
+          .map((risk) => risk.gapIndex)
+          .toSet();
+      for (final gapIndex in riskGaps) {
+        if (gapIndex < 0 || gapIndex + 1 >= system.stringLines.length) {
+          continue;
+        }
+        final seamY =
+            (system.stringLines[gapIndex] + system.stringLines[gapIndex + 1]) /
+            2;
+        _drawDashedLine(
+          canvas,
+          Offset(system.rect.left * size.width, seamY * size.height),
+          Offset(system.rect.right * size.width, seamY * size.height),
+          Paint()
+            ..color = Colors.redAccent.withValues(alpha: 0.48)
+            ..strokeWidth = 1.2,
+        );
+      }
+      for (
+        var riskIndex = 0;
+        riskIndex < system.connectedNotationRisks.length;
+        riskIndex += 1
+      ) {
+        final risk = system.connectedNotationRisks[riskIndex];
         final color = switch (risk.side) {
           VisualConnectedComponentSide.unresolved => Colors.redAccent,
           VisualConnectedComponentSide.upper => Colors.deepPurpleAccent,
           VisualConnectedComponentSide.lower => Colors.amberAccent,
         };
-        final rect = Rect.fromLTRB(
+        final sourceRect = Rect.fromLTRB(
           risk.rect.left * size.width,
           risk.rect.top * size.height,
           risk.rect.right * size.width,
           risk.rect.bottom * size.height,
         );
-        canvas.drawRect(rect, Paint()..color = color.withValues(alpha: 0.25));
+        final rect = sourceRect.inflate(3);
         canvas.drawRect(
           rect,
           Paint()
-            ..color = color
+            ..color = color.withValues(alpha: 0.86)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 2,
+            ..strokeWidth = 1.6,
+        );
+        _drawRiskMarker(
+          canvas,
+          size,
+          rect,
+          markerY: system.rect.top * size.height - 13,
+          number: riskIndex + 1,
+          color: color,
         );
       }
       for (final token in system.tokens) {
@@ -1293,6 +1397,66 @@ class _AnalysisOverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _AnalysisOverlayPainter oldDelegate) => true;
+}
+
+String _riskLocationLabel(VisualConnectedNotationRisk risk, int riskIndex) =>
+    'Marker ${riskIndex + 1} · between strings ${risk.gapIndex + 1} and ${risk.gapIndex + 2}';
+
+void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+  const dashWidth = 8.0;
+  const dashGap = 5.0;
+  var x = start.dx;
+  while (x < end.dx) {
+    canvas.drawLine(
+      Offset(x, start.dy),
+      Offset(math.min(x + dashWidth, end.dx), end.dy),
+      paint,
+    );
+    x += dashWidth + dashGap;
+  }
+}
+
+void _drawRiskMarker(
+  Canvas canvas,
+  Size size,
+  Rect riskRect, {
+  required double markerY,
+  required int number,
+  required Color color,
+}) {
+  const radius = 8.0;
+  final center = Offset(
+    riskRect.center.dx.clamp(radius, size.width - radius),
+    markerY.clamp(radius, size.height - radius),
+  );
+  canvas.drawLine(
+    Offset(center.dx, center.dy + radius),
+    Offset(riskRect.center.dx, riskRect.top),
+    Paint()
+      ..color = color.withValues(alpha: 0.72)
+      ..strokeWidth = 1,
+  );
+  canvas.drawCircle(center, radius, Paint()..color = color);
+  canvas.drawCircle(
+    center,
+    radius,
+    Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5,
+  );
+  final label = TextPainter(
+    text: TextSpan(
+      text: '$number',
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 9,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  label.paint(canvas, center - Offset(label.width / 2, label.height / 2));
 }
 
 Uint8List _renderAnalysisPreview(Map<String, Object?> request) {

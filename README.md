@@ -32,6 +32,21 @@ dev.bat -Device windows --dart-define=NAME=VALUE
 
 `dev.ps1` remains available for direct PowerShell use.
 
+On macOS, double-click `dev.command` in Finder or run it from Terminal:
+
+```zsh
+./dev.command
+```
+
+It defaults to the macOS desktop target and accepts the equivalent development
+options:
+
+```zsh
+./dev.command --clean
+./dev.command --device <flutter-device-id>
+./dev.command --device macos --dart-define=NAME=VALUE
+```
+
 Use `flutter devices` to find an Android device ID. Release builds and versioned packaging are intentionally separate and should only be run for an explicit release or milestone checkpoint.
 
 ## Windows MVP release

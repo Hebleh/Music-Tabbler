@@ -33,11 +33,15 @@ class VisualTabTransformService {
         'repair a blocked row or explicitly keep it unchanged.',
       );
     }
+    final sustainResolution = _resolveSustainFretsAcrossRows(
+      baseStrips,
+      analysesByStrip,
+    );
 
     final transformed = <VisualStrip>[];
     var relabelNextSystem = true;
     for (final strip in baseStrips) {
-      final analysis = analysesByStrip[strip.id]!;
+      final analysis = sustainResolution.byStrip[strip.id]!;
       if (analysis.keepUnchanged) {
         transformed.add(strip);
         continue;
@@ -70,8 +74,13 @@ class VisualTabTransformService {
             assetHash: asset.hash,
             width: item['width']! as int,
             height: item['height']! as int,
-            insertionSeam: (item['insertionSeam'] as num?)?.toDouble(),
-            insertionHeight: (item['insertionHeight'] as num?)?.toDouble() ?? 0,
+            insertionSeams:
+                (item['insertionSeams'] as List?)
+                    ?.map((value) => (value as num).toDouble())
+                    .toList(growable: false) ??
+                const [],
+            insertionBandHeight:
+                (item['insertionBandHeight'] as num?)?.toDouble() ?? 0,
           ),
         );
       }
@@ -86,17 +95,23 @@ class VisualTabTransformService {
       appliedAt: DateTime.now().toUtc(),
       baseStrips: List.unmodifiable(baseStrips),
       configuration: configuration.toJson(),
-      analyses: analyses.map((analysis) => analysis.toJson()).toList(),
+      analyses: sustainResolution.ordered
+          .map((analysis) => analysis.toJson())
+          .toList(),
       audit: [
         'Applied ${configuration.globalPitchChange >= 0 ? "+" : ""}'
             '${configuration.globalPitchChange} global pitch change.',
         if (configuration.selectedStringPitchChanges.isNotEmpty)
           'Used ${configuration.selectedStringPitchChanges.length} '
               'selected-string pitch override(s).',
-        if (configuration.unusedTargetString != null)
-          'Added unused target string '
-              '${configuration.unusedTargetString! + 1}.',
-        for (final analysis in analyses)
+        if (configuration.unusedTargetStrings.isNotEmpty)
+          'Added ${configuration.unusedTargetStrings.length} unused target '
+              'string(s): '
+              '${configuration.unusedTargetStrings.map((index) => index + 1).join(', ')}.',
+        if (sustainResolution.corrected > 0)
+          'Resolved ${sustainResolution.corrected} parenthesized sustain '
+              'fret(s) from the preceding played fret across source rows.',
+        for (final analysis in sustainResolution.ordered)
           if (analysis.keepUnchanged)
             'Kept source row ${analysis.stripId} unchanged after explicit '
                 'review because it had no usable detected fret tokens.',
@@ -123,6 +138,70 @@ class VisualTabTransformService {
   }
 }
 
+({
+  Map<String, VisualTabAnalysis> byStrip,
+  List<VisualTabAnalysis> ordered,
+  int corrected,
+})
+_resolveSustainFretsAcrossRows(
+  List<VisualStrip> strips,
+  Map<String, VisualTabAnalysis> analysesByStrip,
+) {
+  final lastFretByString = <int, int>{};
+  final resolvedByStrip = <String, VisualTabAnalysis>{};
+  final ordered = <VisualTabAnalysis>[];
+  var corrected = 0;
+  for (final strip in strips) {
+    final analysis = analysesByStrip[strip.id]!;
+    if (analysis.keepUnchanged) {
+      lastFretByString.clear();
+      resolvedByStrip[strip.id] = analysis;
+      ordered.add(analysis);
+      continue;
+    }
+    final systems = <VisualTabSystem>[];
+    for (final system in analysis.systems) {
+      final tokens = [...system.tokens];
+      final tokenIndexes = List<int>.generate(tokens.length, (index) => index)
+        ..sort(
+          (left, right) =>
+              tokens[left].rect.left.compareTo(tokens[right].rect.left),
+        );
+      for (final index in tokenIndexes) {
+        final token = tokens[index];
+        final stringIndex = token.stringIndex;
+        if (!token.enabled || stringIndex == null) continue;
+        if (token.kind == VisualTabTokenKind.deadNote) {
+          lastFretByString.remove(stringIndex);
+          continue;
+        }
+        if (token.kind != VisualTabTokenKind.fret) continue;
+        final parsed = _parseFret(token.text);
+        if (parsed == null) continue;
+        var sourceFret = parsed.$1;
+        final previous = lastFretByString[stringIndex];
+        if (parsed.$2 && previous != null) {
+          sourceFret = previous;
+          if (parsed.$1 != previous) {
+            tokens[index] = token.copyWith(text: '($previous)');
+            corrected += 1;
+          }
+        }
+        lastFretByString[stringIndex] = sourceFret;
+      }
+      systems.add(system.copyWith(tokens: tokens));
+    }
+    final resolved = analysis.copyWith(systems: systems);
+    resolvedByStrip[strip.id] = resolved;
+    ordered.add(resolved);
+  }
+  return (
+    byStrip: Map.unmodifiable(resolvedByStrip),
+    ordered: List.unmodifiable(ordered),
+    corrected: corrected,
+  );
+}
+
 VisualStrip _transformedStrip({
   required VisualStrip source,
   required VisualTabSystem system,
@@ -130,8 +209,8 @@ VisualStrip _transformedStrip({
   required String assetHash,
   required int width,
   required int height,
-  required double? insertionSeam,
-  required double insertionHeight,
+  required List<double> insertionSeams,
+  required double insertionBandHeight,
 }) {
   NormalizedRect? mapAssetRect(NormalizedRect assetRect) {
     final cropLocal = assetRectToCropLocal(assetRect, source.crop);
@@ -141,8 +220,8 @@ VisualStrip _transformedStrip({
     return _mapSystemRect(
       clipped,
       system.rect,
-      insertionSeam: insertionSeam,
-      insertionHeight: insertionHeight,
+      insertionSeams: insertionSeams,
+      insertionBandHeight: insertionBandHeight,
     );
   }
 
@@ -157,8 +236,8 @@ VisualStrip _transformedStrip({
           point.x,
           _mapSystemY(
             localY,
-            insertionSeam: insertionSeam,
-            insertionHeight: insertionHeight,
+            insertionSeams: insertionSeams,
+            insertionBandHeight: insertionBandHeight,
           ),
           pressure: point.pressure,
         ),
@@ -285,22 +364,49 @@ Map<String, Object?> _renderSystem(
       ),
   ];
   final spacing = _medianSpacing(sourceLines);
-  final unusedLowToHigh = configuration.unusedTargetString;
-  final unusedTopToBottom = unusedLowToHigh == null
+  final unusedTopToBottom =
+      configuration.unusedTargetStrings
+          .map((index) => configuration.targetLabels.length - 1 - index)
+          .toList(growable: false)
+        ..sort();
+  final usedTargets = configuration.routes
+      .map(
+        (route) => configuration.targetLabels.length - 1 - route.targetString,
+      )
+      .toSet();
+  final internalInsertions = [
+    for (final position in unusedTopToBottom)
+      if (usedTargets.any((used) => used < position) &&
+          usedTargets.any((used) => used > position))
+        position,
+  ];
+  if (unusedTopToBottom.length > 1 && internalInsertions.isNotEmpty) {
+    throw const FormatException(
+      'Multiple added target strings are supported at the top and bottom of '
+      'the tab. Use only one unused string between existing strings.',
+    );
+  }
+  final singleUnusedTopToBottom = unusedTopToBottom.length == 1
+      ? unusedTopToBottom.single
+      : null;
+  final seam = singleUnusedTopToBottom == null
       ? null
-      : configuration.targetLabels.length - 1 - unusedLowToHigh;
-  final seam = unusedTopToBottom == null
-      ? null
-      : _insertionSeam(sourceLines, unusedTopToBottom, base.height.toDouble());
-  final insertionPixels = seam == null ? 0 : math.max(1, spacing.round());
+      : _insertionSeam(
+          sourceLines,
+          singleUnusedTopToBottom,
+          base.height.toDouble(),
+        );
+  final insertionBandPixels = unusedTopToBottom.isEmpty
+      ? 0
+      : math.max(1, spacing.round());
   final relevantRisks =
       seam == null ||
-          unusedTopToBottom == null ||
-          unusedTopToBottom == 0 ||
-          unusedTopToBottom == sourceLines.length
+          singleUnusedTopToBottom == null ||
+          singleUnusedTopToBottom == 0 ||
+          singleUnusedTopToBottom == sourceLines.length
       ? const <VisualConnectedNotationRisk>[]
       : system.connectedNotationRisks
-            .where((risk) => risk.gapIndex == unusedTopToBottom - 1)
+            .where((risk) => risk.gapIndex == singleUnusedTopToBottom - 1)
             .map((risk) => _inferConnectedNotationSide(risk, system))
             .toList(growable: false);
   final unresolved = relevantRisks.where(
@@ -313,48 +419,93 @@ Map<String, Object?> _renderSystem(
       'each component to the upper or lower string region.',
     );
   }
-  final output = seam == null
-      ? img.Image.from(base)
-      : _insertHorizontalBand(
-          base,
-          seam: seam.round().clamp(0, base.height),
-          height: insertionPixels,
+  var output = img.Image.from(base);
+  final targetLines = <double>[...sourceLines];
+  final insertionSeams = <double>[];
+  for (final position in unusedTopToBottom) {
+    final currentSeam = _insertionSeam(
+      targetLines,
+      position,
+      output.height.toDouble(),
+    );
+    final beforeInsertion = output;
+    output = _insertHorizontalBand(
+      beforeInsertion,
+      seam: currentSeam.round().clamp(0, beforeInsertion.height),
+      height: insertionBandPixels,
+    );
+    if (unusedTopToBottom.length == 1) {
+      for (final risk in relevantRisks) {
+        _moveConnectedNotationComponent(
+          output,
+          beforeInsertion,
+          risk,
+          system.rect,
+          insertionBandPixels,
         );
+      }
+    }
+    final usedBefore = usedTargets.where((used) => used < position).length;
+    insertionSeams.add(
+      usedBefore == 0
+          ? 0
+          : usedBefore == sourceLines.length
+          ? 1
+          : _insertionSeam(sourceLines, usedBefore, base.height.toDouble()) /
+                base.height,
+    );
+    final newLineY = _newStringLineY(
+      targetLines,
+      position,
+      insertionBandPixels,
+    );
+    for (var index = 0; index < targetLines.length; index += 1) {
+      if (targetLines[index] >= currentSeam) {
+        targetLines[index] += insertionBandPixels;
+      }
+    }
+    targetLines.insert(position, newLineY);
+  }
   final background = _backgroundColor(output);
   final foreground = _luminance(background) < 128
       ? img.ColorRgb8(245, 245, 245)
       : img.ColorRgb8(18, 18, 18);
-  final targetLines = <double>[
-    for (final line in sourceLines)
-      seam != null && line >= seam ? line + insertionPixels : line,
-  ];
-  if (seam != null) {
-    for (final risk in relevantRisks) {
-      _moveConnectedNotationComponent(
+  if (unusedTopToBottom.isNotEmpty) {
+    final staffXs =
+        system.barLines
+            .where(
+              (position) =>
+                  position >= system.rect.left && position <= system.rect.right,
+            )
+            .map(
+              (position) =>
+                  ((position - system.rect.left) /
+                          system.rect.width *
+                          output.width)
+                      .round()
+                      .clamp(0, output.width - 1),
+            )
+            .toList(growable: false)
+          ..sort();
+    final staffLeft = staffXs.isEmpty ? 0 : staffXs.first;
+    final staffRight = staffXs.isEmpty ? output.width - 1 : staffXs.last;
+    for (final position in unusedTopToBottom) {
+      final newLineY = targetLines[position];
+      img.drawLine(
         output,
-        base,
-        risk,
-        system.rect,
-        insertionPixels,
+        x1: staffLeft,
+        y1: newLineY.round().clamp(0, output.height - 1),
+        x2: staffRight,
+        y2: newLineY.round().clamp(0, output.height - 1),
+        color: foreground,
+        thickness: 1,
       );
     }
-    final newLineY = _newStringLineY(
-      sourceLines,
-      unusedTopToBottom!,
-      insertionPixels,
-    );
-    img.drawLine(
-      output,
-      x1: 0,
-      y1: newLineY.round().clamp(0, output.height - 1),
-      x2: output.width - 1,
-      y2: newLineY.round().clamp(0, output.height - 1),
-      color: foreground,
-      thickness: 1,
-    );
-    targetLines.insert(unusedTopToBottom, newLineY);
     for (final barLine in system.barLines) {
-      final x = (barLine * output.width).round().clamp(0, output.width - 1);
+      final x =
+          ((barLine - system.rect.left) / system.rect.width * output.width)
+              .round()
+              .clamp(0, output.width - 1);
       img.drawLine(
         output,
         x1: x,
@@ -418,17 +569,18 @@ Map<String, Object?> _renderSystem(
     }
     final targetLineIndex =
         configuration.targetLabels.length - 1 - route.targetString;
-    final sourceLineIndex =
-        system.stringLines.length - 1 - token.stringIndex!;
+    final sourceLineIndex = system.stringLines.length - 1 - token.stringIndex!;
     _replaceToken(
       output,
       token,
       system.rect,
       replacement,
-      seam: seam,
-      insertionPixels: insertionPixels,
+      insertionSeams: insertionSeams,
+      insertionBandPixels: insertionBandPixels,
+      totalInsertionPixels: insertionBandPixels * unusedTopToBottom.length,
       sourceLineY: sourceLines[sourceLineIndex],
       targetLineY: targetLines[targetLineIndex],
+      targetLines: targetLines,
       staffSpacing: _medianSpacing(targetLines),
       background: background,
       foreground: foreground,
@@ -439,14 +591,12 @@ Map<String, Object?> _renderSystem(
     'width': output.width,
     'height': output.height,
     'system': system.toJson(),
-    'insertionSeam': seam == null ? null : seam / base.height,
-    'insertionHeight': insertionPixels / output.height,
+    'insertionSeams': insertionSeams,
+    'insertionBandHeight': insertionBandPixels / output.height,
   };
 }
 
-List<VisualTabToken> _deduplicatedTransformTokens(
-  List<VisualTabToken> tokens,
-) {
+List<VisualTabToken> _deduplicatedTransformTokens(List<VisualTabToken> tokens) {
   final result = <VisualTabToken>[];
   for (final token in tokens) {
     if (!token.enabled || !token.isFretLike || token.stringIndex == null) {
@@ -492,8 +642,7 @@ List<VisualTabToken> _deduplicatedTransformTokens(
         0.018,
         math.max(existing.rect.height, token.rect.height) * 1.5,
       );
-      return centerDx <= horizontalTolerance &&
-          centerDy <= verticalTolerance;
+      return centerDx <= horizontalTolerance && centerDy <= verticalTolerance;
     });
     if (duplicateIndex < 0) {
       result.add(token);
@@ -659,10 +808,12 @@ void _replaceToken(
   VisualTabToken token,
   NormalizedRect systemRect,
   String replacement, {
-  required double? seam,
-  required int insertionPixels,
+  required List<double> insertionSeams,
+  required int insertionBandPixels,
+  required int totalInsertionPixels,
   required double sourceLineY,
   required double targetLineY,
+  required List<double> targetLines,
   required double staffSpacing,
   required img.Color background,
   required img.Color foreground,
@@ -674,19 +825,24 @@ void _replaceToken(
   final originalTop =
       ((token.rect.top - systemRect.top) /
       systemRect.height *
-      (image.height - insertionPixels));
+      (image.height - totalInsertionPixels));
   final originalBottom =
       ((token.rect.bottom - systemRect.top) /
       systemRect.height *
-      (image.height - insertionPixels));
-  var top = originalTop;
-  var bottom = originalBottom;
-  if (seam != null) {
-    if ((top + bottom) / 2 >= seam) {
-      top += insertionPixels;
-      bottom += insertionPixels;
-    }
-  }
+      (image.height - totalInsertionPixels));
+  final baseHeight = image.height - totalInsertionPixels;
+  final top = _mapInsertedPixelY(
+    originalTop,
+    baseHeight: baseHeight,
+    insertionSeams: insertionSeams,
+    insertionBandPixels: insertionBandPixels,
+  );
+  final bottom = _mapInsertedPixelY(
+    originalBottom,
+    baseHeight: baseHeight,
+    insertionSeams: insertionSeams,
+    insertionBandPixels: insertionBandPixels,
+  );
   final x1 = (left.floor() - 3).clamp(0, image.width - 1);
   final y1 = (top.floor() - 3).clamp(0, image.height - 1);
   final x2 = (right.ceil() + 3).clamp(x1 + 1, image.width);
@@ -723,19 +879,27 @@ void _replaceToken(
     glyph.height / 2 + 2,
     staffSpacing * (replacementIsParenthesized ? 0.68 : 0.54),
   );
-  final clearLeft = (centerX - clearHalfWidth)
-      .floor()
-      .clamp(0, image.width - 1);
-  final clearTop = (targetLineY - clearHalfHeight)
-      .floor()
-      .clamp(0, image.height - 1);
-  final clearRight = (centerX + clearHalfWidth)
-      .ceil()
-      .clamp(0, image.width - 1);
-  final clearBottom = (targetLineY + clearHalfHeight)
-      .ceil()
-      .clamp(0, image.height - 1);
-  if (seam != null && (originalTop + originalBottom) / 2 >= seam) {
+  final clearLeft = (centerX - clearHalfWidth).floor().clamp(
+    0,
+    image.width - 1,
+  );
+  final clearTop = (targetLineY - clearHalfHeight).floor().clamp(
+    0,
+    image.height - 1,
+  );
+  final clearRight = (centerX + clearHalfWidth).ceil().clamp(
+    0,
+    image.width - 1,
+  );
+  final clearBottom = (targetLineY + clearHalfHeight).ceil().clamp(
+    0,
+    image.height - 1,
+  );
+  if (insertionSeams.length == 1 &&
+      insertionSeams.single > 0 &&
+      insertionSeams.single < 1 &&
+      (originalTop + originalBottom) / 2 >=
+          insertionSeams.single * baseHeight) {
     // The inserted band is copied row-by-row. A tall sustain glyph can cross
     // the seam even when its centre belongs to the lower string, leaving its
     // upper arc at the pre-insertion position. Clear that ghost footprint as
@@ -747,13 +911,12 @@ void _replaceToken(
     img.fillRect(
       image,
       x1: clearLeft,
-      y1: (originalCenterY - clearHalfHeight)
-          .floor()
-          .clamp(0, image.height - 1),
+      y1: (originalCenterY - clearHalfHeight).floor().clamp(
+        0,
+        image.height - 1,
+      ),
       x2: clearRight,
-      y2: (originalCenterY + clearHalfHeight)
-          .ceil()
-          .clamp(0, image.height - 1),
+      y2: (originalCenterY + clearHalfHeight).ceil().clamp(0, image.height - 1),
       color: background,
     );
   }
@@ -765,6 +928,18 @@ void _replaceToken(
     y2: clearBottom,
     color: background,
   );
+  for (final line in targetLines) {
+    if ((line - targetLineY).abs() < 0.5) continue;
+    img.drawLine(
+      image,
+      x1: clearLeft,
+      y1: line.round().clamp(0, image.height - 1),
+      x2: clearRight,
+      y2: line.round().clamp(0, image.height - 1),
+      color: foreground,
+      thickness: 1,
+    );
+  }
   img.compositeImage(
     image,
     glyph,
@@ -772,6 +947,19 @@ void _replaceToken(
     dstY: drawY,
     blend: img.BlendMode.direct,
   );
+}
+
+double _mapInsertedPixelY(
+  double value, {
+  required int baseHeight,
+  required List<double> insertionSeams,
+  required int insertionBandPixels,
+}) {
+  var mapped = value;
+  for (final seam in insertionSeams) {
+    if (value >= seam * baseHeight) mapped += insertionBandPixels;
+  }
+  return mapped;
 }
 
 img.Image _scaledFretGlyph(
@@ -968,8 +1156,8 @@ NormalizedRect? _intersection(NormalizedRect a, NormalizedRect b) {
 NormalizedRect _mapSystemRect(
   NormalizedRect rect,
   NormalizedRect systemRect, {
-  required double? insertionSeam,
-  required double insertionHeight,
+  required List<double> insertionSeams,
+  required double insertionBandHeight,
 }) {
   final left = (rect.left - systemRect.left) / systemRect.width;
   final right = (rect.right - systemRect.left) / systemRect.width;
@@ -979,25 +1167,26 @@ NormalizedRect _mapSystemRect(
     left.clamp(0.0, 0.999),
     _mapSystemY(
       top,
-      insertionSeam: insertionSeam,
-      insertionHeight: insertionHeight,
+      insertionSeams: insertionSeams,
+      insertionBandHeight: insertionBandHeight,
     ).clamp(0.0, 0.999),
     right.clamp(0.001, 1.0),
     _mapSystemY(
       bottom,
-      insertionSeam: insertionSeam,
-      insertionHeight: insertionHeight,
+      insertionSeams: insertionSeams,
+      insertionBandHeight: insertionBandHeight,
     ).clamp(0.001, 1.0),
   ).clamp();
 }
 
 double _mapSystemY(
   double value, {
-  required double? insertionSeam,
-  required double insertionHeight,
+  required List<double> insertionSeams,
+  required double insertionBandHeight,
 }) {
-  if (insertionSeam == null || insertionHeight <= 0) return value;
-  final baseScale = 1 - insertionHeight;
+  if (insertionSeams.isEmpty || insertionBandHeight <= 0) return value;
+  final baseScale = 1 - insertionBandHeight * insertionSeams.length;
   final baseValue = value * baseScale;
-  return value >= insertionSeam ? baseValue + insertionHeight : baseValue;
+  final priorInsertions = insertionSeams.where((seam) => value >= seam).length;
+  return baseValue + insertionBandHeight * priorInsertions;
 }

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'performance_deck.dart';
 
+enum GigHorizontalAlignment { left, center, right }
+
 class GigViewportItem {
   const GigViewportItem({
     required this.element,
@@ -69,8 +71,8 @@ int gigPageIndexForAnchor(
 /// fresh screen.
 class GigViewportLayout {
   const GigViewportLayout({
-    this.horizontalGap = 8,
-    this.verticalGap = 8,
+    this.horizontalGap = 0,
+    this.verticalGap = 2,
     this.baseRowHeight = 72,
   });
 
@@ -83,6 +85,8 @@ class GigViewportLayout {
     required double viewportWidth,
     required double viewportHeight,
     required double zoom,
+    Map<String, double> zoomByEntry = const {},
+    GigHorizontalAlignment alignment = GigHorizontalAlignment.left,
   }) {
     if (viewportWidth <= 0 || viewportHeight <= 0) return const [];
     final elements = _flatten(deck);
@@ -98,11 +102,13 @@ class GigViewportLayout {
 
     final pages = <GigViewportPage>[];
     for (final group in groups) {
+      final entryZoom = zoomByEntry[group.first.entryId] ?? zoom;
       _planEntry(
         _withGigHeader(group),
         viewportWidth: viewportWidth,
         viewportHeight: viewportHeight,
-        zoom: zoom.clamp(0.45, 2.0),
+        zoom: entryZoom.clamp(0.45, 2.0),
+        alignment: alignment,
         output: pages,
       );
     }
@@ -152,6 +158,7 @@ class GigViewportLayout {
     required double viewportWidth,
     required double viewportHeight,
     required double zoom,
+    required GigHorizontalAlignment alignment,
     required List<GigViewportPage> output,
   }) {
     var items = <GigViewportItem>[];
@@ -160,10 +167,15 @@ class GigViewportLayout {
     var lineHeight = 0.0;
     var lineStart = 0;
 
-    void centerLine() {
+    void alignLine() {
       if (lineHeight == 0) return;
       final usedWidth = math.max(0.0, x - horizontalGap);
-      final offset = math.max(0.0, (viewportWidth - usedWidth) / 2);
+      final remainingWidth = math.max(0.0, viewportWidth - usedWidth);
+      final offset = switch (alignment) {
+        GigHorizontalAlignment.left => 0.0,
+        GigHorizontalAlignment.center => remainingWidth / 2,
+        GigHorizontalAlignment.right => remainingWidth,
+      };
       for (var index = lineStart; index < items.length; index += 1) {
         items[index] = items[index].shiftedHorizontally(offset);
       }
@@ -171,7 +183,7 @@ class GigViewportLayout {
 
     void finishLine() {
       if (lineHeight == 0) return;
-      centerLine();
+      alignLine();
       x = 0;
       y += lineHeight + verticalGap;
       lineHeight = 0;
@@ -180,7 +192,7 @@ class GigViewportLayout {
 
     void finishPage() {
       if (items.isEmpty) return;
-      centerLine();
+      alignLine();
       output.add(
         GigViewportPage(
           index: output.length,

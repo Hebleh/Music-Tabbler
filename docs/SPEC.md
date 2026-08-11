@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Music Tabbler turns heterogeneous music material into compact, semantic, stage-readable charts. The primary user is initially a bassist who needs to glance at a tablet or printed A4 page while playing and occasionally singing backing vocals.
+Music Tabbler turns heterogeneous music material into compact, stage-readable visual charts. The primary user is initially a bassist who needs to glance at a tablet or printed A4 page while playing and occasionally singing backing vocals. Visual PDF/image intake, local OCR review, nondestructive transforms, and deterministic Gig/PDF output are the active product path. The earlier semantic editor and recognition product path is sunset; its stored data remains backward-compatible rather than being deleted during migration.
 
 The gig target informing the first iteration is 16 August 2026. The first dependable outcome is a Windows workflow that produces usable A4 charts; Android follows as a full-function peer application, not a reduced viewer.
 
@@ -114,6 +114,10 @@ Gig mode is available on all platforms but optimized for an Android tablet:
 
 - first-install default is light notation/text on black;
 - theme and gig-view preferences persist locally on each device;
+- a persisted whole-set zoom provides the default and a session-local
+  per-song zoom can override it for an individual setlist entry;
+- a plain chart tap hides or restores unlocked controls; stage lock prevents
+  the tap from exposing controls;
 - distraction-free full-screen chart with large touch targets;
 - one swipe advances to the next page or, at the last page, the next song;
 - an explicit control returns to the previous page/song and prevents accidental setlist exit;

@@ -45,7 +45,7 @@ class VisualImportService implements VisualImporter {
     );
     if (result == null) throw const ImportCancelled();
     final file = result.files.single;
-    return importPdf(await _readPlatformFile(file));
+    return importPdfBytes(await _readPlatformFile(file));
   }
 
   @override
@@ -98,7 +98,7 @@ class VisualImportService implements VisualImporter {
       final extension = p.extension(file.path).toLowerCase();
       final bytes = await file.readAsBytes();
       if (extension == '.pdf') {
-        strips.addAll(await importPdf(bytes));
+        strips.addAll(await importPdfBytes(bytes));
       } else {
         strips.add(await importImage(bytes, extension));
       }
@@ -127,6 +127,9 @@ class VisualImportService implements VisualImporter {
       sourceAssetHash: original.hash,
     );
   }
+
+  @override
+  Future<List<VisualStrip>> importPdfBytes(Uint8List bytes) => importPdf(bytes);
 
   Future<List<VisualStrip>> importPdf(List<int> bytes) async {
     if (!_pdfInitialized) {

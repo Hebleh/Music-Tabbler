@@ -88,7 +88,7 @@ void main() {
     );
   });
 
-  test('every packed strip line is horizontally centered', () {
+  test('packed strip lines are left aligned by default', () {
     final pages = const GigViewportLayout().plan(
       deck: deckWithRows([('song-a', 5)]),
       viewportWidth: 600,
@@ -104,9 +104,44 @@ void main() {
       lines.putIfAbsent(item.top, () => []).add(item);
     }
     for (final line in lines.values) {
-      final left = line.first.left;
-      final right = 600 - (line.last.left + line.last.width);
-      expect(left, closeTo(right, 0.01));
+      expect(line.first.left, 0);
+      line.sort((left, right) => left.left.compareTo(right.left));
+      for (var index = 1; index < line.length; index += 1) {
+        expect(
+          line[index].left,
+          closeTo(line[index - 1].left + line[index - 1].width, 0.01),
+        );
+      }
+    }
+  });
+
+  test('packed strip lines support center and right alignment', () {
+    final deck = deckWithRows([('song-a', 5)]);
+    for (final alignment in [
+      GigHorizontalAlignment.center,
+      GigHorizontalAlignment.right,
+    ]) {
+      final pages = const GigViewportLayout().plan(
+        deck: deck,
+        viewportWidth: 600,
+        viewportHeight: 400,
+        zoom: 0.45,
+        alignment: alignment,
+      );
+      final strips = pages.first.items
+          .where((item) => item.element.kind == PerformanceElementKind.strip)
+          .toList();
+      final lines = <double, List<GigViewportItem>>{};
+      for (final item in strips) {
+        lines.putIfAbsent(item.top, () => []).add(item);
+      }
+      for (final line in lines.values) {
+        final usedWidth = line.last.left + line.last.width - line.first.left;
+        final expectedLeft = alignment == GigHorizontalAlignment.center
+            ? (600 - usedWidth) / 2
+            : 600 - usedWidth;
+        expect(line.first.left, closeTo(expectedLeft, 0.01));
+      }
     }
   });
 
@@ -181,5 +216,29 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  test('an entry zoom override does not change the other songs', () {
+    final pages = const GigViewportLayout().plan(
+      deck: deckWithRows([('song-a', 3), ('song-b', 3)]),
+      viewportWidth: 700,
+      viewportHeight: 500,
+      zoom: 0.75,
+      zoomByEntry: const {'song-b': 1.5},
+    );
+    final firstA = pages
+        .firstWhere((page) => page.entryId == 'song-a')
+        .items
+        .firstWhere(
+          (item) => item.element.kind == PerformanceElementKind.strip,
+        );
+    final firstB = pages
+        .firstWhere((page) => page.entryId == 'song-b')
+        .items
+        .firstWhere(
+          (item) => item.element.kind == PerformanceElementKind.strip,
+        );
+
+    expect(firstB.height, closeTo(firstA.height * 2, 0.01));
   });
 }

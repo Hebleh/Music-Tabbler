@@ -4,11 +4,9 @@ class AppServices {
   const AppServices({
     required this.library,
     required this.songVariants,
-    required this.semanticCharts,
     required this.setlists,
     required this.importer,
     required this.exporter,
-    required this.semanticExporter,
     required this.setlistExporter,
     required this.performanceDeckBuilder,
     required this.textRecognition,
@@ -17,15 +15,14 @@ class AppServices {
     this.externalUrlOpener,
     this.songBundles,
     this.libraryState,
+    this.incomingPdf,
   });
 
   final ChartLibrary library;
   final SongVariantLibrary songVariants;
-  final SemanticChartLibrary semanticCharts;
   final SetlistLibrary setlists;
   final VisualImporter importer;
   final ChartPdfExporter exporter;
-  final SemanticChartPdfExporter semanticExporter;
   final SetlistPdfExporter setlistExporter;
   final PerformanceDeckBuilder performanceDeckBuilder;
   final TextRecognitionService textRecognition;
@@ -34,4 +31,5 @@ class AppServices {
   final ExternalUrlOpener? externalUrlOpener;
   final SongBundleTransfer? songBundles;
   final LibraryStateTransfer? libraryState;
+  final IncomingPdfReceiver? incomingPdf;
 }

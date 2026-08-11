@@ -125,8 +125,22 @@ abstract interface class SetlistLibrary {
 abstract interface class VisualImporter {
   Future<List<VisualStrip>> pickImages();
   Future<List<VisualStrip>> pickPdf();
+  Future<List<VisualStrip>> importPdfBytes(Uint8List bytes);
   Future<List<VisualStrip>> pasteImages();
   Future<List<VisualStrip>> importPaths(Iterable<String> paths);
+}
+
+class IncomingPdf {
+  const IncomingPdf({required this.bytes, this.fileName});
+
+  final Uint8List bytes;
+  final String? fileName;
+}
+
+/// Receives user-initiated PDF shares from the host platform.
+abstract interface class IncomingPdfReceiver {
+  Stream<void> get available;
+  Future<IncomingPdf?> takePendingPdf();
 }
 
 class RecognizedTextRegion {
