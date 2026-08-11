@@ -10,7 +10,15 @@ import '../domain/visual_tab_transform_models.dart';
 import 'service_contracts.dart';
 import 'visual_image_processor.dart';
 
-class VisualTabAnalysisService {
+abstract interface class VisualTabAnalyzer {
+  Future<VisualTabAnalysis> analyze(
+    VisualStrip strip, {
+    required int sourceStringCount,
+    bool preferPositionedPdf = true,
+  });
+}
+
+class VisualTabAnalysisService implements VisualTabAnalyzer {
   VisualTabAnalysisService({
     required this.library,
     required this.textRecognition,
@@ -22,6 +30,7 @@ class VisualTabAnalysisService {
   final Map<String, Future<img.Image>> _geometryImageCache = {};
   static bool _pdfInitialized = false;
 
+  @override
   Future<VisualTabAnalysis> analyze(
     VisualStrip strip, {
     required int sourceStringCount,

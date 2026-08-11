@@ -30,6 +30,23 @@ void main() {
 
     expect(saved, ['three']);
   });
+
+  test('visual session owns commit, undo, and immediate save', () async {
+    final saved = <String>[];
+    final session = VisualDraftEditSession(
+      initialDraft: _draft('one'),
+      autosaveDelay: const Duration(days: 1),
+      save: (draft) async => saved.add(draft.title),
+    );
+
+    session.commit(_draft('two'));
+    expect(session.draft.title, 'two');
+    expect(session.undo(updatedAt: DateTime.utc(2026, 8, 11))!.title, 'one');
+    await session.saveNow();
+    await session.dispose();
+
+    expect(saved, ['one']);
+  });
 }
 
 VisualChartDraft _draft(String title) {

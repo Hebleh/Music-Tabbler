@@ -6,13 +6,10 @@ import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 
-import '../domain/library_models.dart';
-import '../domain/music_models.dart';
 import '../domain/visual_chart_models.dart';
-import '../infrastructure/local_library.dart';
+import 'library_contracts.dart';
 import 'portable_container.dart';
 import 'portable_file_picker.dart';
-import 'service_contracts.dart';
 
 class SongBundleService implements SongBundleTransfer {
   SongBundleService(
@@ -21,9 +18,9 @@ class SongBundleService implements SongBundleTransfer {
   });
 
   static const kind = 'music-tabbler-song';
-  static const schemaVersion = 2;
+  static const schemaVersion = 3;
 
-  final LocalLibrary library;
+  final PortableLibraryStore library;
   final PortableContainerCodec codec;
 
   @override
@@ -37,33 +34,9 @@ class SongBundleService implements SongBundleTransfer {
     final variants = await library.listVariants(identity.songId);
     final files = <PortableContainerFile>[];
     final metadataVariants = <Map<String, Object?>>[];
-    final metadataSemanticVariants = <Map<String, Object?>>[];
     final assets = <String>{};
     var visualIndex = 0;
-    var semanticIndex = 0;
     for (final variant in variants) {
-      if (variant.kind == ChartVariantKind.semantic) {
-        final chart = await library.loadSemanticChart(variant.id);
-        if (chart == null) {
-          throw StateError(
-            'Chart variant ${variant.id} has no semantic payload.',
-          );
-        }
-        final chartPath = 'semantic/${semanticIndex++}.json';
-        files.add(
-          PortableContainerFile(
-            path: chartPath,
-            bytes: Uint8List.fromList(utf8.encode(chart.encode())),
-          ),
-        );
-        metadataSemanticVariants.add({
-          'id': variant.id,
-          'createdAt': variant.createdAt.toIso8601String(),
-          'updatedAt': variant.updatedAt.toIso8601String(),
-          'chartPath': chartPath,
-        });
-        continue;
-      }
       final draft = await library.loadDraft(variant.id);
       if (draft == null) {
         throw StateError('Chart variant ${variant.id} has no visual payload.');
@@ -77,7 +50,6 @@ class SongBundleService implements SongBundleTransfer {
       );
       metadataVariants.add({
         'id': variant.id,
-        'kind': variant.kind.name,
         'createdAt': variant.createdAt.toIso8601String(),
         'updatedAt': variant.updatedAt.toIso8601String(),
         'draftPath': draftPath,
@@ -86,27 +58,22 @@ class SongBundleService implements SongBundleTransfer {
         assets.add('${strip.assetHash}.${strip.assetExtension}');
         final sourceHash = strip.sourceAssetHash;
         if (sourceHash != null) {
-          await for (final entity in library.assetsDirectory.list()) {
-            if (entity is File &&
-                p.basename(entity.path).startsWith('$sourceHash.')) {
-              assets.add(p.basename(entity.path));
-            }
-          }
+          assets.addAll(await library.assetNamesWithHash(sourceHash));
         }
       }
     }
     final orderedAssets = assets.toList()..sort();
     for (final assetName in orderedAssets) {
-      final file = File(p.join(library.assetsDirectory.path, assetName));
-      if (!await file.exists()) {
+      try {
+        files.add(
+          PortableContainerFile(
+            path: 'assets/$assetName',
+            bytes: await library.readAssetByName(assetName),
+          ),
+        );
+      } on FileSystemException {
         throw StateError('Chart asset is missing: $assetName.');
       }
-      files.add(
-        PortableContainerFile(
-          path: 'assets/$assetName',
-          bytes: await file.readAsBytes(),
-        ),
-      );
     }
     return codec.encode(
       kind: kind,
@@ -120,7 +87,6 @@ class SongBundleService implements SongBundleTransfer {
           'updatedAt': song.updatedAt.toIso8601String(),
         },
         'variants': metadataVariants,
-        'semanticVariants': metadataSemanticVariants,
       },
       files: files,
     );
@@ -143,7 +109,7 @@ class SongBundleService implements SongBundleTransfer {
       );
     }
     final variantsJson = variantsValue;
-    final semanticVariantsJson = container.schemaVersion >= 2
+    final semanticVariantsJson = container.schemaVersion == 2
         ? container.metadata['semanticVariants']
         : const <Object?>[];
     if (semanticVariantsJson is! List) {
@@ -177,8 +143,7 @@ class SongBundleService implements SongBundleTransfer {
     }
 
     final staged = <({VisualChartDraft draft, String songId})>[];
-    final stagedSemantic =
-        <({SongChart chart, String songId, DateTime updatedAt})>[];
+    final skippedVariantIds = <String>[];
     final seenVariantIds = <String>{};
     final assetFiles = <String, PortableContainerFile>{};
     for (final file in container.files) {
@@ -256,13 +221,9 @@ class SongBundleService implements SongBundleTransfer {
         'semanticVariant.chartPath',
       );
       consumedPaths.add(chartPath);
-      late final SongChart imported;
-      late final DateTime updatedAt;
       try {
-        imported = SongChart.decode(
-          utf8.decode(container.file(chartPath).bytes),
-        );
-        updatedAt = DateTime.parse(
+        container.file(chartPath);
+        DateTime.parse(
           _string(variant['updatedAt'], 'semanticVariant.updatedAt'),
         );
       } catch (_) {
@@ -270,22 +231,7 @@ class SongBundleService implements SongBundleTransfer {
           'Song bundle semantic variant is invalid: $originalId.',
         );
       }
-      if (imported.id != originalId) {
-        throw PortableContainerException(
-          'Song bundle semantic variant identity does not match: $originalId.',
-        );
-      }
-      final existing = await library.loadSemanticChart(originalId);
-      final targetId = existing == null
-          ? originalId
-          : IdFactory.next('semantic');
-      stagedSemantic.add((
-        chart: targetId == originalId
-            ? imported
-            : imported.copyWith(id: targetId),
-        songId: targetSongId,
-        updatedAt: updatedAt,
-      ));
+      skippedVariantIds.add(originalId);
     }
     if (container.files.any((file) => !consumedPaths.contains(file.path))) {
       throw const PortableContainerException(
@@ -301,18 +247,16 @@ class SongBundleService implements SongBundleTransfer {
         );
       }
     }
-    await library.installLibraryStateAtomically(
+    await library.installVisualStateAtomically(
       variants: staged,
-      semanticVariants: stagedSemantic,
       setlists: const [],
       replace: false,
     );
     return SongBundleImportResult(
-      importedVariantIds: List.unmodifiable([
-        ...staged.map((variant) => variant.draft.id),
-        ...stagedSemantic.map((variant) => variant.chart.id),
-      ]),
-      skippedVariantIds: const [],
+      importedVariantIds: List.unmodifiable(
+        staged.map((variant) => variant.draft.id),
+      ),
+      skippedVariantIds: List.unmodifiable(skippedVariantIds),
     );
   }
 

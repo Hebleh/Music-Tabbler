@@ -60,11 +60,11 @@ void main() {
     );
 
     final original = latin1.decode(
-      await PdfExportService(library).exportBytes(base),
+      await VisualChartPdfExporter(library).exportBytes(base),
       allowInvalid: true,
     );
     final stage = latin1.decode(
-      await PdfExportService(library).exportBytes(
+      await VisualChartPdfExporter(library).exportBytes(
         base.copyWith(exportDensity: VisualExportDensity.stageReadable),
       ),
       allowInvalid: true,
@@ -87,7 +87,7 @@ void main() {
     img.fill(source, color: img.ColorRgb8(255, 255, 255));
     final stored = await library.storeAsset(img.encodePng(source), 'png');
     final now = DateTime.utc(2026, 7, 24);
-    final output = await PdfExportService(library).exportBytes(
+    final output = await VisualChartPdfExporter(library).exportBytes(
       VisualChartDraft(
         id: 'private-source',
         title: 'Song',
@@ -175,7 +175,7 @@ void main() {
         updatedAt: now,
         strips: strips,
       );
-      final output = await PdfExportService(library).exportBytes(draft);
+      final output = await VisualChartPdfExporter(library).exportBytes(draft);
 
       expect(String.fromCharCodes(output.take(5)), '%PDF-');
       expect(output.length, greaterThan(1000));

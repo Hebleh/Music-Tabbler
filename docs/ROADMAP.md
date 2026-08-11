@@ -1,261 +1,59 @@
-# Music Tabbler post-MVP roadmap
+# Music Tabbler roadmap
 
-This is the master implementation tracker for Music Tabbler. Update it at every
-contract merge and sprint checkpoint. Detailed product and architecture rules
-remain in `docs/SPEC.md` and `ARCHITECTURE.md`.
+Updated: 11 August 2026
 
-## Status legend
+The supported product direction is visual-first. Historical semantic contracts
+are archived in Git and release/validation documents; they are not future work.
 
-- `[x]` merged into the current sprint or `master`
-- `[~]` implementation or user verification in progress
-- `[ ]` not started
-- `[!]` legally or externally gated
-- `[d]` intentionally deferred technical debt
+## Completed foundation
+
+- [x] Local visual PDF/image/clipboard import with immutable assets.
+- [x] Row detection, split/crop/reorder/deskew, undo, and autosave.
+- [x] Editable positioned-PDF/raster OCR review and seam-risk handling.
+- [x] Nondestructive visual string/fret transformation and tuning presets.
+- [x] Song Pool variants, ordered setlists, duplicates, and placeholders.
+- [x] Single-chart and combined-setlist deterministic A4 PDF.
+- [x] Shared cached performance deck, preview, and Gig Mode.
+- [x] Gig bar reflow, alignment, two-level zoom, theme, toolbar hiding, stage
+  lock, keep-awake, and vector annotation controls.
+- [x] Checksummed `.mtsong` / `.mtstate` transfer with staged atomic install.
+- [x] Android system-share PDF intake implementation (native validation
+  deferred until hardware/tooling is available).
+
+## Architecture refactor
+
+- [x] Protect and push the verified visual baseline.
+- [x] Add backup-gated library v6 semantic retirement migration.
+- [x] Add visual-only portable schema v3 with safe legacy-v2 skipping.
+- [x] Delete semantic domain, editor, recognition, transform, rendering,
+  MusicXML, and dedicated tests.
+- [x] Establish `PortableLibraryStore` and coherent contract files.
+- [x] Canonicalize display labels and active edit/review/Gig sessions.
+- [x] Separate chart PDF, cached deck, and setlist PDF services.
+- [x] Complete final full-suite, static-analysis, checksum, PDF-render, and
+  macOS smoke gate.
+
+## Next three cleanup tasks
+
+1. Split the largest presentation files by existing session boundaries after
+   adding representative visual golden coverage.
+2. Split the monolithic widget regression file by product workflow without
+   weakening behavior-level assertions.
+3. Add explicit cache/eviction diagnostics for very large performance decks
+   while preserving the current canonical deck builder and output.
+
+## Product validation
+
+- [ ] Validate Android shared-PDF intake and full editing on physical hardware.
+- [ ] Run musician review against representative full-song transformed charts.
+- [ ] Add licensed Unicode PDF fonts and Latin/Japanese rendered fixtures.
+- [ ] Re-run Windows stage-distance and stylus interaction checks after the
+  next device-available checkpoint.
 
 ## Working agreement
 
-For each cycle:
-
-1. Start from the updated sprint integration branch.
-2. Implement one bounded contract without packaging a release.
-3. Delegate only bounded inventories, boilerplate, and test matrices to local
-   Qwen as described in `AGENTS.md`.
-4. Run focused tests, the full relevant suite, `flutter analyze`, and
-   `git diff --check`.
-5. Continue automatically through implementation and automated debugging.
-6. Stop only when user judgment or real-device/manual visual testing is needed.
-7. Give the user a short, exact, non-programmer test checklist.
-8. Fix reported defects and repeat the automated checks.
-9. Commit and merge only after the contract's user-test gate passes.
-10. Update this document before starting the next contract.
-
-Do not build installers, package releases, or publish assets during ordinary
-development cycles unless the user explicitly requests a release checkpoint.
-
-## Branch structure
-
-```text
-mvp/v0.1.0                    Immutable historical MVP
-master                        Stable integration branch
-└── codex/sprint-<theme>      Current sprint integration branch
-    └── codex/mt-###-<slug>   One independently mergeable contract
-```
-
-The MVP branch is archival. Feature branches merge into their sprint branch.
-Only a verified sprint merges into `master`.
-
-## Current checkpoint
-
-MT-107 through MT-601 are implemented on the stacked feature history now
-continued by `codex/windows-post-apple-regression`. MT-602 macOS/iOS Simulator
-feasibility is complete. The current Windows source passes 225 automated tests
-and static analysis; the last public artifact checkpoint remains
-`v0.2.0-beta.1+2` and has not been replaced by this development branch.
-
-The reliable manual PDF/image workflow, setlists, portable state, semantic
-domain/editor, and visual transforms exist. VT-025, VT-026, and VT-029 through
-VT-031 are repaired; VT-027 now blocks incomplete semantic sources rather than
-presenting them as trustworthy. VT-028 has an automated compaction/preparation
-guard but still needs user-level stage-distance review. Physical Android
-hardware verification remains required.
-
-- [x] Preserve `mvp/v0.1.0` at the MVP checkpoint.
-- [x] Keep `master` as the stable integration branch.
-- [x] Establish `codex/sprint-gig-ready`.
-- [x] MT-101 Stage-density profiles.
-- [x] MT-104 Versioned migrations and stable identities.
-- [x] MT-106 Ordered setlist repository.
-- [~] MT-107 Setlist editor UI (implemented; combined user gate remains).
-  - [x] Create, rename, delete, open, reorder, duplicate, and remove entries.
-  - [x] Automated narrow-layout and reference-safety coverage.
-  - [x] Resolve referenced-chart deletion clearly and atomically.
-  - [x] Add named, light-red non-playing placeholders.
-  - [x] Extract the ordered list into a reusable setlist sidebar/panel for
-    later gig-mode composition.
-  - [~] User verification deferred into the combined MT-107/MT-108 test cycle.
-- [~] MT-108 Combined setlist A4 export.
-  - [x] Choose one Original, Balanced, or Stage-readable profile for the set.
-  - [x] Preserve exact song, duplicate, and placeholder order.
-  - [x] Pack song boundaries and rows into remaining page space.
-  - [x] Render one title/artist header per setlist occurrence, or a thin
-    boundary when that chart hides its header.
-  - [x] Render compact light-red `Not playing` placeholder markers.
-  - [x] Permit a narrow ten-percent readability-floor tolerance so minor
-    real-chart aspect variation does not abort an otherwise safe export.
-  - [x] Fail by set item for missing, empty, or unreadable charts.
-  - [x] Stage completed bytes before replacing the chosen destination.
-  - [~] Real-setlist visual verification and merge gate.
-- [~] MT-105 Persistent per-device preferences (implemented; physical-device
-  persistence gate remains).
-
-MT-102 master-crop persistence and MT-103 Japanese OCR diagnostics remain
-documented debt unless they materially block gig preparation.
-
-## Ordered contracts
-
-### Sprint 1 — Gig-ready setlists and PDFs
-
-- [x] **MT-101 — Stage-density profiles**
-  - Named deterministic visual export profiles tested against real charts.
-- [d] **MT-102 — Master crop persistence**
-  - Retain split-dialog master sides across detection, editing, and reopen.
-- [d] **MT-103 — OCR diagnostics and Japanese fixtures**
-  - Report the local OCR engine/languages and measure Unicode extraction.
-- [x] **MT-104 — Versioned migrations and stable identities**
-  - Migration-tested song and chart-variant identities preserving MVP drafts.
-- [~] **MT-105 — Persistent per-device preferences**
-  - Theme and display choices survive restart without entering transferable
-    library state.
-- [x] **MT-106 — Ordered setlist repository**
-  - Persistent ordered references, stable entry IDs, duplicates, and safe
-    deletion policy.
-- [~] **MT-107 — Setlist editor UI**
-  - Usable setlist management plus reusable ordered sidebar data/presentation.
-- [~] **MT-108 — Combined setlist A4 export**
-  - One deterministic ordered PDF, retaining duplicates and song boundaries.
-
-### Sprint 2 — Performance surfaces
-
-- [~] **MT-109 — Shared performance-page deck**
-  - One page/song sequence shared by preview, gig mode, and PDF planning.
-- [~] **MT-110 — Desktop performance preview**
-  - Full-screen Windows rehearsal of one chart or an entire set.
-- [~] **MT-111 — Android visual-workflow parity**
-  - Physical-tablet import, edit, save, reopen, and export.
-- [~] **MT-112 — Gig navigation, fullscreen, and keep-awake**
-  - Swipe navigation, safe previous/exit behavior, active-only keep-awake, and
-    the reusable editable setlist sidebar.
-- [~] **MT-113 — Vector annotation core**
-  - Reversible normalized strokes that never alter source pixels.
-- [~] **MT-114 — S Pen and tablet annotation hardening**
-  - Stylus detection, palm behavior, pressure, orientation, and lifecycle QA.
-
-### Sprint 3 — Local provenance and safe portability
-
-- [~] **MT-115 — Local provenance and pasted-link records**
-  - Store and open a user-entered source URL without fetching it or printing it.
-- [~] **MT-201 — Secure portable-container core**
-  - Versioned manifest, checksums, staging, limits, and path validation.
-- [~] **MT-202 — `.mtsong` bundles**
-  - Round-trip one song and its variants, assets, provenance, and annotations.
-- [~] **MT-203 — `.mtstate`, backups, conflicts, and restore**
-  - Transactional whole-library transfer with recoverable snapshots.
-
-### Sprint 4 — Semantic foundation
-
-- [x] **MT-301 — Persist the semantic foundation**
-  - Save and reopen current semantic notes, measures, tuning, and lyrics.
-- [x] **MT-302 — Rhythm and navigation schema**
-  - Exact beats, voices, rests, tuplets, signatures, repeats, endings, sections.
-- [x] **MT-303 — Instrument, technique, lyric, and confidence schema**
-  - Arbitrary tunings/string counts, techniques, lyric alignment, proposals.
-- [x] **MT-304 — Shared screen/PDF semantic renderer**
-  - Platform-independent primitives consumed by both screen and PDF.
-- [x] **MT-305 — Persisted core note/rest editor**
-  - Direct reversible string, fret, pitch, duration, rest, beat, and measure edits.
-- [x] **MT-306 — Structure, tuning, technique, and lyric editor**
-  - Complete manual semantic editing and backing-vocal presentation controls.
-- [x] **MT-307 — MusicXML interchange boundary**
-  - Documented supported subset with explicit loss diagnostics.
-
-### Sprint 5 — Recognition and correction
-
-- [x] **MT-401 — Recognition corpus and metrics**
-  - Rights-safe fixtures, annotations, confidence, and correction-cost baselines.
-- [x] **MT-402 — Tablature structure/fret proposal engine**
-  - Editable systems, measures, strings, and fret proposals from local images.
-- [x] **MT-403 — Rhythm, technique, section, and lyric recognition**
-  - Extend proposals while retaining uncertainty and source mappings.
-- [x] **MT-404 — Side-by-side correction and gig-ready verification**
-  - Accept/edit/reject proposals without replacing verified work.
-
-### Sprint 6 — Musical transformations
-
-- [x] **MT-501 — Pitch transposition**
-  - Reversible sounding-pitch transformation preserving rhythm and lyrics.
-- [x] **MT-502 — Same-pitch re-tabbing**
-  - Adapt tuning/string count while preserving sounding pitch.
-- [x] **MT-503 — Ranked fingerings and saved variants**
-  - Explainable alternatives retained alongside the original.
-
-### Visual transformation extension
-
-- [x] **MT-504 — Unified PDF/screenshot tab analysis**
-  - Positioned-PDF geometry and local raster/OCR produce one reviewable system,
-    string, bar-line, and fret/dead-note proposal model.
-  - Real `9mm.pdf` validation currently yields 29 tab systems, 760 safe fret
-    tokens, 62 dead notes, and no included measure labels.
-  - Screenshot OCR and sparse positioned-PDF fallback still require the
-    consolidated Windows UI pass.
-- [x] **MT-505 — Reversible visual string routing**
-  - Apply global or selected-string fret offsets and monotonic four-to-five
-    string routing to compact tab-only output without altering source assets.
-  - Save immutable base strips, transform parameters, reviewed analysis, and
-    audit data; edit/remove is persistent and Apply remains one undo step.
-  - Connected components crossing an internal insertion seam are highlighted
-    in review and must be assigned to the upper or lower string region before
-    Apply; the renderer moves the reviewed component as one piece.
-- [x] **MT-506 — Semantic string routing**
-  - Compose pitch change, tuning/capo routing, sounding-pitch verification, and
-    derived variants for arbitrary confirmed tunings.
-
-### Sprint 7 — Polish and platform expansion
-
-- [x] **MT-601 — Reversible visual deskew**
-  - Preview/apply/reset geometry without modifying original assets.
-- [x] **MT-602 — macOS/iOS feasibility checkpoint**
-  - macOS and iOS Simulator feasibility is established on the MacBook Air:
-    builds launch, the disposable Windows library survives import/reopen, real
-    PDFs import/export, semantic review works, and representative iPhone/iPad
-    layouts have been inspected.
-  - Simulator evidence is not an installable iPhone release. Physical iPhone
-    testing is outside the current hardware scope because the user has no
-    iPhone; it is not required to preserve the feasibility result.
-
-## Legal and open-source boundary
-
-The open-source core may store a user-entered URL as local provenance, open it
-in the normal browser, attach manually imported files, and remain fully usable
-offline. It must not silently fetch or reproduce remote content.
-
-- [!] **LG-001 — Open-source and dependency-rights audit**
-- [!] **LG-002 — Generic external-source adapter boundary**
-- [!] **LG-003 — Songsterr provider module**
-- [!] **LG-004 — Ultimate Guitar provider module**
-- [!] **LG-005 — YouTube provider/frame acquisition**
-- [!] **LG-006 — Search/scouring integrations**
-- [!] **LG-007 — Songsterr-origin PDF reuse/distribution terms**
-
-The generic Android `application/pdf` share receiver is implemented as a local,
-user-initiated file-import boundary. Treating a PDF exported by a named source
-as permission to reuse, transform, publish, or distribute its musical content
-is a separate rights question; Songsterr-specific product claims and workflows
-remain behind LG-007 pending human legal review.
-
-Automated fetching, scraping, downloading, browser control, indexing, or video
-frame acquisition stays outside normal feature sprints until the exact action
-has passed the relevant terms, content-rights, dependency-license, security,
-and human legal review. VPN use or a private repository does not remove those
-requirements. The manual screenshot/PDF workflow must always remain available.
-
-## Contract merge gate
-
-Every contract must:
-
-- deliver a usable vertical improvement;
-- preserve existing libraries and immutable source assets;
-- keep the manual screenshot/PDF workflow working;
-- include focused automated coverage and regression checks;
-- define cancellation, error, and data-safety behavior;
-- pass its non-programmer manual verification;
-- receive final primary-agent review;
-- avoid unrelated future work and release packaging.
-
-## Gig priority
-
-Before the 16 August 2026 gig, prioritize reliable Windows-created PDFs from
-user-supplied screenshots/PDFs, ordered setlists, and backing-vocal highlights.
-Android testing may continue, but it must not endanger that fallback. Treat
-semantic recognition and Stage-readable Gig mode as experimental until
-VT-026-to-VT-029 pass real-fixture validation. Online adapters remain legally
-gated.
+Each change should extend the closest externally meaningful test, run focused
+checks, then finish with the complete relevant suite and strict analysis. Do
+not build release packages during normal iteration. OCR, row geometry, visual
+transformation, and PDF layout changes require their own feature/bug workflow;
+they must not be bundled into architectural cleanup.

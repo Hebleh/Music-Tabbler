@@ -51,7 +51,7 @@ class SetlistSidebar extends StatelessWidget {
             ? entry.placeholderTitle!
             : draft == null
             ? 'Missing chart'
-            : _displayTitle(draft);
+            : draft.displayTitle;
         final subtitle = isPlaceholder
             ? 'Not playing'
             : draft == null
@@ -127,11 +127,4 @@ class SetlistSidebar extends StatelessWidget {
       },
     );
   }
-}
-
-String _displayTitle(VisualChartDraft draft) {
-  final title = draft.title.trim();
-  if (title.isNotEmpty && title != 'Untitled chart') return title;
-  final artist = draft.artist.trim();
-  return artist.isEmpty ? 'Untitled chart' : artist;
 }

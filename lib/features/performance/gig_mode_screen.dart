@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 
 import '../../application/app_services.dart';
 import '../../application/gig_bar_repacker.dart';
+import '../../application/gig_annotation_session.dart';
 import '../../application/gig_viewport_layout.dart';
+import '../../application/gig_viewport_session.dart';
 import '../../application/performance_deck.dart';
+import '../../application/setlist_edit_session.dart';
 import '../../domain/device_preferences.dart';
 import '../../domain/library_models.dart';
 import '../../domain/visual_chart_models.dart';
@@ -35,30 +38,31 @@ class _GigModeScreenState extends State<GigModeScreen>
     with WidgetsBindingObserver {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   late LibrarySetlist _setlist;
+  late final SetlistEditSession _setlistEditSession;
+  late final GigAnnotationSession _annotationSession;
   late Future<PerformanceDeck> _deck;
   PerformanceDeck? _resolvedDeck;
   List<VisualChartDraft> _availableDrafts = const [];
   Map<String, VisualChartDraft> _draftsByVariant = const {};
-  var _pageIndex = 0;
+  late final GigViewportSession _viewport;
   var _allowExit = false;
   var _exiting = false;
   var _annotationTool = AnnotationTool.none;
-  var _gigZoom = 0.75;
-  final Map<String, double> _songZoomByEntry = {};
-  var _gigAlignment = GigHorizontalAlignment.left;
-  var _gigTheme = GigThemePreference.lightOnBlack;
-  var _stageLocked = false;
-  var _toolbarVisible = true;
-  var _pageDirection = 1;
-  _AnnotationUndo? _lastAnnotation;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _setlist = widget.setlist;
-    _gigZoom = widget.preferences.gigZoom;
-    _gigTheme = widget.preferences.gigTheme;
+    _setlistEditSession = SetlistEditSession(
+      initialSetlist: widget.setlist,
+      repository: widget.services.setlists,
+    );
+    _annotationSession = GigAnnotationSession(library: widget.services.library);
+    _viewport = GigViewportSession(
+      initialZoom: widget.preferences.gigZoom,
+      initialTheme: widget.preferences.gigTheme,
+    );
     _deck = _buildDeck();
     unawaited(_loadDrafts());
     unawaited(widget.services.performanceMode.setActive(true));
@@ -122,27 +126,18 @@ class _GigModeScreenState extends State<GigModeScreen>
     List<LibrarySetlistEntry> entries, {
     String? keepEntryId,
   }) async {
-    final updated = LibrarySetlist(
-      id: _setlist.id,
-      name: _setlist.name,
-      createdAt: _setlist.createdAt,
-      updatedAt: DateTime.now().toUtc(),
-      scheduledAt: _setlist.scheduledAt,
-      notes: _setlist.notes,
-      entries: entries,
-    );
-    await widget.services.setlists.saveSetlist(updated);
+    final updated = await _setlistEditSession.replaceEntries(entries);
     if (!mounted) return;
     setState(() {
       _setlist = updated;
-      _pageIndex = 0;
+      _viewport.resetPage();
       _deck = _buildDeck().then((deck) {
         if (keepEntryId != null) {
           final target = deck.pages.indexWhere(
             (page) =>
                 page.elements.any((element) => element.entryId == keepEntryId),
           );
-          if (target >= 0) _pageIndex = target;
+          if (target >= 0) _viewport.selectPage(target);
         }
         return deck;
       });
@@ -167,7 +162,7 @@ class _GigModeScreenState extends State<GigModeScreen>
                     onPressed: () => Navigator.pop(context, draft),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Text(_displayTitle(draft)),
+                      child: Text(draft.displayTitle),
                     ),
                   ),
               ],
@@ -263,43 +258,19 @@ class _GigModeScreenState extends State<GigModeScreen>
     PerformanceDeckElement Function(PerformanceDeckElement element) patch,
   ) async {
     final variantId = element.chartVariantId;
-    final stripId = element.sourceStripId;
-    if (variantId == null || stripId == null) return;
-    final draft =
-        _draftsByVariant[variantId] ??
-        await widget.services.library.loadDraft(variantId);
-    if (draft == null) return;
-    final strips = [
-      for (final strip in draft.strips)
-        if (strip.id == stripId) update(strip) else strip,
-    ];
-    final updated = draft.copyWith(
-      strips: strips,
-      updatedAt: DateTime.now().toUtc(),
+    if (variantId == null) return;
+    final result = await _annotationSession.save(
+      element: element,
+      draftsByVariant: _draftsByVariant,
+      deck: _resolvedDeck,
+      updateStrip: update,
+      patchElement: patch,
     );
-    await widget.services.library.saveDraft(updated);
+    if (result == null) return;
     if (!mounted) return;
-    final currentDeck = _resolvedDeck;
-    final patchedDeck = currentDeck?.copyWith(
-      pages: [
-        for (final page in currentDeck.pages)
-          PerformanceDeckPage(
-            id: page.id,
-            index: page.index,
-            elements: [
-              for (final deckElement in page.elements)
-                if (deckElement.chartVariantId == variantId &&
-                    deckElement.sourceStripId == stripId)
-                  patch(deckElement)
-                else
-                  deckElement,
-            ],
-          ),
-      ],
-    );
     setState(() {
-      _draftsByVariant = {..._draftsByVariant, variantId: updated};
-      if (patchedDeck != null) {
+      _draftsByVariant = {..._draftsByVariant, variantId: result.draft};
+      if (result.deck case final patchedDeck?) {
         _resolvedDeck = patchedDeck;
         _deck = Future.value(patchedDeck);
       }
@@ -326,11 +297,7 @@ class _GigModeScreenState extends State<GigModeScreen>
       colorArgb: tool == AnnotationTool.highlight ? 0x66FFEB3B : 0xFFFFD740,
       width: tool == AnnotationTool.highlight ? 0.035 : 0.004,
     );
-    _lastAnnotation = _AnnotationUndo(
-      chartVariantId: element.chartVariantId!,
-      stripId: element.sourceStripId!,
-      stroke: stroke,
-    );
+    _annotationSession.rememberStroke(element, stroke);
     await _saveAnnotatedDraft(
       element,
       (strip) => strip.copyWith(annotations: [...strip.annotations, stroke]),
@@ -385,7 +352,7 @@ class _GigModeScreenState extends State<GigModeScreen>
           if (erase) removedIds.add(stroke.id);
         }
         if (removedIds.isEmpty) return strip;
-        _lastAnnotation = null;
+        _annotationSession.clearUndo();
         return strip.copyWith(
           annotations: strip.annotations
               .where((stroke) => !removedIds.contains(stroke.id))
@@ -403,26 +370,21 @@ class _GigModeScreenState extends State<GigModeScreen>
   }
 
   Future<void> _undoAnnotation(PerformanceDeckElement element) async {
-    final undo = _lastAnnotation;
-    if (undo == null ||
-        undo.chartVariantId != element.chartVariantId ||
-        undo.stripId != element.sourceStripId) {
-      return;
-    }
-    await _saveAnnotatedDraft(
-      element,
-      (strip) => strip.copyWith(
-        annotations: strip.annotations
-            .where((stroke) => stroke.id != undo.stroke.id)
-            .toList(growable: false),
-      ),
-      (deckElement) => deckElement.copyWith(
-        annotations: deckElement.annotations
-            .where((stroke) => stroke.id != undo.stroke.id)
-            .toList(growable: false),
-      ),
+    final variantId = element.chartVariantId;
+    if (variantId == null) return;
+    final result = await _annotationSession.undo(
+      element: element,
+      draftsByVariant: _draftsByVariant,
+      deck: _resolvedDeck,
     );
-    if (mounted) setState(() => _lastAnnotation = null);
+    if (result == null || !mounted) return;
+    setState(() {
+      _draftsByVariant = {..._draftsByVariant, variantId: result.draft};
+      if (result.deck case final patchedDeck?) {
+        _resolvedDeck = patchedDeck;
+        _deck = Future.value(patchedDeck);
+      }
+    });
   }
 
   Future<void> _setPageAnnotationVisibility(
@@ -455,15 +417,7 @@ class _GigModeScreenState extends State<GigModeScreen>
   PerformanceDeckElement? _undoElementForPage(
     List<PerformanceDeckElement> elements,
   ) {
-    final undo = _lastAnnotation;
-    if (undo == null) return null;
-    for (final element in elements) {
-      if (element.chartVariantId == undo.chartVariantId &&
-          element.sourceStripId == undo.stripId) {
-        return element;
-      }
-    }
-    return null;
+    return _annotationSession.undoElementForPage(elements);
   }
 
   Future<void> _clearAllPerformanceNotes() async {
@@ -511,7 +465,7 @@ class _GigModeScreenState extends State<GigModeScreen>
     if (!mounted) return;
     final currentDeck = _resolvedDeck;
     setState(() {
-      _lastAnnotation = null;
+      _annotationSession.clearUndo();
       _draftsByVariant = {..._draftsByVariant, ...updatedDrafts};
       if (currentDeck != null) {
         final patched = currentDeck.copyWith(
@@ -539,22 +493,13 @@ class _GigModeScreenState extends State<GigModeScreen>
     final entryId = _setlist.entries[entryIndex].id;
     final target = gigPageIndexForEntry(pages, entryId);
     if (target >= 0) {
-      setState(() {
-        _pageDirection = target >= _pageIndex ? 1 : -1;
-        _pageIndex = target;
-      });
+      setState(() => _viewport.selectPage(target));
     }
     Navigator.of(context).pop();
   }
 
   void _move(int delta, int pageCount) {
-    final next = (_pageIndex + delta).clamp(0, pageCount - 1);
-    if (next != _pageIndex) {
-      setState(() {
-        _pageDirection = delta >= 0 ? 1 : -1;
-        _pageIndex = next;
-      });
-    }
+    if (_viewport.move(delta, pageCount)) setState(() {});
   }
 
   Future<void> _saveGigZoom(double value) async {
@@ -563,8 +508,8 @@ class _GigModeScreenState extends State<GigModeScreen>
   }
 
   Future<void> _setGigTheme(GigThemePreference value) async {
-    if (_stageLocked || value == _gigTheme) return;
-    setState(() => _gigTheme = value);
+    if (!_viewport.setTheme(value)) return;
+    setState(() {});
     final current = await widget.services.preferences.load();
     await widget.services.preferences.save(current.copyWith(gigTheme: value));
   }
@@ -587,7 +532,7 @@ class _GigModeScreenState extends State<GigModeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final dark = _gigTheme == GigThemePreference.lightOnBlack;
+    final dark = _viewport.theme == GigThemePreference.lightOnBlack;
     final background = dark ? Colors.black : Colors.white;
     final gigThemeData = dark ? ThemeData.dark() : ThemeData.light();
     return PopScope(
@@ -639,9 +584,9 @@ class _GigModeScreenState extends State<GigModeScreen>
           return LayoutBuilder(
             builder: (context, constraints) {
               final safePadding = MediaQuery.paddingOf(context);
-              final controlsHeight = _stageLocked
+              final controlsHeight = _viewport.stageLocked
                   ? 18.0
-                  : (_toolbarVisible ? 174.0 : 0.0);
+                  : (_viewport.toolbarVisible ? 174.0 : 0.0);
               final viewportWidth = (constraints.maxWidth - 16).clamp(
                 1.0,
                 double.infinity,
@@ -656,9 +601,9 @@ class _GigModeScreenState extends State<GigModeScreen>
                 deck: deck,
                 viewportWidth: viewportWidth,
                 viewportHeight: viewportHeight,
-                zoom: _gigZoom,
-                zoomByEntry: _songZoomByEntry,
-                alignment: _gigAlignment,
+                zoom: _viewport.setWideZoom,
+                zoomByEntry: _viewport.songZoomByEntry,
+                alignment: _viewport.alignment,
               );
               if (gigPages.isEmpty) {
                 return const Scaffold(
@@ -667,7 +612,10 @@ class _GigModeScreenState extends State<GigModeScreen>
                   ),
                 );
               }
-              final safePageIndex = _pageIndex.clamp(0, gigPages.length - 1);
+              final safePageIndex = _viewport.pageIndex.clamp(
+                0,
+                gigPages.length - 1,
+              );
               final page = gigPages[safePageIndex];
               final selectedEntryId = page.entryId;
               final annotationElements = page.items
@@ -705,8 +653,8 @@ class _GigModeScreenState extends State<GigModeScreen>
                 child: Scaffold(
                   key: _scaffoldKey,
                   backgroundColor: background,
-                  drawerEnableOpenDragGesture: !_stageLocked,
-                  drawer: _stageLocked
+                  drawerEnableOpenDragGesture: !_viewport.stageLocked,
+                  drawer: _viewport.stageLocked
                       ? null
                       : Drawer(
                           width: 420,
@@ -774,14 +722,12 @@ class _GigModeScreenState extends State<GigModeScreen>
                             key: const Key('gig-stage-surface'),
                             behavior: HitTestBehavior.opaque,
                             onTap:
-                                !_stageLocked &&
+                                !_viewport.stageLocked &&
                                     _annotationTool == AnnotationTool.none
-                                ? () => setState(
-                                    () => _toolbarVisible = !_toolbarVisible,
-                                  )
+                                ? () => setState(_viewport.toggleToolbar)
                                 : null,
                             onHorizontalDragEnd:
-                                (_stageLocked ||
+                                (_viewport.stageLocked ||
                                     _annotationTool == AnnotationTool.none)
                                 ? (details) {
                                     final velocity =
@@ -799,7 +745,10 @@ class _GigModeScreenState extends State<GigModeScreen>
                                 8,
                                 8,
                                 8,
-                                _stageLocked || !_toolbarVisible ? 8 : 174,
+                                _viewport.stageLocked ||
+                                        !_viewport.toolbarVisible
+                                    ? 8
+                                    : 174,
                               ),
                               child: AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 220),
@@ -811,7 +760,7 @@ class _GigModeScreenState extends State<GigModeScreen>
                                       child: SlideTransition(
                                         position: Tween<Offset>(
                                           begin: Offset(
-                                            _pageDirection * 0.10,
+                                            _viewport.pageDirection * 0.10,
                                             0,
                                           ),
                                           end: Offset.zero,
@@ -824,7 +773,7 @@ class _GigModeScreenState extends State<GigModeScreen>
                                   page: page,
                                   width: viewportWidth,
                                   height: viewportHeight,
-                                  annotationTool: _stageLocked
+                                  annotationTool: _viewport.stageLocked
                                       ? AnnotationTool.none
                                       : _annotationTool,
                                   onStrokeCompleted: _addStroke,
@@ -834,7 +783,7 @@ class _GigModeScreenState extends State<GigModeScreen>
                             ),
                           ),
                         ),
-                        if (!_stageLocked && _toolbarVisible)
+                        if (!_viewport.stageLocked && _viewport.toolbarVisible)
                           Positioned(
                             left: 8,
                             right: 8,
@@ -864,14 +813,14 @@ class _GigModeScreenState extends State<GigModeScreen>
                                           key: const Key(
                                             'gig-song-zoom-slider',
                                           ),
-                                          value:
-                                              _songZoomByEntry[page.entryId] ??
-                                              _gigZoom,
+                                          value: _viewport.zoomForEntry(
+                                            page.entryId,
+                                          ),
                                           min: 0.45,
                                           max: 1.5,
                                           divisions: 21,
                                           label:
-                                              '${((_songZoomByEntry[page.entryId] ?? _gigZoom) * 100).round()}%',
+                                              '${(_viewport.zoomForEntry(page.entryId) * 100).round()}%',
                                           onChanged: (value) {
                                             final anchor = page.items
                                                 .where(
@@ -883,7 +832,7 @@ class _GigModeScreenState extends State<GigModeScreen>
                                                 .firstOrNull
                                                 ?.element;
                                             final zooms = {
-                                              ..._songZoomByEntry,
+                                              ..._viewport.songZoomByEntry,
                                               page.entryId: value,
                                             };
                                             final reflowed =
@@ -892,9 +841,10 @@ class _GigModeScreenState extends State<GigModeScreen>
                                                   viewportWidth: viewportWidth,
                                                   viewportHeight:
                                                       viewportHeight,
-                                                  zoom: _gigZoom,
+                                                  zoom: _viewport.setWideZoom,
                                                   zoomByEntry: zooms,
-                                                  alignment: _gigAlignment,
+                                                  alignment:
+                                                      _viewport.alignment,
                                                 );
                                             final target =
                                                 gigPageIndexForAnchor(
@@ -905,11 +855,11 @@ class _GigModeScreenState extends State<GigModeScreen>
                                                   rowIndex: anchor?.rowIndex,
                                                 );
                                             setState(() {
-                                              _songZoomByEntry[page.entryId] =
-                                                  value;
-                                              _pageIndex = target < 0
-                                                  ? 0
-                                                  : target;
+                                              _viewport.setSongZoom(
+                                                page.entryId,
+                                                value,
+                                                anchorPage: target,
+                                              );
                                             });
                                           },
                                         ),
@@ -939,11 +889,12 @@ class _GigModeScreenState extends State<GigModeScreen>
                                       Expanded(
                                         child: Slider(
                                           key: const Key('gig-zoom-slider'),
-                                          value: _gigZoom,
+                                          value: _viewport.setWideZoom,
                                           min: 0.45,
                                           max: 1.5,
                                           divisions: 21,
-                                          label: '${(_gigZoom * 100).round()}%',
+                                          label:
+                                              '${(_viewport.setWideZoom * 100).round()}%',
                                           onChanged: (value) {
                                             final anchor = page.items
                                                 .where(
@@ -961,8 +912,10 @@ class _GigModeScreenState extends State<GigModeScreen>
                                                   viewportHeight:
                                                       viewportHeight,
                                                   zoom: value,
-                                                  zoomByEntry: _songZoomByEntry,
-                                                  alignment: _gigAlignment,
+                                                  zoomByEntry:
+                                                      _viewport.songZoomByEntry,
+                                                  alignment:
+                                                      _viewport.alignment,
                                                 );
                                             final target =
                                                 gigPageIndexForAnchor(
@@ -973,10 +926,10 @@ class _GigModeScreenState extends State<GigModeScreen>
                                                   rowIndex: anchor?.rowIndex,
                                                 );
                                             setState(() {
-                                              _gigZoom = value;
-                                              _pageIndex = target < 0
-                                                  ? 0
-                                                  : target;
+                                              _viewport.updateSetWideZoom(
+                                                value,
+                                                anchorPage: target,
+                                              );
                                             });
                                           },
                                           onChangeEnd: (value) =>
@@ -991,7 +944,7 @@ class _GigModeScreenState extends State<GigModeScreen>
                                       SizedBox(
                                         width: 112,
                                         child: Text(
-                                          '${(_gigZoom * 100).round()}% zoom',
+                                          '${(_viewport.setWideZoom * 100).round()}% zoom',
                                           style: const TextStyle(
                                             color: Colors.white,
                                           ),
@@ -1039,8 +992,7 @@ class _GigModeScreenState extends State<GigModeScreen>
                                         IconButton(
                                           tooltip: 'Lock stage controls',
                                           onPressed: () => setState(() {
-                                            _stageLocked = true;
-                                            _toolbarVisible = false;
+                                            _viewport.lockStage();
                                             _annotationTool =
                                                 AnnotationTool.none;
                                           }),
@@ -1050,11 +1002,12 @@ class _GigModeScreenState extends State<GigModeScreen>
                                         IconButton(
                                           tooltip: 'Align bars left',
                                           onPressed: () => setState(
-                                            () => _gigAlignment =
-                                                GigHorizontalAlignment.left,
+                                            () => _viewport.setAlignment(
+                                              GigHorizontalAlignment.left,
+                                            ),
                                           ),
                                           color:
-                                              _gigAlignment ==
+                                              _viewport.alignment ==
                                                   GigHorizontalAlignment.left
                                               ? Colors.amber
                                               : Colors.white,
@@ -1065,11 +1018,12 @@ class _GigModeScreenState extends State<GigModeScreen>
                                         IconButton(
                                           tooltip: 'Align bars center',
                                           onPressed: () => setState(
-                                            () => _gigAlignment =
-                                                GigHorizontalAlignment.center,
+                                            () => _viewport.setAlignment(
+                                              GigHorizontalAlignment.center,
+                                            ),
                                           ),
                                           color:
-                                              _gigAlignment ==
+                                              _viewport.alignment ==
                                                   GigHorizontalAlignment.center
                                               ? Colors.amber
                                               : Colors.white,
@@ -1080,11 +1034,12 @@ class _GigModeScreenState extends State<GigModeScreen>
                                         IconButton(
                                           tooltip: 'Align bars right',
                                           onPressed: () => setState(
-                                            () => _gigAlignment =
-                                                GigHorizontalAlignment.right,
+                                            () => _viewport.setAlignment(
+                                              GigHorizontalAlignment.right,
+                                            ),
                                           ),
                                           color:
-                                              _gigAlignment ==
+                                              _viewport.alignment ==
                                                   GigHorizontalAlignment.right
                                               ? Colors.amber
                                               : Colors.white,
@@ -1236,7 +1191,7 @@ class _GigModeScreenState extends State<GigModeScreen>
                               ),
                             ),
                           ),
-                        if (_stageLocked)
+                        if (_viewport.stageLocked)
                           Positioned(
                             left: 4,
                             bottom: 4,
@@ -1250,8 +1205,7 @@ class _GigModeScreenState extends State<GigModeScreen>
                                 iconSize: 18,
                                 color: Colors.white70,
                                 onPressed: () => setState(() {
-                                  _stageLocked = false;
-                                  _toolbarVisible = true;
+                                  _viewport.unlockStage();
                                 }),
                                 icon: const Icon(Icons.lock),
                               ),
@@ -1268,23 +1222,4 @@ class _GigModeScreenState extends State<GigModeScreen>
       ),
     );
   }
-}
-
-class _AnnotationUndo {
-  const _AnnotationUndo({
-    required this.chartVariantId,
-    required this.stripId,
-    required this.stroke,
-  });
-
-  final String chartVariantId;
-  final String stripId;
-  final VisualAnnotationStroke stroke;
-}
-
-String _displayTitle(VisualChartDraft draft) {
-  final title = draft.title.trim();
-  if (title.isNotEmpty && title != 'Untitled chart') return title;
-  final artist = draft.artist.trim();
-  return artist.isEmpty ? 'Untitled chart' : artist;
 }

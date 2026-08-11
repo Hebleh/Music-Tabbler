@@ -654,7 +654,7 @@ void _createVersion2Library(Directory root, VisualChartDraft draft) {
     [
       draft.id,
       songId,
-      ChartVariantKind.visual.name,
+      'visual',
       draft.createdAt.toIso8601String(),
       draft.updatedAt.toIso8601String(),
     ],

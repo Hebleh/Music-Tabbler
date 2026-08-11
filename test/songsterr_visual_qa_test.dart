@@ -34,7 +34,7 @@ void main() {
         exportDensity: VisualExportDensity.values.byName(densityName),
         strips: [strip],
       );
-      final bytes = await PdfExportService(library).exportBytes(draft);
+      final bytes = await VisualChartPdfExporter(library).exportBytes(draft);
       await File(outputPath).writeAsBytes(bytes, flush: true);
     } finally {
       library.close();

@@ -518,6 +518,20 @@ class VisualChartDraft {
   final VisualTabTransformRecord? visualTabTransform;
   final List<VisualStrip> strips;
 
+  bool get isUntitled {
+    final normalized = title.trim().toLowerCase();
+    return normalized.isEmpty ||
+        normalized == 'untitled' ||
+        normalized == 'untitled chart';
+  }
+
+  String get displayTitle {
+    final trimmedArtist = artist.trim();
+    return isUntitled && trimmedArtist.isNotEmpty ? trimmedArtist : title;
+  }
+
+  String get displayArtist => isUntitled ? '' : artist.trim();
+
   Iterable<VisualStrip> get allReferencedStrips sync* {
     yield* strips;
     final transform = visualTabTransform;

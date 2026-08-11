@@ -2,84 +2,102 @@
 
 ## Direction
 
-Use Flutter/Dart for the shared Windows and Android application, with iOS and macOS left technically viable. Flutter owns navigation, editing, custom chart rendering, gig mode, and pointer/stylus interaction. Windows is implemented and packaged first; Android is a full target, not a separate viewer codebase.
+Music Tabbler is a local-first Flutter application whose active product model is
+visual. Users import PDF pages or images, isolate tab rows, review local OCR,
+apply nondestructive visual transforms, organize charts into setlists, and use
+the same stored rows for deterministic PDF and Gig Mode output.
 
-The active product path is visual import/OCR review/transform/Gig output. The
-existing semantic core remains isolated and persistence-compatible while its UI
-and runtime service wiring are sunset; no destructive schema removal is part of
-that sunset.
+The former semantic chart subsystem is retired. Runtime code must not recreate
+`SongChart`, MusicXML, semantic editing, semantic recognition, pitch
+transposition, or semantic rendering. Schema migration and legacy-container
+readers may treat old semantic payloads as opaque data solely to archive or
+skip them safely.
 
-## Layers
+## Layers and ownership
 
-1. **Domain** - songs, variants, tracks, measures, events, lyrics, tunings, fingering candidates, setlists, provenance, annotations, validation, and migrations.
-2. **Application** - import jobs, recognition review, transformations, layout requests, exports, state transfer, backup/restore, and conflict policy.
-3. **Infrastructure** - SQLite repositories, content-addressed assets, archive/checksum handling, source adapters, OCR/OMR engine adapters, and platform file pickers.
-4. **Presentation** - song pool, setlists, visual import/OCR review,
-   backing-vocal highlighting, chart preview, and gig mode.
+1. **Domain** owns visual drafts, strips, crops, highlights, annotations,
+   reviewed OCR geometry, transform configuration, songs, variants, setlists,
+   and device preferences. It has no Flutter, SQLite, archive, or platform code.
+2. **Application** owns editing sessions, visual analysis coordination,
+   transformations, Gig viewport rules, deterministic deck/PDF preparation, and
+   portable-container workflows. It depends on contracts, not `LocalLibrary`.
+3. **Infrastructure** owns SQLite, schema migration, content-addressed assets,
+   archive/checksum validation, file pickers, local OCR adapters, and platform
+   channels.
+4. **Presentation** owns widgets, canvas painting, dialogs, navigation, busy
+   states, and user-facing errors. It delegates persistent mutation and shared
+   interaction rules to application sessions.
 
-## Persistence and bundles
+Canonical rule owners:
 
-- SQLite stores indexed library/domain state.
-- Imported PDFs/images and other binary assets are immutable content-addressed files referenced by SHA-256.
-- Vector annotations and semantic chart data remain separate from source pixels.
-- Use versioned JSON-compatible domain serialization internally; provide MusicXML import/export at the boundary.
-- Reserve `.mtsong` for portable song bundles and `.mtstate` for full-library snapshots. Both are ZIP containers with a manifest and checksums, not opaque database copies.
+- `VisualChartDraft.displayTitle` / `displayArtist`: chart labels everywhere.
+- `VisualDraftEditSession`: visual draft history, autosave, commit, and undo.
+- `SetlistEditSession`: setlist entry replacement, ordering, timestamps, and
+  persistence.
+- `VisualAnalysisReviewSession`: multi-row analysis progress, retries, and
+  failures.
+- `GigViewportSession`: page movement, zoom overrides, alignment, theme,
+  toolbar visibility, and stage lock.
+- `CachedPerformanceDeckBuilder`: the one cached setlist-to-deck path used by
+  Gig Mode, preview, and setlist PDF.
 
-State import is transactional:
+## Contracts
 
-1. copy the bundle to staging;
-2. validate container, manifest, schema compatibility, checksums, and referenced assets;
-3. migrate a staged copy if supported;
-4. build and query the staged database/domain graph;
-5. show the import/conflict summary;
-6. create a last-known-good backup;
-7. atomically install the accepted state;
-8. retain five valid backups and expose restore.
+Application boundaries are grouped by responsibility:
 
-No validation failure modifies installed state. Divergent song edits become variants. A whole-library conflict is never auto-merged.
+- `library_contracts.dart`: chart, song-variant, setlist, bundle/state transfer,
+  and `PortableLibraryStore`.
+- `import_contracts.dart`: files, shared PDFs, and local text recognition.
+- `export_contracts.dart`: chart PDF, setlist PDF, and performance decks.
+- `platform_contracts.dart`: preferences, keep-awake/fullscreen, and URLs.
 
-## Key interfaces
+`PortableLibraryStore` is the only persistence boundary used by `.mtstate` and
+`.mtsong` services. Those services do not inspect database or asset-directory
+layouts.
 
-### Source adapter
+## Persistence and migration
 
-Accepts a normalized URL and returns source metadata plus zero or more user-authorized acquisition candidates. Adapters are domain-specific, independently disableable, and may return `manualImportRequired` without treating it as failure. Search supplies URLs to the same adapters; it is not a separate ingestion path.
+- SQLite schema v6 stores visual songs/variants, drafts, setlists, and asset
+  references. The obsolete semantic table and variant-kind discriminator do
+  not exist in v6.
+- Before a v5 library is migrated, a checksummed, validated
+  `pre-semantic-sunset-<timestamp>.mtstate` is written to a permanent retired
+  backup area. Failure aborts startup before database modification.
+- Semantic setlist references become same-position placeholders using their
+  song title. Visual drafts, assets, visual songs, setlists, entry IDs,
+  placeholders, and vector annotations are preserved.
+- Assets are immutable and content-addressed by SHA-256.
+- `.mtsong` and `.mtstate` schema v3 are visual-only ZIP containers with a
+  manifest and checksums.
+- Legacy schema-v2 containers are fully path/checksum validated before install.
+  Visual content is installed; semantic IDs are reported as skipped; affected
+  setlist entries become placeholders. Semantic-only song bundles import
+  nothing and report no supported visual variant.
+- State replacement validates in staging, creates a last-known-good backup,
+  and installs atomically. Validation or cancellation never modifies the
+  installed library.
 
-### Recognition engine
+## Visual processing and output
 
-Consumes normalized page/frame images and optional source hints. Returns a semantic proposal, element/measure confidence, structural diagnostics, and source-coordinate mappings. The engine cannot mark a result verified.
+OCR and geometry are editable proposals, never verified music. Row detection,
+crop, deskew, OCR, visual string routing, and bar repacking remain independent
+algorithms with characterization tests. Structural refactors must not adjust
+their thresholds or output as a side effect.
 
-Desktop research may use Python tooling, but the interface and fixtures must not bind the product to a desktop-only runtime. A production recognition engine intended for full Android parity must use a mobile-compatible local runtime or a platform implementation with equivalent serialized results.
+`VisualChartPdfExporter` renders one draft. `CachedPerformanceDeckBuilder`
+creates the canonical performance deck. `SetlistPdfExportService` renders that
+deck to A4. Screen and PDF retain deterministic layout inputs; provenance is
+excluded from rendered output by construction.
 
-### Transformation engine
+Annotations are nondestructive vector overlays on visual strips. Visibility and
+PDF inclusion are explicit stored choices.
 
-Operates only on semantic data. Pitch transposition and same-pitch re-tabbing are separate commands with reversible results. Fingering strategies return ranked candidates and diagnostics rather than mutating the active variant.
+## Platform and safety boundaries
 
-### Layout and renderer
-
-Consumes semantic chart content plus an explicit layout profile and produces platform-independent layout primitives. Screen and PDF backends consume the same primitives. Source provenance is absent from the render input by construction.
-
-The floating title/artist header is an overlay/safe-margin element; toggling it must not reflow measures. Dark/light screen theme is device-local. PDF theme is chosen per export.
-
-## Recognition strategy
-
-Build recognition around a fixture corpus and an interactive correction loop:
-
-1. clean Songsterr screenshots with tab, rhythm, sections, and syllable-aligned lyrics;
-2. exported PDFs and clean static images;
-3. video-derived scrolling-tab frames, including overlap detection and deduplication.
-
-Use geometry and music constraints as well as OCR: staff/string line detection, measure segmentation, temporal positions, tuning/pitch consistency, rhythm totals, repeat structure, and lyric baselines. Existing OMR may inform or seed standard-notation recognition, but tablature requires dedicated evaluation.
-
-## Platform plan
-
-- **Windows first:** complete editor foundation, local library, A4 export, fixtures, and recognition experiments.
-- **Android next:** same domain/application packages and full UI capabilities, with layouts adapted for touch/tablet; add gig-mode hardening and S Pen validation.
-- **iOS/macOS later:** keep shared packages portable, but do not claim support until built and tested on Apple hardware.
-
-## Security, legal, and privacy boundary
-
-- No required cloud services, accounts, telemetry, or remote inference.
-- Never execute active content from imported archives or documents.
-- Normalize and validate archive paths to prevent traversal; enforce size/count limits before extraction.
-- Treat online source adapters as separately gated experiments. Anti-detection does not create permission.
-- Do not bundle a browser binary or dependency whose redistribution terms are incompatible with the chosen application license.
+- Windows is the first fully exercised target; shared Dart behavior remains
+  Android-compatible. macOS is used for local development and smoke checks.
+- No required cloud account, cloud processing, telemetry, or CDN assets.
+- Imported archives never execute content. Paths, counts, sizes, and checksums
+  are validated before extraction or installation.
+- Source adapters must not bypass authentication, paid features, CAPTCHAs,
+  rate limits, or access restrictions.

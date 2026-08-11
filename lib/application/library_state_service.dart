@@ -7,12 +7,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 
 import '../domain/library_models.dart';
-import '../domain/music_models.dart';
 import '../domain/visual_chart_models.dart';
-import '../infrastructure/local_library.dart';
+import 'library_contracts.dart';
 import 'portable_container.dart';
 import 'portable_file_picker.dart';
-import 'service_contracts.dart';
 
 class LibraryStateService implements LibraryStateTransfer {
   LibraryStateService(
@@ -21,26 +19,21 @@ class LibraryStateService implements LibraryStateTransfer {
   });
 
   static const kind = 'music-tabbler-state';
-  static const schemaVersion = 2;
+  static const schemaVersion = 3;
   static const backupRetention = 5;
 
-  final LocalLibrary library;
+  final PortableLibraryStore library;
   final PortableContainerCodec codec;
-
-  Directory get _backupDirectory =>
-      Directory(p.join(library.root.path, 'backups'));
 
   @override
   Future<Uint8List> exportStateBytes() async {
     final songs = await library.listSongs();
     final files = <PortableContainerFile>[];
     final variantsJson = <Map<String, Object?>>[];
-    final semanticVariantsJson = <Map<String, Object?>>[];
     final assets = <String>{};
     var variantIndex = 0;
     for (final song in songs) {
       for (final identity in await library.listVariants(song.id)) {
-        if (identity.kind != ChartVariantKind.visual) continue;
         final draft = await library.loadDraft(identity.id);
         if (draft == null) {
           throw StateError('Chart variant ${identity.id} has no payload.');
@@ -55,55 +48,29 @@ class LibraryStateService implements LibraryStateTransfer {
         variantsJson.add({
           'id': identity.id,
           'songId': identity.songId,
-          'kind': identity.kind.name,
           'draftPath': draftPath,
         });
         for (final strip in draft.allReferencedStrips) {
           assets.add('${strip.assetHash}.${strip.assetExtension}');
           final sourceHash = strip.sourceAssetHash;
           if (sourceHash != null) {
-            await for (final entity in library.assetsDirectory.list()) {
-              if (entity is File &&
-                  p.basename(entity.path).startsWith('$sourceHash.')) {
-                assets.add(p.basename(entity.path));
-              }
-            }
+            assets.addAll(await library.assetNamesWithHash(sourceHash));
           }
         }
       }
     }
-    var semanticIndex = 0;
-    for (final chart in await library.listSemanticCharts()) {
-      final identity = await library.identityForDraft(chart.id);
-      if (identity == null || identity.kind != ChartVariantKind.semantic) {
-        throw StateError('Semantic chart ${chart.id} has no identity.');
-      }
-      final chartPath = 'semantic/${semanticIndex++}.json';
-      files.add(
-        PortableContainerFile(
-          path: chartPath,
-          bytes: Uint8List.fromList(utf8.encode(chart.encode())),
-        ),
-      );
-      semanticVariantsJson.add({
-        'id': chart.id,
-        'songId': identity.songId,
-        'chartPath': chartPath,
-        'updatedAt': identity.updatedAt.toIso8601String(),
-      });
-    }
     final orderedAssets = assets.toList()..sort();
     for (final name in orderedAssets) {
-      final file = File(p.join(library.assetsDirectory.path, name));
-      if (!await file.exists()) {
+      try {
+        files.add(
+          PortableContainerFile(
+            path: 'assets/$name',
+            bytes: await library.readAssetByName(name),
+          ),
+        );
+      } on FileSystemException {
         throw StateError('Library asset is missing: $name.');
       }
-      files.add(
-        PortableContainerFile(
-          path: 'assets/$name',
-          bytes: await file.readAsBytes(),
-        ),
-      );
     }
     final setlists = await library.listSetlists();
     return codec.encode(
@@ -121,7 +88,6 @@ class LibraryStateService implements LibraryStateTransfer {
             },
         ],
         'variants': variantsJson,
-        'semanticVariants': semanticVariantsJson,
         'setlists': [for (final setlist in setlists) _setlistToJson(setlist)],
       },
       files: files,
@@ -147,7 +113,7 @@ class LibraryStateService implements LibraryStateTransfer {
     }
     final rawSongs = _list(container.metadata['songs'], 'songs');
     final rawVariants = _list(container.metadata['variants'], 'variants');
-    final rawSemanticVariants = container.schemaVersion >= 2
+    final rawSemanticVariants = container.schemaVersion == 2
         ? _list(container.metadata['semanticVariants'], 'semanticVariants')
         : const <Object?>[];
     final rawSetlists = _list(container.metadata['setlists'], 'setlists');
@@ -212,8 +178,7 @@ class LibraryStateService implements LibraryStateTransfer {
       }
       importedDrafts[id] = (draft: draft, songId: songId);
     }
-    final importedSemantic =
-        <String, ({SongChart chart, String songId, DateTime updatedAt})>{};
+    final retiredSemantic = <String, String>{};
     for (final raw in rawSemanticVariants) {
       _checkCancelled(isCancelled);
       final variant = _map(raw, 'semanticVariant');
@@ -226,16 +191,14 @@ class LibraryStateService implements LibraryStateTransfer {
       consumedPaths.add(chartPath);
       if (!importedSongs.containsKey(songId) ||
           importedDrafts.containsKey(id) ||
-          importedSemantic.containsKey(id)) {
+          retiredSemantic.containsKey(id)) {
         throw PortableContainerException(
           'State semantic variant identity is invalid: $id.',
         );
       }
-      late final SongChart chart;
-      late final DateTime updatedAt;
       try {
-        chart = SongChart.decode(utf8.decode(container.file(chartPath).bytes));
-        updatedAt = DateTime.parse(
+        container.file(chartPath);
+        DateTime.parse(
           _required(variant['updatedAt'], 'semanticVariant.updatedAt'),
         );
       } catch (_) {
@@ -243,19 +206,15 @@ class LibraryStateService implements LibraryStateTransfer {
           'State semantic variant is invalid: $id.',
         );
       }
-      if (chart.id != id) {
-        throw PortableContainerException(
-          'State semantic payload identity does not match: $id.',
-        );
-      }
-      importedSemantic[id] = (
-        chart: chart,
-        songId: songId,
-        updatedAt: updatedAt,
-      );
+      retiredSemantic[id] = songId;
     }
-    final importedSetlists = [
-      for (final raw in rawSetlists) _setlistFromJson(_map(raw, 'setlist')),
+    final importedSetlists = <LibrarySetlist>[
+      for (final raw in rawSetlists)
+        _retireSemanticEntries(
+          _setlistFromJson(_map(raw, 'setlist')),
+          retiredSemantic,
+          importedSongs,
+        ),
     ];
     if (container.files.any((file) => !consumedPaths.contains(file.path))) {
       throw const PortableContainerException(
@@ -279,7 +238,7 @@ class LibraryStateService implements LibraryStateTransfer {
         final variantId = entry.chartVariantId;
         if (variantId != null &&
             !importedDrafts.containsKey(variantId) &&
-            !importedSemantic.containsKey(variantId)) {
+            !retiredSemantic.containsKey(variantId)) {
           throw PortableContainerException(
             'State setlist references missing chart: $variantId.',
           );
@@ -288,13 +247,10 @@ class LibraryStateService implements LibraryStateTransfer {
     }
 
     final variants = <({VisualChartDraft draft, String songId})>[];
-    final semanticVariants =
-        <({SongChart chart, String songId, DateTime updatedAt})>[];
     final setlists = <LibrarySetlist>[];
     var skipped = 0;
     if (mode == StateImportMode.replace) {
       variants.addAll(importedDrafts.values);
-      semanticVariants.addAll(importedSemantic.values);
       setlists.addAll(importedSetlists);
     } else {
       final localSongs = {
@@ -325,18 +281,6 @@ class LibraryStateService implements LibraryStateTransfer {
               ? entry.value.draft
               : entry.value.draft.copyWith(id: targetId),
           songId: songIds[entry.value.songId]!,
-        ));
-      }
-      for (final entry in importedSemantic.entries) {
-        final local = await library.loadSemanticChart(entry.key);
-        final targetId = local == null ? entry.key : IdFactory.next('semantic');
-        variantIds[entry.key] = targetId;
-        semanticVariants.add((
-          chart: targetId == entry.key
-              ? entry.value.chart
-              : entry.value.chart.copyWith(id: targetId),
-          songId: songIds[entry.value.songId]!,
-          updatedAt: entry.value.updatedAt,
         ));
       }
       final existingSetlistIds = {
@@ -406,9 +350,8 @@ class LibraryStateService implements LibraryStateTransfer {
         }
         if (!existed) createdAssets.add(destination);
       }
-      await library.installLibraryStateAtomically(
+      await library.installVisualStateAtomically(
         variants: variants,
-        semanticVariants: semanticVariants,
         setlists: setlists,
         replace: mode == StateImportMode.replace,
       );
@@ -419,9 +362,10 @@ class LibraryStateService implements LibraryStateTransfer {
       rethrow;
     }
     return LibraryStateImportResult(
-      importedVariants: variants.length + semanticVariants.length,
-      skippedVariants: skipped,
+      importedVariants: variants.length,
+      skippedVariants: skipped + retiredSemantic.length,
       importedSetlists: setlists.length,
+      skippedVariantIds: List.unmodifiable(retiredSemantic.keys),
       backupPath: backupPath,
     );
   }
@@ -461,53 +405,24 @@ class LibraryStateService implements LibraryStateTransfer {
 
   @override
   Future<List<String>> listBackups() async {
-    if (!await _backupDirectory.exists()) return const [];
-    final files = await _backupDirectory
-        .list()
-        .where((entity) => entity is File && entity.path.endsWith('.mtstate'))
-        .cast<File>()
-        .toList();
-    files.sort(
-      (left, right) =>
-          right.lastModifiedSync().compareTo(left.lastModifiedSync()),
-    );
-    return List.unmodifiable(files.map((file) => file.path));
+    return library.listBackupPaths();
   }
 
   @override
   Future<LibraryStateImportResult> restoreBackup(String path) async {
-    final root = p.normalize(p.absolute(_backupDirectory.path));
-    final target = p.normalize(p.absolute(path));
-    if (!p.isWithin(root, target)) {
+    try {
+      return importStateBytes(
+        await library.readBackup(path),
+        mode: StateImportMode.replace,
+      );
+    } on ArgumentError {
       throw const PortableContainerException('Backup path is outside storage.');
     }
-    return importStateBytes(
-      await File(target).readAsBytes(),
-      mode: StateImportMode.replace,
-    );
   }
 
   Future<String> _createBackup() async {
-    await _backupDirectory.create(recursive: true);
     final bytes = await exportStateBytes();
-    final stamp = DateTime.now().toUtc().microsecondsSinceEpoch;
-    final destination = File(
-      p.join(_backupDirectory.path, 'backup-$stamp.mtstate'),
-    );
-    final partial = File('${destination.path}.partial');
-    await partial.writeAsBytes(bytes, flush: true);
-    await partial.rename(destination.path);
-    final backups = await listBackups();
-    for (final old in backups.skip(backupRetention)) {
-      final normalized = p.normalize(p.absolute(old));
-      if (p.isWithin(
-        p.normalize(p.absolute(_backupDirectory.path)),
-        normalized,
-      )) {
-        await File(normalized).delete();
-      }
-    }
-    return destination.path;
+    return library.writeRotatingBackup(bytes, retention: backupRetention);
   }
 
   Map<String, PortableContainerFile> _validatedAssets(
@@ -542,6 +457,37 @@ class LibraryStateService implements LibraryStateTransfer {
         },
     ],
   };
+
+  LibrarySetlist _retireSemanticEntries(
+    LibrarySetlist setlist,
+    Map<String, String> retiredSemantic,
+    Map<String, ({String title, String artist})> songs,
+  ) {
+    if (retiredSemantic.isEmpty) return setlist;
+    return LibrarySetlist(
+      id: setlist.id,
+      name: setlist.name,
+      scheduledAt: setlist.scheduledAt,
+      notes: setlist.notes,
+      createdAt: setlist.createdAt,
+      updatedAt: setlist.updatedAt,
+      entries: [
+        for (final entry in setlist.entries)
+          if (entry.chartVariantId case final variantId?
+              when retiredSemantic.containsKey(variantId))
+            LibrarySetlistEntry.placeholder(
+              id: entry.id,
+              title:
+                  songs[retiredSemantic[variantId]]?.title.trim().isNotEmpty ==
+                      true
+                  ? songs[retiredSemantic[variantId]]!.title
+                  : 'Retired semantic chart',
+            )
+          else
+            entry,
+      ],
+    );
+  }
 
   LibrarySetlist _setlistFromJson(Map<String, Object?> json) {
     final entries = _list(json['entries'], 'setlist.entries');

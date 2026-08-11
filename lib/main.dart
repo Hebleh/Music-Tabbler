@@ -26,7 +26,9 @@ Future<void> main() async {
       File(p.join(supportDirectory.path, 'device-preferences.json')),
     );
     final initialPreferences = await preferences.load();
-    final pdfExporter = PdfExportService(library);
+    final chartPdfExporter = VisualChartPdfExporter(library);
+    final performanceDeckBuilder = CachedPerformanceDeckBuilder(library);
+    final setlistPdfExporter = SetlistPdfExportService(performanceDeckBuilder);
     final songBundles = SongBundleService(library);
     final libraryState = LibraryStateService(library);
     runApp(
@@ -37,9 +39,9 @@ Future<void> main() async {
           songVariants: library,
           setlists: library,
           importer: VisualImportService(library),
-          exporter: pdfExporter,
-          setlistExporter: pdfExporter,
-          performanceDeckBuilder: pdfExporter,
+          exporter: chartPdfExporter,
+          setlistExporter: setlistPdfExporter,
+          performanceDeckBuilder: performanceDeckBuilder,
           textRecognition: NativeTextRecognitionService(library),
           preferences: preferences,
           performanceMode: const MethodChannelPerformanceModeController(),

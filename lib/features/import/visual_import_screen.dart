@@ -39,13 +39,12 @@ class VisualImportScreen extends StatefulWidget {
 }
 
 class _VisualImportScreenState extends State<VisualImportScreen> {
-  late VisualChartDraft _draft;
+  late final VisualDraftEditSession _editSession;
+  VisualChartDraft get _draft => _editSession.draft;
   late final TextEditingController _titleController;
   late final TextEditingController _artistController;
   late final FocusNode _shortcutFocusNode;
   final ScrollController _editorScrollController = ScrollController();
-  final DraftUndoHistory _undoHistory = DraftUndoHistory();
-  late final DebouncedDraftAutosaver _autosaver;
   bool _busy = false;
   bool _dragging = false;
   bool _syncingMetadata = false;
@@ -55,7 +54,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   void initState() {
     super.initState();
     final now = DateTime.now().toUtc();
-    _draft =
+    final initialDraft =
         widget.initialDraft ??
         VisualChartDraft(
           id: IdFactory.next('chart'),
@@ -64,18 +63,19 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
           createdAt: now,
           updatedAt: now,
         );
-    _titleController = TextEditingController(text: _draft.title);
-    _artistController = TextEditingController(text: _draft.artist);
+    _titleController = TextEditingController(text: initialDraft.title);
+    _artistController = TextEditingController(text: initialDraft.artist);
     _titleController.addListener(_metadataChanged);
     _artistController.addListener(_metadataChanged);
-    _autosaver = DebouncedDraftAutosaver(
+    _editSession = VisualDraftEditSession(
+      initialDraft: initialDraft,
       save: (draft) async {
         await widget.services.library.saveDraft(draft);
         if (mounted && _autosaveError != null) {
           setState(() => _autosaveError = null);
         }
       },
-      onError: (error, _) {
+      onSaveError: (error, _) {
         if (mounted) setState(() => _autosaveError = error);
       },
     );
@@ -91,23 +91,20 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   }
 
   void _commitDraft(VisualChartDraft next, {bool recordUndo = true}) {
-    if (recordUndo) _undoHistory.record(_draft);
+    _editSession.commit(next, recordUndo: recordUndo);
     setState(() {
-      _draft = next;
       _autosaveError = null;
     });
-    if (_draft.strips.isNotEmpty) _autosaver.schedule(_draft);
   }
 
   void _undo() {
-    final previous = _undoHistory.undo();
-    if (previous == null) return;
-    final restored = previous.copyWith(updatedAt: DateTime.now().toUtc());
+    final restored = _editSession.undo(updatedAt: DateTime.now().toUtc());
+    if (restored == null) return;
     _syncingMetadata = true;
     _titleController.text = restored.title;
     _artistController.text = restored.artist;
     _syncingMetadata = false;
-    _commitDraft(restored, recordUndo: false);
+    setState(() => _autosaveError = null);
   }
 
   Future<void> _reviewVisualTabAnalysis({
@@ -338,7 +335,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   void dispose() {
     _titleController.removeListener(_metadataChanged);
     _artistController.removeListener(_metadataChanged);
-    unawaited(_autosaver.dispose());
+    unawaited(_editSession.dispose());
     _titleController.dispose();
     _artistController.dispose();
     _shortcutFocusNode.dispose();
@@ -393,7 +390,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                     ),
                     IconButton(
                       tooltip: 'Undo last edit (Ctrl+Z)',
-                      onPressed: _undoHistory.canUndo ? _undo : null,
+                      onPressed: _editSession.canUndo ? _undo : null,
                       icon: const Icon(Icons.undo),
                     ),
                     if (_autosaveError != null)
@@ -1214,8 +1211,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   Future<void> _save() async {
     setState(() => _busy = true);
     try {
-      _autosaver.schedule(_draft);
-      await _autosaver.flush();
+      await _editSession.saveNow();
       if (_autosaveError case final error?) throw error;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1385,8 +1381,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   Future<void> _export() async {
     setState(() => _busy = true);
     try {
-      _autosaver.schedule(_draft);
-      await _autosaver.flush();
+      await _editSession.saveNow();
       if (_autosaveError case final error?) throw error;
       final destination = await widget.services.exporter.exportWithPicker(
         _draft,

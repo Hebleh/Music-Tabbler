@@ -55,8 +55,9 @@ void main() {
         ],
       );
 
-      final exporter = PdfExportService(library);
-      final deck = await exporter.buildPerformanceDeck(
+      final deckBuilder = CachedPerformanceDeckBuilder(library);
+      final exporter = SetlistPdfExportService(deckBuilder);
+      final deck = await deckBuilder.buildPerformanceDeck(
         setlist,
         density: VisualExportDensity.stageReadable,
       );
@@ -126,7 +127,9 @@ void main() {
       directory.deleteSync(recursive: true);
     });
     final now = DateTime.utc(2026, 7, 23);
-    final exporter = PdfExportService(library);
+    final exporter = SetlistPdfExportService(
+      CachedPerformanceDeckBuilder(library),
+    );
 
     await expectLater(
       exporter.exportSetlistBytes(
@@ -269,7 +272,7 @@ void main() {
       updatedAt: now,
       entries: [LibrarySetlistEntry(id: 'entry', chartVariantId: chart.id)],
     );
-    final exporter = PdfExportService(library);
+    final exporter = CachedPerformanceDeckBuilder(library);
 
     final first = await exporter.buildPerformanceDeck(
       setlist,
@@ -326,7 +329,9 @@ void main() {
         ),
       ],
     );
-    final exporter = PdfExportService(library);
+    final exporter = SetlistPdfExportService(
+      CachedPerformanceDeckBuilder(library),
+    );
 
     for (final density in VisualExportDensity.values) {
       final text = latin1.decode(

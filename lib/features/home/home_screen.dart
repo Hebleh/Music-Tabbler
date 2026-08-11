@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../application/app_services.dart';
 import '../../application/service_contracts.dart';
+import '../../application/setlist_edit_session.dart';
 import '../../domain/library_models.dart';
 import '../../domain/device_preferences.dart';
 import '../../domain/visual_chart_models.dart';
@@ -604,10 +605,9 @@ class _SongPool extends StatelessWidget {
                 for (final draft in items)
                   _ResponsiveSongCard(
                     leading: const CircleAvatar(child: Icon(Icons.view_stream)),
-                    title: _displayTitle(draft),
+                    title: draft.displayTitle,
                     subtitle: [
-                      if (_displayArtist(draft).isNotEmpty)
-                        _displayArtist(draft),
+                      if (draft.displayArtist.isNotEmpty) draft.displayArtist,
                       '${draft.strips.length} row(s)',
                       'Last edited ${_formatEditedDate(draft.updatedAt)}',
                     ].join(' | '),
@@ -706,23 +706,6 @@ class _ResponsiveSongCard extends StatelessWidget {
       ),
     );
   }
-}
-
-String _displayTitle(VisualChartDraft draft) {
-  if (_isUntitled(draft.title) && draft.artist.trim().isNotEmpty) {
-    return draft.artist.trim();
-  }
-  return draft.title;
-}
-
-String _displayArtist(VisualChartDraft draft) =>
-    _isUntitled(draft.title) ? '' : draft.artist.trim();
-
-bool _isUntitled(String value) {
-  final normalized = value.trim().toLowerCase();
-  return normalized.isEmpty ||
-      normalized == 'untitled' ||
-      normalized == 'untitled chart';
 }
 
 String _formatEditedDate(DateTime value) {
@@ -987,6 +970,7 @@ class _SetlistEditorScreen extends StatefulWidget {
 
 class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
   LibrarySetlist? _setlist;
+  SetlistEditSession? _editSession;
   Map<String, VisualChartDraft> _draftsByVariant = const {};
   List<VisualChartDraft> _availableDrafts = const [];
   Object? _error;
@@ -1019,6 +1003,12 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
       if (!mounted) return;
       setState(() {
         _setlist = setlist;
+        _editSession = setlist == null
+            ? null
+            : SetlistEditSession(
+                initialSetlist: setlist,
+                repository: widget.services.setlists,
+              );
         _availableDrafts = drafts;
         _draftsByVariant = byVariant;
         _preferences = preferences;
@@ -1030,17 +1020,7 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
   }
 
   Future<void> _saveEntries(List<LibrarySetlistEntry> entries) async {
-    final current = _setlist!;
-    final updated = LibrarySetlist(
-      id: current.id,
-      name: current.name,
-      createdAt: current.createdAt,
-      updatedAt: DateTime.now().toUtc(),
-      scheduledAt: current.scheduledAt,
-      notes: current.notes,
-      entries: entries,
-    );
-    await widget.services.setlists.saveSetlist(updated);
+    final updated = await _editSession!.replaceEntries(entries);
     if (mounted) setState(() => _setlist = updated);
   }
 
@@ -1062,7 +1042,7 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
                     onPressed: () => Navigator.pop(context, draft),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Text(_displayTitle(draft)),
+                      child: Text(draft.displayTitle),
                     ),
                   ),
               ],
@@ -1167,27 +1147,9 @@ class _SetlistEditorScreenState extends State<_SetlistEditorScreen> {
   }
 
   Future<void> _reorder(int oldIndex, int newIndex) async {
-    final entries = List<LibrarySetlistEntry>.of(_setlist!.entries);
-    final moved = entries.removeAt(oldIndex);
-    entries.insert(newIndex, moved);
-    final reorderedAt = DateTime.now().toUtc();
-    await widget.services.setlists.reorderSetlistEntries(
-      _setlist!.id,
-      entries.map((entry) => entry.id).toList(),
-      updatedAt: reorderedAt,
-    );
+    final updated = await _editSession!.reorder(oldIndex, newIndex);
     if (mounted) {
-      setState(
-        () => _setlist = LibrarySetlist(
-          id: _setlist!.id,
-          name: _setlist!.name,
-          createdAt: _setlist!.createdAt,
-          updatedAt: reorderedAt,
-          scheduledAt: _setlist!.scheduledAt,
-          notes: _setlist!.notes,
-          entries: entries,
-        ),
-      );
+      setState(() => _setlist = updated);
     }
   }
 

@@ -14,7 +14,6 @@ import 'package:music_tabbler/application/visual_tab_analysis_service.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 import 'package:music_tabbler/domain/library_models.dart';
 import 'package:music_tabbler/domain/device_preferences.dart';
-import 'package:music_tabbler/domain/music_models.dart';
 import 'package:music_tabbler/domain/visual_tab_transform_models.dart';
 import 'package:music_tabbler/features/import/visual_tab_analysis_dialog.dart';
 
@@ -1404,10 +1403,8 @@ class _FakeLibrary
     implements
         ChartLibrary,
         SongVariantLibrary,
-        SemanticChartLibrary,
         SetlistLibrary {
   final List<VisualChartDraft> drafts = [];
-  final List<SongChart> semanticCharts = [];
   final List<LibrarySetlist> setlists = [];
 
   @override
@@ -1484,7 +1481,6 @@ class _FakeLibrary
     return ChartVariantIdentity(
       id: 'variant-$draftId',
       songId: 'song-$draftId',
-      kind: ChartVariantKind.visual,
       createdAt: draft.createdAt,
       updatedAt: draft.updatedAt,
     );
@@ -1501,27 +1497,6 @@ class _FakeLibrary
     VisualChartDraft draft, {
     required String songId,
   }) => saveDraft(draft);
-
-  @override
-  Future<void> saveSemanticChart(
-    SongChart chart, {
-    required String songId,
-    required DateTime updatedAt,
-  }) async {
-    semanticCharts.removeWhere((item) => item.id == chart.id);
-    semanticCharts.add(chart);
-  }
-
-  @override
-  Future<SongChart?> loadSemanticChart(String id) async {
-    for (final chart in semanticCharts) {
-      if (chart.id == id) return chart;
-    }
-    return null;
-  }
-
-  @override
-  Future<List<SongChart>> listSemanticCharts() async => List.of(semanticCharts);
 
   @override
   Future<void> saveSetlist(LibrarySetlist setlist) async {
@@ -1693,7 +1668,6 @@ class _SeamRiskVisualTabAnalyzer extends _RecordingVisualTabAnalyzer {
 class _UnusedExporter
     implements
         ChartPdfExporter,
-        SemanticChartPdfExporter,
         SetlistPdfExporter,
         PerformanceDeckBuilder {
   const _UnusedExporter();
@@ -1703,22 +1677,6 @@ class _UnusedExporter
   @override
   Future<String?> exportWithPicker(VisualChartDraft draft) =>
       throw UnimplementedError();
-
-  @override
-  Future<Uint8List> exportSemanticBytes(
-    SongChart chart, {
-    required bool showTitle,
-    required bool showTab,
-    required bool showNotation,
-  }) => throw UnimplementedError();
-
-  @override
-  Future<String?> exportSemanticWithPicker(
-    SongChart chart, {
-    required bool showTitle,
-    required bool showTab,
-    required bool showNotation,
-  }) => throw UnimplementedError();
 
   @override
   Future<Uint8List> exportSetlistBytes(

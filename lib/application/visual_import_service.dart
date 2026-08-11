@@ -7,7 +7,6 @@ import 'package:path/path.dart' as p;
 import 'package:pdfrx_engine/pdfrx_engine.dart';
 
 import '../domain/visual_chart_models.dart';
-import '../infrastructure/local_library.dart';
 import 'service_contracts.dart';
 import 'windows_clipboard_reader.dart';
 
@@ -17,7 +16,7 @@ class VisualImportService implements VisualImporter {
     this.clipboardReader = const WindowsClipboardReader(),
   });
 
-  final LocalLibrary library;
+  final ChartLibrary library;
   final WindowsClipboardReader clipboardReader;
   bool _pdfInitialized = false;
 

@@ -2,6 +2,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
 
 void main() {
+  test('display metadata uses one untitled fallback rule', () {
+    final now = DateTime.utc(2026, 8, 11);
+    final untitled = VisualChartDraft(
+      id: 'untitled',
+      title: 'Untitled chart',
+      artist: 'Band',
+      createdAt: now,
+      updatedAt: now,
+    );
+    final titled = untitled.copyWith(id: 'titled', title: 'Song');
+
+    expect(untitled.displayTitle, 'Band');
+    expect(untitled.displayArtist, isEmpty);
+    expect(titled.displayTitle, 'Song');
+    expect(titled.displayArtist, 'Band');
+  });
+
   test('full-page crop remains identifiable after persistence', () {
     const strip = VisualStrip(
       id: 'full-page',

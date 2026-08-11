@@ -1,28 +1,26 @@
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../application/service_contracts.dart';
 import '../domain/library_models.dart';
-import '../domain/music_models.dart';
 import '../domain/visual_chart_models.dart';
+import 'content_addressed_asset_store.dart';
+import 'library_schema_migrator.dart';
 
-class LocalLibrary
-    implements
-        ChartLibrary,
-        SongVariantLibrary,
-        SemanticChartLibrary,
-        SetlistLibrary {
-  LocalLibrary._(this.root, this.assetsDirectory, this._database);
+class LocalLibrary implements PortableLibraryStore {
+  LocalLibrary._(this.root, this._assets, this._database);
 
-  static const currentSchemaVersion = 5;
+  static const currentSchemaVersion = LibrarySchemaMigrator.currentVersion;
 
   final Directory root;
-  final Directory assetsDirectory;
+  final ContentAddressedAssetStore _assets;
   final Database _database;
+
+  Directory get assetsDirectory => _assets.directory;
 
   static Future<LocalLibrary> open() async {
     const configuredRoot = String.fromEnvironment('MUSIC_TABBLER_LIBRARY_ROOT');
@@ -51,263 +49,88 @@ class LocalLibrary
         ? sqlite3.openInMemory()
         : sqlite3.open(p.join(root.path, 'library.sqlite'));
     try {
-      _migrate(database);
+      await LibrarySchemaMigrator.migrate(
+        database,
+        root: root,
+        assetsDirectory: assets,
+      );
       database.execute('PRAGMA foreign_keys = ON;');
-      return LocalLibrary._(root, assets, database);
+      return LocalLibrary._(root, ContentAddressedAssetStore(assets), database);
     } catch (_) {
       database.close();
       rethrow;
     }
   }
 
-  static void _migrate(Database database) {
-    var version = _schemaVersion(database);
-    if (version > currentSchemaVersion) {
-      throw StateError(
-        'Library schema $version is newer than supported schema '
-        '$currentSchemaVersion.',
-      );
-    }
+  @override
+  Future<StoredAsset> storeAsset(List<int> bytes, String extension) =>
+      _assets.store(bytes, extension);
 
-    while (version < currentSchemaVersion) {
-      final nextVersion = version + 1;
-      database.execute('BEGIN IMMEDIATE;');
-      try {
-        switch (nextVersion) {
-          case 1:
-            _migrateToVersion1(database);
-            break;
-          case 2:
-            _migrateToVersion2(database);
-            break;
-          case 3:
-            _migrateToVersion3(database);
-            break;
-          case 4:
-            _migrateToVersion4(database);
-            break;
-          case 5:
-            _migrateToVersion5(database);
-            break;
-          default:
-            throw StateError('Missing library migration $nextVersion.');
-        }
-        database.execute('PRAGMA user_version = $nextVersion;');
-        database.execute('COMMIT;');
-      } catch (_) {
-        database.execute('ROLLBACK;');
-        rethrow;
-      }
-      version = nextVersion;
-    }
-  }
+  @override
+  String assetPath(String hash, String extension) =>
+      _assets.pathFor(hash, extension);
 
-  static int _schemaVersion(Database database) {
-    return database.select('PRAGMA user_version;').single['user_version']
-        as int;
-  }
+  @override
+  Future<List<String>> assetNamesWithHash(String hash) =>
+      _assets.namesWithHash(hash);
 
-  static void _migrateToVersion1(Database database) {
-    database.execute('''
-      CREATE TABLE IF NOT EXISTS visual_charts (
-        id TEXT PRIMARY KEY NOT NULL,
-        title TEXT NOT NULL,
-        artist TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        payload_json TEXT NOT NULL
-      );
-    ''');
-  }
+  @override
+  Future<Uint8List> readAssetByName(String name) => _assets.readByName(name);
 
-  static void _migrateToVersion2(Database database) {
-    database.execute('''
-      CREATE TABLE songs (
-        id TEXT PRIMARY KEY NOT NULL,
-        title TEXT NOT NULL,
-        artist TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-    ''');
-    database.execute('''
-      CREATE TABLE chart_variants (
-        id TEXT PRIMARY KEY NOT NULL,
-        song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
-        kind TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-    ''');
-    database.execute('''
-      CREATE INDEX chart_variants_song_id_index
-      ON chart_variants(song_id);
-    ''');
-    final songStatement = database.prepare('''
-      INSERT INTO songs (id, title, artist, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?);
-    ''');
-    final variantStatement = database.prepare('''
-      INSERT INTO chart_variants (
-        id, song_id, kind, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?);
-    ''');
+  Directory get _backupDirectory => Directory(p.join(root.path, 'backups'));
+
+  @override
+  Future<String> writeRotatingBackup(
+    Uint8List bytes, {
+    required int retention,
+  }) async {
+    if (retention < 1) throw ArgumentError.value(retention, 'retention');
+    await _backupDirectory.create(recursive: true);
+    final stamp = DateTime.now().toUtc().microsecondsSinceEpoch;
+    final destination = File(
+      p.join(_backupDirectory.path, 'backup-$stamp.mtstate'),
+    );
+    final partial = File('${destination.path}.partial');
     try {
-      for (final row in database.select(
-        'SELECT id, payload_json FROM visual_charts;',
-      )) {
-        final draft = VisualChartDraft.decode(row['payload_json'] as String);
-        if (row['id'] != draft.id) {
-          throw const FormatException(
-            'Visual chart row and payload identities do not match.',
-          );
-        }
-        final songId = _legacySongId(draft.id);
-        songStatement.execute([
-          songId,
-          draft.title,
-          draft.artist,
-          draft.createdAt.toIso8601String(),
-          draft.updatedAt.toIso8601String(),
-        ]);
-        variantStatement.execute([
-          draft.id,
-          songId,
-          ChartVariantKind.visual.name,
-          draft.createdAt.toIso8601String(),
-          draft.updatedAt.toIso8601String(),
-        ]);
-      }
+      await partial.writeAsBytes(bytes, flush: true);
+      await partial.rename(destination.path);
     } finally {
-      songStatement.close();
-      variantStatement.close();
+      if (await partial.exists()) await partial.delete();
     }
-  }
-
-  static void _migrateToVersion3(Database database) {
-    database.execute('''
-      CREATE TABLE setlists (
-        id TEXT PRIMARY KEY NOT NULL,
-        name TEXT NOT NULL,
-        scheduled_at TEXT,
-        notes TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-    ''');
-    database.execute('''
-      CREATE TABLE setlist_entries (
-        id TEXT PRIMARY KEY NOT NULL,
-        setlist_id TEXT NOT NULL
-          REFERENCES setlists(id) ON DELETE CASCADE,
-        chart_variant_id TEXT NOT NULL
-          REFERENCES chart_variants(id) ON DELETE RESTRICT,
-        position INTEGER NOT NULL CHECK(position >= 0),
-        UNIQUE(setlist_id, position)
-      );
-    ''');
-    database.execute('''
-      CREATE INDEX setlist_entries_setlist_id_index
-      ON setlist_entries(setlist_id, position);
-    ''');
-    database.execute('''
-      CREATE INDEX setlist_entries_chart_variant_id_index
-      ON setlist_entries(chart_variant_id);
-    ''');
-  }
-
-  static void _migrateToVersion4(Database database) {
-    database.execute('''
-      CREATE TABLE setlist_entries_v4 (
-        id TEXT PRIMARY KEY NOT NULL,
-        setlist_id TEXT NOT NULL
-          REFERENCES setlists(id) ON DELETE CASCADE,
-        entry_kind TEXT NOT NULL
-          CHECK(entry_kind IN ('chart', 'placeholder')),
-        chart_variant_id TEXT
-          REFERENCES chart_variants(id) ON DELETE RESTRICT,
-        placeholder_title TEXT,
-        position INTEGER NOT NULL CHECK(position >= 0),
-        UNIQUE(setlist_id, position),
-        CHECK(
-          (
-            entry_kind = 'chart'
-            AND chart_variant_id IS NOT NULL
-            AND placeholder_title IS NULL
-          )
-          OR
-          (
-            entry_kind = 'placeholder'
-            AND chart_variant_id IS NULL
-            AND placeholder_title IS NOT NULL
-            AND length(trim(placeholder_title)) > 0
-          )
-        )
-      );
-    ''');
-    database.execute('''
-      INSERT INTO setlist_entries_v4 (
-        id,
-        setlist_id,
-        entry_kind,
-        chart_variant_id,
-        placeholder_title,
-        position
-      )
-      SELECT
-        id,
-        setlist_id,
-        'chart',
-        chart_variant_id,
-        NULL,
-        position
-      FROM setlist_entries;
-    ''');
-    database.execute('DROP TABLE setlist_entries;');
-    database.execute(
-      'ALTER TABLE setlist_entries_v4 RENAME TO setlist_entries;',
-    );
-    database.execute('''
-      CREATE INDEX setlist_entries_setlist_id_index
-      ON setlist_entries(setlist_id, position);
-    ''');
-    database.execute('''
-      CREATE INDEX setlist_entries_chart_variant_id_index
-      ON setlist_entries(chart_variant_id);
-    ''');
-  }
-
-  static void _migrateToVersion5(Database database) {
-    database.execute('''
-      CREATE TABLE semantic_charts (
-        id TEXT PRIMARY KEY NOT NULL
-          REFERENCES chart_variants(id) ON DELETE CASCADE,
-        payload_json TEXT NOT NULL
-      );
-    ''');
+    final backups = await listBackupPaths();
+    for (final old in backups.skip(retention)) {
+      await File(old).delete();
+    }
+    return destination.path;
   }
 
   @override
-  Future<StoredAsset> storeAsset(List<int> bytes, String extension) async {
-    final normalizedExtension = extension.toLowerCase().replaceFirst('.', '');
-    final hash = sha256.convert(bytes).toString();
-    final file = File(
-      p.join(assetsDirectory.path, '$hash.$normalizedExtension'),
+  Future<List<String>> listBackupPaths() async {
+    if (!await _backupDirectory.exists()) return const [];
+    final files = await _backupDirectory
+        .list()
+        .where((entity) => entity is File && entity.path.endsWith('.mtstate'))
+        .cast<File>()
+        .toList();
+    files.sort(
+      (left, right) =>
+          right.lastModifiedSync().compareTo(left.lastModifiedSync()),
     );
-    if (!await file.exists()) {
-      final temporary = File('${file.path}.partial');
-      await temporary.writeAsBytes(bytes, flush: true);
-      await temporary.rename(file.path);
-    }
-    return StoredAsset(
-      hash: hash,
-      extension: normalizedExtension,
-      path: file.path,
-    );
+    return List.unmodifiable(files.map((file) => file.path));
   }
 
   @override
-  String assetPath(String hash, String extension) {
-    return p.join(assetsDirectory.path, '$hash.$extension');
+  Future<Uint8List> readBackup(String path) async {
+    final backupRoot = p.normalize(p.absolute(_backupDirectory.path));
+    final target = p.normalize(p.absolute(path));
+    if (!p.isWithin(backupRoot, target)) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'Backup path is outside storage.',
+      );
+    }
+    return File(target).readAsBytes();
   }
 
   @override
@@ -317,7 +140,7 @@ class LocalLibrary
       [draft.id],
     );
     final songId = existing.isEmpty
-        ? _legacySongId(draft.id)
+        ? legacySongId(draft.id)
         : existing.single['song_id'] as String;
     await saveDraftAsVariant(draft, songId: songId);
   }
@@ -371,15 +194,14 @@ class LocalLibrary
     _database.execute(
       '''
         INSERT INTO chart_variants (
-          id, song_id, kind, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?)
+          id, song_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           updated_at = excluded.updated_at;
       ''',
       [
         draft.id,
         songId,
-        ChartVariantKind.visual.name,
         draft.createdAt.toIso8601String(),
         draft.updatedAt.toIso8601String(),
       ],
@@ -507,100 +329,6 @@ class LocalLibrary
   }
 
   @override
-  Future<void> saveSemanticChart(
-    SongChart chart, {
-    required String songId,
-    required DateTime updatedAt,
-  }) async {
-    _inTransaction(() => _saveSemanticChart(chart, songId, updatedAt));
-  }
-
-  void _saveSemanticChart(SongChart chart, String songId, DateTime updatedAt) {
-    final existing = _database.select(
-      'SELECT song_id, kind FROM chart_variants WHERE id = ? LIMIT 1;',
-      [chart.id],
-    );
-    if (existing.isNotEmpty &&
-        (existing.single['song_id'] != songId ||
-            existing.single['kind'] != ChartVariantKind.semantic.name)) {
-      throw StateError(
-        'Semantic chart ${chart.id} conflicts with another variant.',
-      );
-    }
-    final createdAt = existing.isEmpty
-        ? updatedAt.toIso8601String()
-        : (_database.select(
-                'SELECT created_at FROM chart_variants WHERE id = ?;',
-                [chart.id],
-              ).single['created_at']
-              as String);
-    _database.execute(
-      '''
-        INSERT INTO songs (id, title, artist, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          title = excluded.title,
-          artist = excluded.artist,
-          updated_at = excluded.updated_at;
-      ''',
-      [
-        songId,
-        chart.title,
-        chart.artist,
-        createdAt,
-        updatedAt.toIso8601String(),
-      ],
-    );
-    _database.execute(
-      '''
-        INSERT INTO chart_variants (
-          id, song_id, kind, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at;
-      ''',
-      [
-        chart.id,
-        songId,
-        ChartVariantKind.semantic.name,
-        createdAt,
-        updatedAt.toIso8601String(),
-      ],
-    );
-    _database.execute(
-      '''
-        INSERT INTO semantic_charts (id, payload_json)
-        VALUES (?, ?)
-        ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json;
-      ''',
-      [chart.id, chart.encode()],
-    );
-  }
-
-  @override
-  Future<List<SongChart>> listSemanticCharts() async {
-    final rows = _database.select('''
-      SELECT semantic_charts.payload_json
-      FROM semantic_charts
-      JOIN chart_variants ON chart_variants.id = semantic_charts.id
-      ORDER BY chart_variants.updated_at DESC, semantic_charts.id ASC;
-    ''');
-    return rows
-        .map((row) => SongChart.decode(row['payload_json'] as String))
-        .toList(growable: false);
-  }
-
-  @override
-  Future<SongChart?> loadSemanticChart(String id) async {
-    final rows = _database.select(
-      'SELECT payload_json FROM semantic_charts WHERE id = ? LIMIT 1;',
-      [id],
-    );
-    return rows.isEmpty
-        ? null
-        : SongChart.decode(rows.single['payload_json'] as String);
-  }
-
-  @override
   Future<List<LibrarySong>> listSongs() async {
     final rows = _database.select('''
       SELECT id, title, artist, created_at, updated_at
@@ -624,7 +352,7 @@ class LocalLibrary
   Future<List<ChartVariantIdentity>> listVariants(String songId) async {
     final rows = _database.select(
       '''
-      SELECT id, song_id, kind, created_at, updated_at
+      SELECT id, song_id, created_at, updated_at
       FROM chart_variants
       WHERE song_id = ?
       ORDER BY updated_at DESC, id ASC;
@@ -638,7 +366,7 @@ class LocalLibrary
   Future<ChartVariantIdentity?> identityForDraft(String draftId) async {
     final rows = _database.select(
       '''
-      SELECT id, song_id, kind, created_at, updated_at
+      SELECT id, song_id, created_at, updated_at
       FROM chart_variants
       WHERE id = ?
       LIMIT 1;
@@ -652,7 +380,6 @@ class LocalLibrary
     return ChartVariantIdentity(
       id: row['id'] as String,
       songId: row['song_id'] as String,
-      kind: ChartVariantKind.values.byName(row['kind'] as String),
       createdAt: DateTime.parse(row['created_at'] as String),
       updatedAt: DateTime.parse(row['updated_at'] as String),
     );
@@ -664,11 +391,9 @@ class LocalLibrary
     _inTransaction(() => _saveSetlist(setlist));
   }
 
-  Future<void> installLibraryStateAtomically({
+  @override
+  Future<void> installVisualStateAtomically({
     required List<({VisualChartDraft draft, String songId})> variants,
-    List<({SongChart chart, String songId, DateTime updatedAt})>
-        semanticVariants =
-        const [],
     required List<LibrarySetlist> setlists,
     required bool replace,
   }) async {
@@ -685,9 +410,6 @@ class LocalLibrary
       }
       for (final variant in variants) {
         _saveDraftAsVariant(variant.draft, variant.songId);
-      }
-      for (final variant in semanticVariants) {
-        _saveSemanticChart(variant.chart, variant.songId, variant.updatedAt);
       }
       for (final setlist in setlists) {
         _saveSetlist(setlist);
@@ -973,8 +695,6 @@ class LocalLibrary
       rethrow;
     }
   }
-
-  static String _legacySongId(String draftId) => 'song_$draftId';
 
   void close() => _database.close();
 }

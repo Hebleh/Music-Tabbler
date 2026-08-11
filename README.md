@@ -1,6 +1,9 @@
 # Music Tabbler
 
-Music Tabbler is a local-first music chart editor for turning tablature, notation, lyrics, screenshots, PDFs, and selected online sources into compact, stage-readable charts.
+Music Tabbler is a local-first visual chart editor for turning user-supplied
+tablature screenshots and PDFs into compact, stage-readable charts. Local OCR
+is an editable aid; the supported source of truth remains the preserved visual
+material.
 
 The first implementation target is Windows. Android follows as a full peer application, with gig mode optimized for tablets and stylus annotation. A4 PDF remains a first-class output on every platform.
 

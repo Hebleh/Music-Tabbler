@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
-import 'package:music_tabbler/domain/music_models.dart';
 import 'package:music_tabbler/infrastructure/local_library.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
@@ -83,34 +82,6 @@ void main() {
     await library.deleteDraft(second.id);
     expect(await library.listSongs(), isEmpty);
   });
-
-  test(
-    'semantic charts save, reopen, and retain stable variant identity',
-    () async {
-      final directory = await Directory.systemTemp.createTemp(
-        'music_tabbler_semantic_',
-      );
-      addTearDown(() => directory.deleteSync(recursive: true));
-      final chart = SongChart.foundationExample();
-      final updatedAt = DateTime.utc(2026, 7, 25);
-
-      var library = await LocalLibrary.forTesting(directory, inMemory: false);
-      await library.saveSemanticChart(
-        chart,
-        songId: 'semantic-song',
-        updatedAt: updatedAt,
-      );
-      library.close();
-
-      library = await LocalLibrary.forTesting(directory, inMemory: false);
-      final restored = await library.loadSemanticChart(chart.id);
-      final variants = await library.listVariants('semantic-song');
-      expect(restored?.encode(), chart.encode());
-      expect(variants.single.id, chart.id);
-      expect(variants.single.kind.name, 'semantic');
-      library.close();
-    },
-  );
 
   test('new song and variant identities survive persistent reopen', () async {
     final directory = await Directory.systemTemp.createTemp(

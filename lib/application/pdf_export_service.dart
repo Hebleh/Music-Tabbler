@@ -415,22 +415,16 @@ class StagedPdfFileWriter {
   }
 }
 
-class PdfExportService
-    implements ChartPdfExporter, SetlistPdfExporter, PerformanceDeckBuilder {
-  PdfExportService(
+class VisualChartPdfExporter implements ChartPdfExporter {
+  VisualChartPdfExporter(
     this.library, {
     this.processor = const VisualImageProcessor(),
     this.layout = const A4StripLayout(),
-    this.fileWriter = const StagedPdfFileWriter(),
   });
 
   final ChartLibrary library;
   final VisualImageProcessor processor;
   final A4StripLayout layout;
-  final StagedPdfFileWriter fileWriter;
-  final Map<String, Future<PerformanceDeck>> _performanceDeckCache = {};
-
-  static const _maximumCachedDecks = 3;
 
   @override
   Future<Uint8List> exportBytes(VisualChartDraft draft) async {
@@ -512,6 +506,16 @@ class PdfExportService
     await File(path).writeAsBytes(await exportBytes(draft), flush: true);
     return path;
   }
+}
+
+class SetlistPdfExportService implements SetlistPdfExporter {
+  const SetlistPdfExportService(
+    this.deckBuilder, {
+    this.fileWriter = const StagedPdfFileWriter(),
+  });
+
+  final PerformanceDeckBuilder deckBuilder;
+  final StagedPdfFileWriter fileWriter;
 
   @override
   Future<Uint8List> exportSetlistBytes(
@@ -519,7 +523,10 @@ class PdfExportService
     required VisualExportDensity density,
   }) async {
     try {
-      final deck = await buildPerformanceDeck(setlist, density: density);
+      final deck = await deckBuilder.buildPerformanceDeck(
+        setlist,
+        density: density,
+      );
       return await compute(_renderPerformanceDeckPdfMessage, deck.toMessage());
     } on SetlistPdfExportException {
       rethrow;
@@ -529,6 +536,36 @@ class PdfExportService
       );
     }
   }
+
+  @override
+  Future<String?> exportSetlistWithPicker(
+    LibrarySetlist setlist, {
+    required VisualExportDensity density,
+  }) async {
+    final safeName = _safePdfName(setlist.name, fallback: 'music-tabbler-set');
+    final destination = await FilePicker.platform.saveFile(
+      dialogTitle: 'Export setlist as A4 PDF',
+      fileName: '$safeName.pdf',
+      type: FileType.custom,
+      allowedExtensions: const ['pdf'],
+    );
+    if (destination == null) return null;
+    final path = destination.toLowerCase().endsWith('.pdf')
+        ? destination
+        : '$destination.pdf';
+    final bytes = await exportSetlistBytes(setlist, density: density);
+    await fileWriter.write(path, bytes);
+    return path;
+  }
+}
+
+class CachedPerformanceDeckBuilder implements PerformanceDeckBuilder {
+  CachedPerformanceDeckBuilder(this.library);
+
+  final ChartLibrary library;
+  final Map<String, Future<PerformanceDeck>> _performanceDeckCache = {};
+
+  static const _maximumCachedDecks = 3;
 
   @override
   Future<PerformanceDeck> buildPerformanceDeck(
@@ -656,7 +693,7 @@ class PdfExportService
       }
       if (draft.strips.isEmpty) {
         throw SetlistPdfExportException(
-          'Set item ${index + 1}, "${_displayDraftTitle(draft)}", has no tab '
+          'Set item ${index + 1}, "${draft.displayTitle}", has no tab '
           'rows to export.',
         );
       }
@@ -678,34 +715,6 @@ class PdfExportService
     }
     return items;
   }
-
-  @override
-  Future<String?> exportSetlistWithPicker(
-    LibrarySetlist setlist, {
-    required VisualExportDensity density,
-  }) async {
-    final safeName = _safePdfName(setlist.name, fallback: 'music-tabbler-set');
-    final destination = await FilePicker.platform.saveFile(
-      dialogTitle: 'Export setlist as A4 PDF',
-      fileName: '$safeName.pdf',
-      type: FileType.custom,
-      allowedExtensions: const ['pdf'],
-    );
-    if (destination == null) return null;
-    final path = destination.toLowerCase().endsWith('.pdf')
-        ? destination
-        : '$destination.pdf';
-    final bytes = await exportSetlistBytes(setlist, density: density);
-    await fileWriter.write(path, bytes);
-    return path;
-  }
-}
-
-String _displayDraftTitle(VisualChartDraft draft) {
-  final title = draft.title.trim();
-  if (title.isNotEmpty && title != 'Untitled chart') return title;
-  final artist = draft.artist.trim();
-  return artist.isEmpty ? 'Untitled chart' : artist;
 }
 
 String _safePdfName(String value, {required String fallback}) {
@@ -931,7 +940,7 @@ Map<String, Object?> _buildPerformanceDeckMessage(
         );
       } catch (error) {
         throw SetlistPdfExportException(
-          'Set item ${entryIndex + 1}, "${_displayDraftTitle(draft)}", could '
+          'Set item ${entryIndex + 1}, "${draft.displayTitle}", could '
           'not be prepared: $error',
         );
       }
@@ -986,9 +995,7 @@ Map<String, Object?> _buildPerformanceDeckMessage(
                     : null,
                 title: element.kind == PlannedSetlistElementKind.placeholder
                     ? placeholdersByEntry[element.entryIndex]
-                    : draftsByEntry[element.entryIndex] == null
-                    ? null
-                    : _displayDraftTitle(draftsByEntry[element.entryIndex]!),
+                    : draftsByEntry[element.entryIndex]?.displayTitle,
                 artist: draftsByEntry[element.entryIndex]?.artist.trim(),
                 rowIndex: element.rowIndex,
                 width: element.width,

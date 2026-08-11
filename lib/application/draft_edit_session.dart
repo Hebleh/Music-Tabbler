@@ -73,3 +73,50 @@ class DebouncedDraftAutosaver {
     await flush();
   }
 }
+
+/// Canonical owner of a visual draft's undo and autosave lifecycle.
+class VisualDraftEditSession {
+  VisualDraftEditSession({
+    required VisualChartDraft initialDraft,
+    required Future<void> Function(VisualChartDraft draft) save,
+    Duration autosaveDelay = const Duration(milliseconds: 650),
+    void Function(Object error, StackTrace stackTrace)? onSaveError,
+    int maximumUndoEntries = 50,
+  }) : _draft = initialDraft,
+       _history = DraftUndoHistory(maximumEntries: maximumUndoEntries),
+       _autosaver = DebouncedDraftAutosaver(
+         save: save,
+         delay: autosaveDelay,
+         onError: onSaveError,
+       );
+
+  VisualChartDraft _draft;
+  final DraftUndoHistory _history;
+  final DebouncedDraftAutosaver _autosaver;
+
+  VisualChartDraft get draft => _draft;
+  bool get canUndo => _history.canUndo;
+
+  VisualChartDraft commit(VisualChartDraft next, {bool recordUndo = true}) {
+    if (recordUndo) _history.record(_draft);
+    _draft = next;
+    if (_draft.strips.isNotEmpty) _autosaver.schedule(_draft);
+    return _draft;
+  }
+
+  VisualChartDraft? undo({DateTime? updatedAt}) {
+    final previous = _history.undo();
+    if (previous == null) return null;
+    return commit(
+      previous.copyWith(updatedAt: updatedAt ?? DateTime.now().toUtc()),
+      recordUndo: false,
+    );
+  }
+
+  Future<void> saveNow() {
+    _autosaver.schedule(_draft);
+    return _autosaver.flush();
+  }
+
+  Future<void> dispose() => _autosaver.dispose();
+}
