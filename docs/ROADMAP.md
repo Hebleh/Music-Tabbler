@@ -35,12 +35,13 @@ are archived in Git and release/validation documents; they are not future work.
 
 ## Next three cleanup tasks
 
-1. Split the largest presentation files by existing session boundaries after
-   adding representative visual golden coverage.
+1. Split the largest presentation files by existing session boundaries. The
+   first Windows Gig-viewport and analysis-placeholder goldens are now in
+   place; extend the relevant surface before each extraction.
 2. Split the monolithic widget regression file by product workflow without
    weakening behavior-level assertions.
-3. Add explicit cache/eviction diagnostics for very large performance decks
-   while preserving the current canonical deck builder and output.
+3. [x] Add explicit cache/eviction diagnostics for very large performance
+   decks while preserving the current canonical deck builder and output.
 
 ## Product validation
 

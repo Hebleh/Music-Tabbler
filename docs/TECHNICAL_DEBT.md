@@ -19,7 +19,9 @@ The visual editor, analysis review, transform dialog, and Gig screen remain
 large. Their coordination rules are moving into tested sessions; further
 splitting should follow those boundaries. A mechanical widget/file shuffle
 without stronger screenshot/golden coverage would move complexity rather than
-reduce it.
+reduce it. Windows goldens currently protect representative Gig viewport
+composition and analysis waiting/failure cards; each extracted surface still
+needs its own representative baseline.
 
 ## Unicode PDF headers
 

@@ -127,9 +127,8 @@ void main() {
       directory.deleteSync(recursive: true);
     });
     final now = DateTime.utc(2026, 7, 23);
-    final exporter = SetlistPdfExportService(
-      CachedPerformanceDeckBuilder(library),
-    );
+    final deckBuilder = CachedPerformanceDeckBuilder(library);
+    final exporter = SetlistPdfExportService(deckBuilder);
 
     await expectLater(
       exporter.exportSetlistBytes(
@@ -246,6 +245,8 @@ void main() {
         ),
       ),
     );
+    expect(deckBuilder.cacheDiagnostics.failureCount, 1);
+    expect(deckBuilder.cacheDiagnostics.cachedDecks, 0);
   });
 
   test('performance decks are reused until chart content changes', () async {
@@ -278,12 +279,27 @@ void main() {
       setlist,
       density: VisualExportDensity.stageReadable,
     );
+    expect(exporter.cacheDiagnostics.cachedDecks, 1);
+    expect(exporter.cacheDiagnostics.pendingDecks, 0);
+    expect(exporter.cacheDiagnostics.hitCount, 0);
+    expect(exporter.cacheDiagnostics.missCount, 1);
+    expect(exporter.cacheDiagnostics.evictionCount, 0);
+    expect(exporter.cacheDiagnostics.failureCount, 0);
+    expect(exporter.cacheDiagnostics.estimatedImageBytes, greaterThan(0));
+    expect(exporter.cacheDiagnostics.largestDeckImageBytes, greaterThan(0));
+    expect(exporter.cacheDiagnostics.pageCount, first.pages.length);
+    expect(
+      exporter.cacheDiagnostics.elementCount,
+      first.pages.fold<int>(0, (sum, page) => sum + page.elements.length),
+    );
     final second = await exporter.buildPerformanceDeck(
       setlist,
       density: VisualExportDensity.stageReadable,
     );
 
     expect(identical(second, first), isTrue);
+    expect(exporter.cacheDiagnostics.hitCount, 1);
+    expect(exporter.cacheDiagnostics.missCount, 1);
 
     await library.saveDraft(
       chart.copyWith(
@@ -305,6 +321,50 @@ void main() {
           .artist,
       'Changed artist',
     );
+    expect(exporter.cacheDiagnostics.cachedDecks, 2);
+    expect(exporter.cacheDiagnostics.hitCount, 1);
+    expect(exporter.cacheDiagnostics.missCount, 2);
+  });
+
+  test('performance deck cache reports least-recent eviction', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_performance_cache_eviction_',
+    );
+    final library = await LocalLibrary.forTesting(directory);
+    addTearDown(() {
+      library.close();
+      directory.deleteSync(recursive: true);
+    });
+    final exporter = CachedPerformanceDeckBuilder(library);
+    final now = DateTime.utc(2026, 8, 11);
+
+    for (var index = 0; index < 4; index += 1) {
+      await exporter.buildPerformanceDeck(
+        LibrarySetlist(
+          id: 'cache-set-$index',
+          name: 'Cache set $index',
+          createdAt: now,
+          updatedAt: now,
+          entries: [
+            LibrarySetlistEntry.placeholder(
+              id: 'placeholder-$index',
+              title: 'Placeholder $index',
+            ),
+          ],
+        ),
+        density: VisualExportDensity.original,
+      );
+    }
+
+    final diagnostics = exporter.cacheDiagnostics;
+    expect(diagnostics.cachedDecks, 3);
+    expect(diagnostics.pendingDecks, 0);
+    expect(diagnostics.hitCount, 0);
+    expect(diagnostics.missCount, 4);
+    expect(diagnostics.evictionCount, 1);
+    expect(diagnostics.failureCount, 0);
+    expect(diagnostics.pageCount, 3);
+    expect(diagnostics.elementCount, greaterThanOrEqualTo(3));
   });
 
   test('one setlist density controls every A4 page orientation', () async {

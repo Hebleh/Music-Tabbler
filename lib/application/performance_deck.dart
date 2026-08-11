@@ -214,6 +214,32 @@ class PerformanceDeck {
   }
 }
 
+class PerformanceDeckCacheDiagnostics {
+  const PerformanceDeckCacheDiagnostics({
+    required this.cachedDecks,
+    required this.pendingDecks,
+    required this.hitCount,
+    required this.missCount,
+    required this.evictionCount,
+    required this.failureCount,
+    required this.estimatedImageBytes,
+    required this.largestDeckImageBytes,
+    required this.pageCount,
+    required this.elementCount,
+  });
+
+  final int cachedDecks;
+  final int pendingDecks;
+  final int hitCount;
+  final int missCount;
+  final int evictionCount;
+  final int failureCount;
+  final int estimatedImageBytes;
+  final int largestDeckImageBytes;
+  final int pageCount;
+  final int elementCount;
+}
+
 class PerformanceDeckCursor {
   const PerformanceDeckCursor({required this.pageCount, this.pageIndex = 0})
     : assert(pageCount >= 0),

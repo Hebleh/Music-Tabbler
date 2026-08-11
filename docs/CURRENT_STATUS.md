@@ -4,10 +4,9 @@ Updated: 11 August 2026
 
 ## Repository state
 
-- `master` and `refractor` share the verified visual-first checkpoint
-  `17aace3`; `master` was fast-forwarded and pushed without force.
-- The architecture cleanup is being completed on `refractor`. GitHub's remote
-  default branch has not been changed.
+- `master` remains at the verified visual-first checkpoint `17aace3`.
+  `refractor` contains the semantic-retirement refactor and subsequent focused
+  cleanup; GitHub's remote default branch has not been changed.
 - `music-tabbler-library.mtstate`, coverage output, build products, and local
   user data are not repository inputs. The tracked refactor must not alter the
   user's state file.
@@ -61,6 +60,10 @@ not active features and are not retained as dormant runtime code.
   non-widget rules.
 - `VisualChartPdfExporter`, `CachedPerformanceDeckBuilder`, and
   `SetlistPdfExportService` replace the former triple-purpose PDF service.
+- `CachedPerformanceDeckBuilder.cacheDiagnostics` reports cache hits, misses,
+  evictions, failures, pending entries, retained page/element counts, and
+  estimated retained image bytes without changing the three-deck LRU policy or
+  rendered output.
 
 ## Verification state
 
@@ -68,8 +71,10 @@ The protected pre-refactor baseline was 268 passing tests, clean strict
 analysis, and 72.3% line coverage. Semantic-only tests were intentionally
 removed with the product subsystem. Migration, legacy archive, title,
 edit-session, Gig viewport/annotation, OCR review, PDF, and widget tests protect
-the active behavior. The final visual-only suite passes 228/228 with clean
-strict analysis and 70.9% line coverage.
+the active behavior. Windows visual goldens now protect representative Gig
+viewport composition and analysis waiting/failure states before further
+presentation extraction. The current visual-only suite passes 231/231 with
+clean strict analysis and 71.1% line coverage (7,115 of 10,014 lines).
 
 ## Intentionally unchanged
 

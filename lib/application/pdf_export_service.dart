@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -563,9 +564,43 @@ class CachedPerformanceDeckBuilder implements PerformanceDeckBuilder {
   CachedPerformanceDeckBuilder(this.library);
 
   final ChartLibrary library;
-  final Map<String, Future<PerformanceDeck>> _performanceDeckCache = {};
+  final Map<String, _CachedPerformanceDeck> _performanceDeckCache = {};
+
+  int _cacheHits = 0;
+  int _cacheMisses = 0;
+  int _cacheEvictions = 0;
+  int _cacheFailures = 0;
 
   static const _maximumCachedDecks = 3;
+
+  PerformanceDeckCacheDiagnostics get cacheDiagnostics {
+    var pendingDecks = 0;
+    var estimatedImageBytes = 0;
+    var largestDeckImageBytes = 0;
+    var pageCount = 0;
+    var elementCount = 0;
+    for (final entry in _performanceDeckCache.values) {
+      if (!entry.isResolved) pendingDecks += 1;
+      estimatedImageBytes += entry.estimatedImageBytes;
+      if (entry.estimatedImageBytes > largestDeckImageBytes) {
+        largestDeckImageBytes = entry.estimatedImageBytes;
+      }
+      pageCount += entry.pageCount;
+      elementCount += entry.elementCount;
+    }
+    return PerformanceDeckCacheDiagnostics(
+      cachedDecks: _performanceDeckCache.length,
+      pendingDecks: pendingDecks,
+      hitCount: _cacheHits,
+      missCount: _cacheMisses,
+      evictionCount: _cacheEvictions,
+      failureCount: _cacheFailures,
+      estimatedImageBytes: estimatedImageBytes,
+      largestDeckImageBytes: largestDeckImageBytes,
+      pageCount: pageCount,
+      elementCount: elementCount,
+    );
+  }
 
   @override
   Future<PerformanceDeck> buildPerformanceDeck(
@@ -576,27 +611,33 @@ class CachedPerformanceDeckBuilder implements PerformanceDeckBuilder {
     final cacheKey = await _performanceDeckCacheKey(setlist, density, items);
     final cached = _performanceDeckCache.remove(cacheKey);
     if (cached != null) {
+      _cacheHits += 1;
       _performanceDeckCache[cacheKey] = cached;
-      return cached;
+      return cached.future;
     }
+    _cacheMisses += 1;
     final future = _createPerformanceDeck(setlist, density, items);
-    _performanceDeckCache[cacheKey] = future;
+    final entry = _CachedPerformanceDeck(future);
+    _performanceDeckCache[cacheKey] = entry;
     while (_performanceDeckCache.length > _maximumCachedDecks) {
       _performanceDeckCache.remove(_performanceDeckCache.keys.first);
+      _cacheEvictions += 1;
     }
-    future.catchError((Object _) {
-      _performanceDeckCache.remove(cacheKey);
-      return PerformanceDeck(
-        setlistId: setlist.id,
-        setlistName: setlist.name,
-        density: density,
-        pageWidth: 0,
-        pageHeight: 0,
-        margin: 0,
-        gap: 0,
-        pages: const [],
-      );
-    });
+    unawaited(
+      future.then<void>(
+        (deck) {
+          if (identical(_performanceDeckCache[cacheKey], entry)) {
+            entry.record(deck);
+          }
+        },
+        onError: (Object _, StackTrace _) {
+          if (identical(_performanceDeckCache[cacheKey], entry)) {
+            _performanceDeckCache.remove(cacheKey);
+          }
+          _cacheFailures += 1;
+        },
+      ),
+    );
     return future;
   }
 
@@ -714,6 +755,27 @@ class CachedPerformanceDeckBuilder implements PerformanceDeckBuilder {
       });
     }
     return items;
+  }
+}
+
+class _CachedPerformanceDeck {
+  _CachedPerformanceDeck(this.future);
+
+  final Future<PerformanceDeck> future;
+  bool isResolved = false;
+  int estimatedImageBytes = 0;
+  int pageCount = 0;
+  int elementCount = 0;
+
+  void record(PerformanceDeck deck) {
+    isResolved = true;
+    pageCount = deck.pages.length;
+    for (final page in deck.pages) {
+      elementCount += page.elements.length;
+      for (final element in page.elements) {
+        estimatedImageBytes += element.imageBytes?.lengthInBytes ?? 0;
+      }
+    }
   }
 }
 
