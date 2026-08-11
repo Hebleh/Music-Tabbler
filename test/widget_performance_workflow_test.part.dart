@@ -136,6 +136,39 @@ void _registerPerformanceWorkflowTests() {
   });
 
   testWidgets(
+    'gig mode toolbar keeps its unlocked stage controls',
+    (tester) async {
+      final library = _FakeLibrary()..setlists.add(_setlist('set-1', 'Gig'));
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MusicTabblerApp(
+          services: await _testServices(
+            library: library,
+            performanceDeckBuilder: _RecordingPerformanceDeckBuilder(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _openGigs(tester);
+      await tester.tap(find.text('Gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Start gig mode'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Stage readable'));
+      await tester.pumpAndSettle();
+
+      await expectLater(
+        find.byType(Scaffold).last,
+        matchesGoldenFile('goldens/windows/gig_mode_toolbar.png'),
+      );
+    },
+    skip: !Platform.isWindows,
+  );
+
+  testWidgets(
     'gig mode setlist drawer keeps its stage navigation shell',
     (tester) async {
       final library = _FakeLibrary()..setlists.add(_setlist('set-1', 'Gig'));

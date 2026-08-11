@@ -47,7 +47,7 @@ successful backup, backup failure without mutation, and idempotent reopen.
 Legacy container tests cover mixed and semantic-only imports plus malformed
 payloads that never modify installed state.
 
-Current automated gate: 233/233 active tests pass, strict `flutter analyze` is
+Current automated gate: 234/234 active tests pass, strict `flutter analyze` is
 clean, and the most recent measured line coverage is 71.2% (7,152 of 10,049
 lines). Representative
 single-chart portrait A4 and four-page setlist landscape A4 PDFs were rendered
@@ -87,10 +87,10 @@ Use the development launcher only for smoke testing; do not package a release.
 - Analysis canvas, row list, toolbar, and inspector rendering are split from
   review coordination. Windows goldens now protect representative Gig viewport
   composition, the open Gig setlist drawer, analysis waiting/failure cards, and
-  the complete analysis review layout. The Gig setlist drawer is isolated from
-  route/session coordination. Extend the relevant visual baseline before each
-  remaining presentation extraction; avoid a mechanical shuffle that only
-  relocates complexity.
+  the unlocked Gig toolbar, and the complete analysis review layout. The Gig
+  setlist drawer and zoom controls are isolated from route/session coordination.
+  Extend the relevant visual baseline before each remaining presentation
+  extraction; avoid a mechanical shuffle that only relocates complexity.
 - Gig annotation persistence, deck patching, and one-step undo now live in
   `GigAnnotationSession`; stroke capture and dialogs remain presentation work.
 - The canonical cached performance-deck builder exposes local cache diagnostics

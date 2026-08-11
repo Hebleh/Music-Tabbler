@@ -72,10 +72,10 @@ analysis, and 72.3% line coverage. Semantic-only tests were intentionally
 removed with the product subsystem. Migration, legacy archive, title,
 edit-session, Gig viewport/annotation, OCR review, PDF, and widget tests protect
 the active behavior. Windows visual goldens now protect representative Gig
-viewport composition, the open Gig setlist drawer, and analysis waiting/failure
-states before further presentation extraction. The current visual-only suite
-passes 233/233 with clean strict analysis. The most recent measured line
-coverage remains 71.2% (7,152 of 10,049 lines).
+viewport composition, the open Gig setlist drawer, the unlocked Gig toolbar,
+and analysis waiting/failure states before further presentation extraction.
+The current visual-only suite passes 234/234 with clean strict analysis. The
+most recent measured line coverage remains 71.2% (7,152 of 10,049 lines).
 
 ## Intentionally unchanged
 

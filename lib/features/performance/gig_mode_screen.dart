@@ -14,6 +14,7 @@ import '../../domain/device_preferences.dart';
 import '../../domain/library_models.dart';
 import '../../domain/visual_chart_models.dart';
 import 'gig_setlist_drawer.dart';
+import 'gig_zoom_controls.dart';
 import 'performance_preview_screen.dart';
 
 class GigModeScreen extends StatefulWidget {
@@ -514,6 +515,67 @@ class _GigModeScreenState extends State<GigModeScreen>
     await widget.services.preferences.save(current.copyWith(gigTheme: value));
   }
 
+  void _updateSongZoom({
+    required double value,
+    required PerformanceDeck deck,
+    required GigViewportPage page,
+    required double viewportWidth,
+    required double viewportHeight,
+  }) {
+    final anchor = page.items
+        .where((item) => item.element.kind == PerformanceElementKind.strip)
+        .firstOrNull
+        ?.element;
+    final zooms = {..._viewport.songZoomByEntry, page.entryId: value};
+    final reflowed = const GigViewportLayout().plan(
+      deck: deck,
+      viewportWidth: viewportWidth,
+      viewportHeight: viewportHeight,
+      zoom: _viewport.setWideZoom,
+      zoomByEntry: zooms,
+      alignment: _viewport.alignment,
+    );
+    final target = gigPageIndexForAnchor(
+      reflowed,
+      entryId: page.entryId,
+      sourceStripId: anchor?.sourceStripId,
+      rowIndex: anchor?.rowIndex,
+    );
+    setState(() {
+      _viewport.setSongZoom(page.entryId, value, anchorPage: target);
+    });
+  }
+
+  void _updateSetWideZoom({
+    required double value,
+    required PerformanceDeck deck,
+    required GigViewportPage page,
+    required double viewportWidth,
+    required double viewportHeight,
+  }) {
+    final anchor = page.items
+        .where((item) => item.element.kind == PerformanceElementKind.strip)
+        .firstOrNull
+        ?.element;
+    final reflowed = const GigViewportLayout().plan(
+      deck: deck,
+      viewportWidth: viewportWidth,
+      viewportHeight: viewportHeight,
+      zoom: value,
+      zoomByEntry: _viewport.songZoomByEntry,
+      alignment: _viewport.alignment,
+    );
+    final target = gigPageIndexForAnchor(
+      reflowed,
+      entryId: page.entryId,
+      sourceStripId: anchor?.sourceStripId,
+      rowIndex: anchor?.rowIndex,
+    );
+    setState(() {
+      _viewport.updateSetWideZoom(value, anchorPage: target);
+    });
+  }
+
   Future<void> _exit() async {
     if (_exiting) return;
     _exiting = true;
@@ -749,163 +811,29 @@ class _GigModeScreenState extends State<GigModeScreen>
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Row(
-                                    children: [
-                                      const SizedBox(
-                                        width: 88,
-                                        child: Padding(
-                                          padding: EdgeInsets.only(left: 12),
-                                          child: Text(
-                                            'This song',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                            ),
-                                          ),
+                                  GigZoomControls(
+                                    songZoom: _viewport.zoomForEntry(
+                                      page.entryId,
+                                    ),
+                                    setWideZoom: _viewport.setWideZoom,
+                                    onSongZoomChanged: (value) =>
+                                        _updateSongZoom(
+                                          value: value,
+                                          deck: deck,
+                                          page: page,
+                                          viewportWidth: viewportWidth,
+                                          viewportHeight: viewportHeight,
                                         ),
-                                      ),
-                                      Expanded(
-                                        child: Slider(
-                                          key: const Key(
-                                            'gig-song-zoom-slider',
-                                          ),
-                                          value: _viewport.zoomForEntry(
-                                            page.entryId,
-                                          ),
-                                          min: 0.45,
-                                          max: 1.5,
-                                          divisions: 21,
-                                          label:
-                                              '${(_viewport.zoomForEntry(page.entryId) * 100).round()}%',
-                                          onChanged: (value) {
-                                            final anchor = page.items
-                                                .where(
-                                                  (item) =>
-                                                      item.element.kind ==
-                                                      PerformanceElementKind
-                                                          .strip,
-                                                )
-                                                .firstOrNull
-                                                ?.element;
-                                            final zooms = {
-                                              ..._viewport.songZoomByEntry,
-                                              page.entryId: value,
-                                            };
-                                            final reflowed =
-                                                const GigViewportLayout().plan(
-                                                  deck: deck,
-                                                  viewportWidth: viewportWidth,
-                                                  viewportHeight:
-                                                      viewportHeight,
-                                                  zoom: _viewport.setWideZoom,
-                                                  zoomByEntry: zooms,
-                                                  alignment:
-                                                      _viewport.alignment,
-                                                );
-                                            final target =
-                                                gigPageIndexForAnchor(
-                                                  reflowed,
-                                                  entryId: page.entryId,
-                                                  sourceStripId:
-                                                      anchor?.sourceStripId,
-                                                  rowIndex: anchor?.rowIndex,
-                                                );
-                                            setState(() {
-                                              _viewport.setSongZoom(
-                                                page.entryId,
-                                                value,
-                                                anchorPage: target,
-                                              );
-                                            });
-                                          },
+                                    onSetWideZoomChanged: (value) =>
+                                        _updateSetWideZoom(
+                                          value: value,
+                                          deck: deck,
+                                          page: page,
+                                          viewportWidth: viewportWidth,
+                                          viewportHeight: viewportHeight,
                                         ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                    ],
-                                  ),
-                                  Row(
-                                    children: [
-                                      const SizedBox(
-                                        width: 88,
-                                        child: Padding(
-                                          padding: EdgeInsets.only(left: 12),
-                                          child: Text(
-                                            'Whole set',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const Icon(
-                                        Icons.zoom_out,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                      Expanded(
-                                        child: Slider(
-                                          key: const Key('gig-zoom-slider'),
-                                          value: _viewport.setWideZoom,
-                                          min: 0.45,
-                                          max: 1.5,
-                                          divisions: 21,
-                                          label:
-                                              '${(_viewport.setWideZoom * 100).round()}%',
-                                          onChanged: (value) {
-                                            final anchor = page.items
-                                                .where(
-                                                  (item) =>
-                                                      item.element.kind ==
-                                                      PerformanceElementKind
-                                                          .strip,
-                                                )
-                                                .firstOrNull
-                                                ?.element;
-                                            final reflowed =
-                                                const GigViewportLayout().plan(
-                                                  deck: deck,
-                                                  viewportWidth: viewportWidth,
-                                                  viewportHeight:
-                                                      viewportHeight,
-                                                  zoom: value,
-                                                  zoomByEntry:
-                                                      _viewport.songZoomByEntry,
-                                                  alignment:
-                                                      _viewport.alignment,
-                                                );
-                                            final target =
-                                                gigPageIndexForAnchor(
-                                                  reflowed,
-                                                  entryId: page.entryId,
-                                                  sourceStripId:
-                                                      anchor?.sourceStripId,
-                                                  rowIndex: anchor?.rowIndex,
-                                                );
-                                            setState(() {
-                                              _viewport.updateSetWideZoom(
-                                                value,
-                                                anchorPage: target,
-                                              );
-                                            });
-                                          },
-                                          onChangeEnd: (value) =>
-                                              unawaited(_saveGigZoom(value)),
-                                        ),
-                                      ),
-                                      const Icon(
-                                        Icons.zoom_in,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                      SizedBox(
-                                        width: 112,
-                                        child: Text(
-                                          '${(_viewport.setWideZoom * 100).round()}% zoom',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                    onSetWideZoomChangeEnd: (value) =>
+                                        unawaited(_saveGigZoom(value)),
                                   ),
                                   SingleChildScrollView(
                                     scrollDirection: Axis.horizontal,
