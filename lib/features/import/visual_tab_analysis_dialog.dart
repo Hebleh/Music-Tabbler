@@ -97,7 +97,7 @@ class _VisualTabAnalysisReviewScreenState
 
   Future<void> _run() async {
     for (var index = 0; index < widget.strips.length; index += 1) {
-      await _analyzeIndex(index);
+      await _analyzeIndex(index, preferPositionedPdf: false);
       if (!mounted) return;
     }
   }

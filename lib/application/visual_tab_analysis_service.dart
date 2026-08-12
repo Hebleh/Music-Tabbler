@@ -18,6 +18,25 @@ abstract interface class VisualTabAnalyzer {
   });
 }
 
+class VisualTabStringCountGuess {
+  const VisualTabStringCountGuess({
+    required this.stringCount,
+    required this.geometryConfidence,
+    required this.detectedBarLines,
+    this.warning,
+  });
+
+  final int? stringCount;
+  final double geometryConfidence;
+  final int detectedBarLines;
+  final String? warning;
+
+  bool get rasterLikelyUsable =>
+      stringCount != null &&
+      geometryConfidence >= 0.80 &&
+      detectedBarLines >= 2;
+}
+
 class VisualTabAnalysisService implements VisualTabAnalyzer {
   VisualTabAnalysisService({
     required this.library,
@@ -30,36 +49,56 @@ class VisualTabAnalysisService implements VisualTabAnalyzer {
   final Map<String, Future<img.Image>> _geometryImageCache = {};
   static bool _pdfInitialized = false;
 
+  /// Uses the normal raster geometry detector on one source row to provide an
+  /// editable early warning before the full OCR review starts.
+  Future<VisualTabStringCountGuess> guessSourceStringCount(
+    VisualStrip strip,
+  ) async {
+    try {
+      final geometry = await _geometryForStrip(strip);
+      if (geometry.systems.isEmpty) {
+        return VisualTabStringCountGuess(
+          stringCount: null,
+          geometryConfidence: 0,
+          detectedBarLines: 0,
+          warning:
+              geometry.warnings.firstOrNull ??
+              'Raster geometry did not find a tab system in Row 1.',
+        );
+      }
+      final system = geometry.systems.first;
+      return VisualTabStringCountGuess(
+        stringCount: system.stringLines.length,
+        geometryConfidence: system.confidence,
+        detectedBarLines: system.barLines.length,
+        warning: geometry.systems.length > 1
+            ? 'Row 1 contains multiple tab systems; the first system was used.'
+            : null,
+      );
+    } catch (_) {
+      return const VisualTabStringCountGuess(
+        stringCount: null,
+        geometryConfidence: 0,
+        detectedBarLines: 0,
+        warning: 'Raster preview could not read Row 1.',
+      );
+    }
+  }
+
   @override
   Future<VisualTabAnalysis> analyze(
     VisualStrip strip, {
     required int sourceStringCount,
     bool preferPositionedPdf = true,
   }) async {
-    if (sourceStringCount < 2 || sourceStringCount > 12) {
+    if (!isSupportedVisualTabStringCount(sourceStringCount)) {
       throw const FormatException('Source tuning needs 2 to 12 strings.');
     }
     final deskewed = strip.deskewDegrees.abs() >= 0.0001;
-    final geometry = deskewed
-        ? detectVisualTabGeometry(
-            const VisualImageProcessor().process(
-              await File(
-                library.assetPath(strip.assetHash, strip.assetExtension),
-              ).readAsBytes(),
-              strip.copyWith(
-                treatment: VisualTreatment.original,
-                lyricContrast: 1,
-                highlights: const [],
-              ),
-            ),
-            crop: const NormalizedRect.full(),
-            expectedStringCount: sourceStringCount,
-          )
-        : detectVisualTabGeometryFromImage(
-            await _analysisImage(strip),
-            crop: strip.crop,
-            expectedStringCount: sourceStringCount,
-          );
+    final geometry = await _geometryForStrip(
+      strip,
+      expectedStringCount: sourceStringCount,
+    );
 
     if (preferPositionedPdf &&
         !deskewed &&
@@ -120,6 +159,40 @@ class VisualTabAnalysisService implements VisualTabAnalyzer {
         'Raster OCR was supplemented with positioned PDF text for measure '
             'labels and other selectable PDF text.',
       ],
+    );
+  }
+
+  Future<VisualTabGeometry> _geometryForStrip(
+    VisualStrip strip, {
+    int? expectedStringCount,
+  }) async {
+    final deskewed = strip.deskewDegrees.abs() >= 0.0001;
+    if (deskewed) {
+      final bytes = const VisualImageProcessor().process(
+        await File(
+          library.assetPath(strip.assetHash, strip.assetExtension),
+        ).readAsBytes(),
+        strip.copyWith(
+          treatment: VisualTreatment.original,
+          lyricContrast: 1,
+          highlights: const [],
+        ),
+      );
+      return expectedStringCount == null
+          ? detectVisualTabGeometryAnyStringCount(
+              bytes,
+              crop: const NormalizedRect.full(),
+            )
+          : detectVisualTabGeometry(
+              bytes,
+              crop: const NormalizedRect.full(),
+              expectedStringCount: expectedStringCount,
+            );
+    }
+    return _detectVisualTabGeometryFromImage(
+      await _analysisImage(strip),
+      crop: strip.crop,
+      expectedStringCount: expectedStringCount,
     );
   }
 
@@ -550,11 +623,30 @@ Future<MetadataSuggestion> _recognizeTabGlyphCandidates(
       confidence: region.confidence,
     );
   }
+  final rawClassifications = <({String label, double confidence})?>[
+    for (final candidate in candidates)
+      _classifyParenthesizedRasterGlyph(candidate.image) ??
+          _classifySeparatedRasterDigits(candidate.image) ??
+          _classifyNarrowRasterOne(candidate.image) ??
+          _classifyRasterGlyph(candidate.image),
+  ];
+  final repeatedClassifications = _stabilizeRepeatedRasterGlyphs(
+    candidates,
+    rawClassifications,
+    nativeLabels,
+  );
+  final chordClassifications = _stabilizeRasterChordColumns(
+    candidates,
+    repeatedClassifications,
+    nativeLabels,
+  );
+  final classifications = _stabilizeRasterSustainColumns(
+    candidates,
+    chordClassifications,
+    nativeLabels,
+  );
   for (var index = 0; index < candidates.length; index += 1) {
-    final classified =
-        _classifyParenthesizedRasterGlyph(candidates[index].image) ??
-        _classifySeparatedRasterDigits(candidates[index].image) ??
-        _classifyRasterGlyph(candidates[index].image);
+    final classified = classifications[index];
     final native = nativeLabels[index];
     final nativeLabel = native?.label;
     if (classified == null && nativeLabel == null) continue;
@@ -567,14 +659,22 @@ Future<MetadataSuggestion> _recognizeTabGlyphCandidates(
         classified != null &&
         nativeLabel != null &&
         classifiedBare!.toUpperCase() == nativeBare!.toUpperCase();
-    // Prefer the deterministic image classifier when the two disagree. The
-    // Windows OCR engine repeatedly labels every compact Songsterr 5 and 9 as
-    // 7 even at high resolution; agreement is still a useful confidence
-    // boost, while a platform-only result remains the final fallback.
+    // Prefer the deterministic image classifier only when it is itself
+    // confident. The Windows OCR engine repeatedly labels compact Songsterr 5
+    // and 9 glyphs as 7, but low-confidence deterministic guesses on tightly
+    // spaced multi-string chords must not override a stronger native result.
+    const deterministicDisagreementThreshold = 0.72;
+    final preferNativeDisagreement =
+        !agrees &&
+        classified != null &&
+        nativeLabel != null &&
+        classified.confidence < deterministicDisagreementThreshold;
     final label = parenthesizedCandidate && nativeFret
         ? '($nativeBare)'
         : agrees
         ? (classified.label.startsWith('(') ? '($nativeBare)' : nativeLabel)
+        : preferNativeDisagreement
+        ? nativeLabel
         : classified?.label ?? nativeLabel!;
     final normalizedGlyph = _normalizeRasterGlyph(candidates[index].image);
     if (normalizedGlyph != null) {
@@ -591,6 +691,8 @@ Future<MetadataSuggestion> _recognizeTabGlyphCandidates(
         ? math.max(0.72, native!.confidence.clamp(0.0, 1.0).toDouble())
         : agrees
         ? math.max(0.82, math.max(classified.confidence, native!.confidence))
+        : preferNativeDisagreement
+        ? native!.confidence.clamp(0.0, 1.0).toDouble()
         : classified?.confidence ??
               native!.confidence.clamp(0.0, 1.0).toDouble();
     regions.add(
@@ -602,6 +704,328 @@ Future<MetadataSuggestion> _recognizeTabGlyphCandidates(
     );
   }
   return MetadataSuggestion(regions: regions);
+}
+
+List<({String label, double confidence})?> _stabilizeRepeatedRasterGlyphs(
+  List<_RasterGlyphCandidate> candidates,
+  List<({String label, double confidence})?> classifications,
+  Map<int, ({String label, double confidence})> nativeLabels,
+) {
+  const reliableConfidence = 0.72;
+  const minimumReliablePeerSimilarity = 0.82;
+  const minimumRepeatedPeerSimilarity = 0.64;
+  final normalized = [
+    for (final candidate in candidates) _normalizeRasterGlyph(candidate.image),
+  ];
+  return [
+    for (var index = 0; index < candidates.length; index += 1)
+      () {
+        final current = classifications[index];
+        if (current != null && current.confidence >= reliableConfidence) {
+          return current;
+        }
+        ({String label, double confidence})? bestAnchor;
+        var bestSimilarity = 0.0;
+        final currentGlyph = normalized[index];
+        if (currentGlyph == null) return current;
+        for (var peerIndex = 0; peerIndex < candidates.length; peerIndex += 1) {
+          if (peerIndex == index) continue;
+          final peer = nativeLabels[peerIndex] ?? classifications[peerIndex];
+          final peerGlyph = normalized[peerIndex];
+          if (peer == null ||
+              peer.confidence < reliableConfidence ||
+              peerGlyph == null ||
+              (currentGlyph.aspectRatio - peerGlyph.aspectRatio).abs() > 0.16) {
+            continue;
+          }
+          final similarity = _glyphDice(currentGlyph.mask, peerGlyph.mask);
+          if (similarity < minimumReliablePeerSimilarity ||
+              similarity <= bestSimilarity) {
+            continue;
+          }
+          bestAnchor = peer;
+          bestSimilarity = similarity;
+        }
+        if (bestAnchor != null) {
+          return (
+            label: bestAnchor.label,
+            confidence: math.max(
+              reliableConfidence,
+              math.min(0.92, bestAnchor.confidence * bestSimilarity),
+            ),
+          );
+        }
+
+        // A slide or tie can deform a real fret enough to lower bitmap
+        // similarity even though the deterministic classifier still reads
+        // the correct digit. Recover only a locally repeated label bracketed
+        // by reliable peers on the same string. Requiring agreement on both
+        // sides prevents an isolated curve fragment from becoming a note.
+        final currentBare = current?.label.replaceAll(RegExp(r'[()]'), '');
+        if (current != null &&
+            current.confidence >= 0.35 &&
+            currentBare != null &&
+            RegExp(r'^\d{1,2}$').hasMatch(currentBare)) {
+          final currentCenterX =
+              (candidates[index].rect.left + candidates[index].rect.right) / 2;
+          var matchingPeerBefore = false;
+          var matchingPeerAfter = false;
+          for (
+            var peerIndex = 0;
+            peerIndex < candidates.length;
+            peerIndex += 1
+          ) {
+            if (peerIndex == index ||
+                candidates[peerIndex].lineIndex !=
+                    candidates[index].lineIndex) {
+              continue;
+            }
+            final peer = nativeLabels[peerIndex] ?? classifications[peerIndex];
+            if (peer == null || peer.confidence < 0.62) continue;
+            final peerBare = peer.label.replaceAll(RegExp(r'[()]'), '');
+            if (peerBare != currentBare) continue;
+            final peerCenterX =
+                (candidates[peerIndex].rect.left +
+                    candidates[peerIndex].rect.right) /
+                2;
+            final distance = peerCenterX - currentCenterX;
+            if (distance.abs() > 0.20) continue;
+            if (distance < 0) matchingPeerBefore = true;
+            if (distance > 0) matchingPeerAfter = true;
+          }
+          if (matchingPeerBefore && matchingPeerAfter) {
+            return (label: current.label, confidence: 0.70);
+          }
+        }
+
+        // A repeated run can be more reliable than any one tiny OCR crop.
+        // This is common in dense 7/8-string sources where the same narrow
+        // fret is drawn dozens of times, but it is independent of the actual
+        // string count and label. Promote only a visually coherent family
+        // with a clear label majority; mixed passages remain untouched.
+        final votes = <String, double>{};
+        final peerCounts = <String, int>{};
+        for (var peerIndex = 0; peerIndex < candidates.length; peerIndex += 1) {
+          final peer = nativeLabels[peerIndex] ?? classifications[peerIndex];
+          final peerGlyph = normalized[peerIndex];
+          if (peer == null || peerGlyph == null) continue;
+          if ((currentGlyph.aspectRatio - peerGlyph.aspectRatio).abs() > 0.18) {
+            continue;
+          }
+          final similarity = _glyphDice(currentGlyph.mask, peerGlyph.mask);
+          if (similarity < minimumRepeatedPeerSimilarity) continue;
+          final bare = peer.label.replaceAll(RegExp(r'[()]'), '');
+          if (!RegExp(
+            r'^(?:\d{1,2}|X)$',
+            caseSensitive: false,
+          ).hasMatch(bare)) {
+            continue;
+          }
+          final label = peer.label.toUpperCase();
+          votes[label] = (votes[label] ?? 0) + math.max(0.15, peer.confidence);
+          peerCounts[label] = (peerCounts[label] ?? 0) + 1;
+        }
+        if (votes.isEmpty) return current;
+        final ranked = votes.entries.toList()
+          ..sort((left, right) => right.value.compareTo(left.value));
+        final winner = ranked.first;
+        final totalWeight = votes.values.reduce((left, right) => left + right);
+        final winnerCount = peerCounts[winner.key] ?? 0;
+        if (winnerCount < 3 || winner.value / totalWeight < 0.70) {
+          // Slides and tie endpoints can distort a very narrow digit enough
+          // to defeat bitmap similarity. Use the dominant narrow glyph on
+          // the same string only when a long, unambiguous repeated run exists.
+          // Wider glyphs are deliberately excluded so a terminal 3/5/7 in a
+          // repeated run is never rewritten to match its neighbours.
+          if (currentGlyph.aspectRatio > 0.50) return current;
+          final lineVotes = <String, int>{};
+          var eligiblePeers = 0;
+          final currentCenterX =
+              (candidates[index].rect.left + candidates[index].rect.right) / 2;
+          for (
+            var peerIndex = 0;
+            peerIndex < candidates.length;
+            peerIndex += 1
+          ) {
+            if (candidates[peerIndex].lineIndex !=
+                candidates[index].lineIndex) {
+              continue;
+            }
+            final peerCenterX =
+                (candidates[peerIndex].rect.left +
+                    candidates[peerIndex].rect.right) /
+                2;
+            if ((peerCenterX - currentCenterX).abs() > 0.20) continue;
+            final peer = nativeLabels[peerIndex] ?? classifications[peerIndex];
+            final peerGlyph = normalized[peerIndex];
+            if (peer == null ||
+                peerGlyph == null ||
+                peerGlyph.aspectRatio > 0.55 ||
+                !RegExp(r'^\d$').hasMatch(peer.label)) {
+              continue;
+            }
+            eligiblePeers += 1;
+            lineVotes[peer.label] = (lineVotes[peer.label] ?? 0) + 1;
+          }
+          if (lineVotes.isEmpty) return current;
+          final lineWinner = lineVotes.entries.toList()
+            ..sort((left, right) => right.value.compareTo(left.value));
+          if (lineWinner.first.value < 5 ||
+              lineWinner.first.value / eligiblePeers < 0.75) {
+            return current;
+          }
+          return (label: lineWinner.first.key, confidence: 0.70);
+        }
+        return (
+          label: winner.key,
+          // Strong enough to surface as an editable proposal, but below the
+          // native-OCR disagreement threshold so a platform reading can still
+          // correct a rare different note at the end of the run.
+          confidence: math.min(0.71, 0.66 + winnerCount * 0.005),
+        );
+      }(),
+  ];
+}
+
+bool _rasterCandidatesAreColumnAligned(
+  List<_RasterGlyphCandidate> candidates,
+  int index,
+  int peerIndex,
+) {
+  final candidate = candidates[index];
+  final peerCandidate = candidates[peerIndex];
+  final centerX = (candidate.rect.left + candidate.rect.right) / 2;
+  final peerCenterX = (peerCandidate.rect.left + peerCandidate.rect.right) / 2;
+  final tolerance =
+      math.max(candidate.rect.width, peerCandidate.rect.width) * 0.75 + 0.0015;
+  return (peerCenterX - centerX).abs() <= tolerance;
+}
+
+List<({String label, double confidence})?> _stabilizeRasterChordColumns(
+  List<_RasterGlyphCandidate> candidates,
+  List<({String label, double confidence})?> classifications,
+  Map<int, ({String label, double confidence})> nativeLabels,
+) {
+  return [
+    for (var index = 0; index < candidates.length; index += 1)
+      () {
+        final current = classifications[index] ?? nativeLabels[index];
+        if (current == null || current.confidence >= 0.62) return current;
+        final bare = current.label.replaceAll(RegExp(r'[()]'), '');
+        if (current.confidence < 0.35 || !RegExp(r'^\d{1,2}$').hasMatch(bare)) {
+          return current;
+        }
+        final alignedLines = <int>{candidates[index].lineIndex};
+        for (var peerIndex = 0; peerIndex < candidates.length; peerIndex += 1) {
+          if (peerIndex == index ||
+              candidates[peerIndex].lineIndex == candidates[index].lineIndex ||
+              !_rasterCandidatesAreColumnAligned(
+                candidates,
+                index,
+                peerIndex,
+              )) {
+            continue;
+          }
+          final peer = classifications[peerIndex] ?? nativeLabels[peerIndex];
+          if (peer == null || peer.confidence < 0.62) continue;
+          final peerBare = peer.label.replaceAll(RegExp(r'[()]'), '');
+          if (!RegExp(r'^\d{1,2}$').hasMatch(peerBare)) continue;
+          alignedLines.add(candidates[peerIndex].lineIndex);
+        }
+        if (alignedLines.length < 3) return current;
+        final sortedLines = alignedLines.toList()..sort();
+        final hasConsecutiveThree = [
+          for (var start = 0; start <= sortedLines.length - 3; start += 1)
+            sortedLines[start + 1] == sortedLines[start] + 1 &&
+                sortedLines[start + 2] == sortedLines[start] + 2,
+        ].contains(true);
+        return hasConsecutiveThree
+            ? (label: current.label, confidence: 0.70)
+            : current;
+      }(),
+  ];
+}
+
+List<({String label, double confidence})?> _stabilizeRasterSustainColumns(
+  List<_RasterGlyphCandidate> candidates,
+  List<({String label, double confidence})?> classifications,
+  Map<int, ({String label, double confidence})> nativeLabels,
+) {
+  final parenthesized = [
+    for (var index = 0; index < candidates.length; index += 1)
+      () {
+        final current = classifications[index] ?? nativeLabels[index];
+        if (current == null ||
+            !RegExp(r'^\(\d{1,2}\)$').hasMatch(current.label)) {
+          return classifications[index];
+        }
+        if (current.confidence >= 0.62) return current;
+        final hasReliableParenthesizedPeer =
+            [
+              for (
+                var peerIndex = 0;
+                peerIndex < candidates.length;
+                peerIndex += 1
+              )
+                peerIndex,
+            ].any((peerIndex) {
+              if (peerIndex == index ||
+                  candidates[peerIndex].lineIndex ==
+                      candidates[index].lineIndex ||
+                  !_rasterCandidatesAreColumnAligned(
+                    candidates,
+                    index,
+                    peerIndex,
+                  )) {
+                return false;
+              }
+              final peer =
+                  classifications[peerIndex] ?? nativeLabels[peerIndex];
+              return peer != null &&
+                  peer.confidence >= 0.62 &&
+                  RegExp(r'^\(\d{1,2}\)$').hasMatch(peer.label);
+            });
+        return hasReliableParenthesizedPeer
+            ? (label: current.label, confidence: 0.70)
+            : classifications[index];
+      }(),
+  ];
+
+  return [
+    for (var index = 0; index < candidates.length; index += 1)
+      () {
+        final current = parenthesized[index] ?? nativeLabels[index];
+        if (current == null || current.label.startsWith('(')) return current;
+        final bare = current.label.replaceAll(RegExp(r'[()]'), '');
+        if (!RegExp(r'^\d{1,2}$').hasMatch(bare)) return current;
+        final alignedSustainLines = <int>{};
+        for (var peerIndex = 0; peerIndex < candidates.length; peerIndex += 1) {
+          if (peerIndex == index ||
+              candidates[peerIndex].lineIndex == candidates[index].lineIndex) {
+            continue;
+          }
+          final peer = parenthesized[peerIndex] ?? nativeLabels[peerIndex];
+          if (peer == null ||
+              peer.confidence < 0.62 ||
+              !RegExp(r'^\(\d{1,2}\)$').hasMatch(peer.label)) {
+            continue;
+          }
+          if (!_rasterCandidatesAreColumnAligned(
+            candidates,
+            index,
+            peerIndex,
+          )) {
+            continue;
+          }
+          alignedSustainLines.add(candidates[peerIndex].lineIndex);
+        }
+        // A tied chord is one physical column. Two independently recognized
+        // parenthesized peers establish that the intervening low-confidence
+        // digit is another sustain, without assuming a string count or pitch.
+        if (alignedSustainLines.length < 2) return current;
+        return (label: '($bare)', confidence: 0.70);
+      }(),
+  ];
 }
 
 List<_RasterGlyphCandidate> _detectRasterGlyphCandidates(
@@ -940,6 +1364,59 @@ List<_RasterGlyphTemplate>? _rasterGlyphTemplates;
   return (label: bestLabel, confidence: confidence);
 }
 
+({String label, double confidence})? _classifyNarrowRasterOne(img.Image image) {
+  final normalized = _normalizeRasterGlyph(image);
+  if (normalized == null || normalized.aspectRatio > 0.32) return null;
+  if (_countEnclosedRasterGlyphHoles(image) != 0) return null;
+  if (!_looksLikeVerticalRasterStem(image)) return null;
+  // The compact Songsterr `1` can collapse to a two-pixel stem after the tab
+  // line is removed. Arial template matching then alternates between null and
+  // `7`, especially inside stacked chords and beside slide curves. A true 7
+  // in the same source is materially wider (about 0.39-0.43 of its height).
+  // Keep this below the native-disagreement threshold so another font's OCR
+  // can still correct a genuinely narrow 7.
+  return (label: '1', confidence: 0.70);
+}
+
+bool _looksLikeVerticalRasterStem(img.Image image) {
+  final bounds = _rasterGlyphInkBounds(image);
+  if (bounds == null) return false;
+  final width = bounds.$3 - bounds.$1;
+  final height = bounds.$4 - bounds.$2;
+  if (width <= 0 || height < 4) return false;
+
+  var strongestColumn = 0;
+  for (var x = bounds.$1; x < bounds.$3; x += 1) {
+    var ink = 0;
+    for (var y = bounds.$2; y < bounds.$4; y += 1) {
+      if (_luminance(image.getPixel(x, y)) < 160) ink += 1;
+    }
+    strongestColumn = math.max(strongestColumn, ink);
+  }
+  if (strongestColumn / height < 0.72) return false;
+
+  double inkCenterX(int top, int bottom) {
+    var weightedX = 0.0;
+    var ink = 0;
+    for (var y = top; y < bottom; y += 1) {
+      for (var x = bounds.$1; x < bounds.$3; x += 1) {
+        if (_luminance(image.getPixel(x, y)) >= 160) continue;
+        weightedX += x;
+        ink += 1;
+      }
+    }
+    return ink == 0 ? double.nan : weightedX / ink;
+  }
+
+  final third = math.max(1, height ~/ 3);
+  final upperCenter = inkCenterX(bounds.$2, bounds.$2 + third);
+  final lowerCenter = inkCenterX(bounds.$4 - third, bounds.$4);
+  if (upperCenter.isNaN || lowerCenter.isNaN) return false;
+  // A slide fragment can be just as narrow as `1`, but its ink travels across
+  // the crop. Require the dominant stroke to remain vertically aligned.
+  return (upperCenter - lowerCenter).abs() <= math.max(0.75, width * 0.25);
+}
+
 /// Disambiguates the visually similar compact zero and eight used by raster
 /// tab sources. Exposed for a typography-level regression fixture.
 String correctVisualTabRasterZeroEight(String candidate, Uint8List glyphBytes) {
@@ -1007,7 +1484,7 @@ int _countEnclosedRasterGlyphHoles(img.Image image) {
   final height = bounds.$4 - bounds.$2;
   // Parentheses make the complete glyph almost square. Ordinary fret digits
   // remain materially narrower even when the tablature line is repaired.
-  if (width < 7 || height < 7 || width / height < 0.78) return null;
+  if (width < 7 || height < 7 || width / height < 0.62) return null;
   if (_countSubstantialInkComponents(image, bounds) < 3) return null;
 
   bool regionHasInk(int left, int right) {
@@ -1314,6 +1791,7 @@ class VisualTabSystemGeometry {
     required this.stringLines,
     this.barLines = const [],
     this.connectedNotationRisks = const [],
+    this.openingSignatureRects = const [],
     this.confidence = 1,
   });
 
@@ -1321,6 +1799,7 @@ class VisualTabSystemGeometry {
   final List<double> stringLines;
   final List<double> barLines;
   final List<VisualConnectedNotationRisk> connectedNotationRisks;
+  final List<NormalizedRect> openingSignatureRects;
   final double confidence;
 }
 
@@ -1388,6 +1867,16 @@ VisualTabAnalysis buildVisualTabAnalysis({
       );
       assignedCandidateIndexes.add(candidateIndex);
     }
+    if (sourceType == VisualTabSourceType.rasterOcr &&
+        detected.openingSignatureRects.isNotEmpty) {
+      tokens.removeWhere(
+        (token) =>
+            token.isFretLike &&
+            detected.openingSignatureRects.any(
+              (rect) => _candidateRectsOverlap(rect, token.rect),
+            ),
+      );
+    }
     for (var index = 0; index < tokens.length; index += 1) {
       final token = tokens[index];
       if (!token.isFretLike) continue;
@@ -1410,9 +1899,18 @@ VisualTabAnalysis buildVisualTabAnalysis({
           continue;
         }
         final centerX = (token.rect.left + token.rect.right) / 2;
-        final nearOpening =
+        final nextBar = detected.barLines.length > 1
+            ? detected.barLines[1]
+            : firstBar + spacing * 8;
+        final directNearOpening =
             centerX <= detected.rect.left + spacing * 0.85 ||
             (centerX - firstBar).abs() <= spacing * 0.25;
+        final largeGlyph = token.rect.height >= spacing * 1.05;
+        final inOpeningSignatureZone =
+            largeGlyph &&
+            centerX >= firstBar - spacing &&
+            centerX <= firstBar + (nextBar - firstBar) * 0.45;
+        final nearOpening = directNearOpening || inOpeningSignatureZone;
         if (!nearOpening) continue;
         final isStackedTimeSignature = tokens.any((other) {
           if (identical(other, token) ||
@@ -1422,17 +1920,17 @@ VisualTabAnalysis buildVisualTabAnalysis({
             return false;
           }
           final otherCenterX = (other.rect.left + other.rect.right) / 2;
-          return (otherCenterX - centerX).abs() <= spacing * 0.12;
+          final peerIsLarge = other.rect.height >= spacing * 1.05;
+          return (directNearOpening || peerIsLarge) &&
+              (otherCenterX - centerX).abs() <= spacing * 0.20;
         });
         if (!isStackedTimeSignature) continue;
         timeSignatureIndexes.add(index);
       }
-      for (final index in timeSignatureIndexes) {
-        tokens[index] = tokens[index].copyWith(
-          kind: VisualTabTokenKind.ambiguous,
-          clearStringIndex: true,
-          enabled: false,
-        );
+      for (final index
+          in timeSignatureIndexes.toList()
+            ..sort((left, right) => right.compareTo(left))) {
+        tokens.removeAt(index);
       }
     }
     final fretTokens = tokens.where((token) => token.isFretLike).length;
@@ -1519,6 +2017,22 @@ VisualTabGeometry detectVisualTabGeometry(
   );
 }
 
+/// Detects complete tab systems without assuming a particular string count.
+///
+/// The image is decoded and scanned once; supported counts are compared only
+/// against the resulting horizontal-line coordinates. This keeps Gig reflow
+/// and future count-independent consumers on the same geometry rules as the
+/// explicitly configured analysis workflow.
+VisualTabGeometry detectVisualTabGeometryAnyStringCount(
+  Uint8List bytes, {
+  required NormalizedRect crop,
+}) {
+  return _detectVisualTabGeometryFromImage(
+    _decodeVisualTabImage(bytes),
+    crop: crop,
+  );
+}
+
 img.Image _decodeVisualTabImage(Uint8List bytes) {
   var image = img.decodeImage(bytes);
   if (image == null) {
@@ -1531,6 +2045,18 @@ VisualTabGeometry detectVisualTabGeometryFromImage(
   img.Image sourceImage, {
   required NormalizedRect crop,
   required int expectedStringCount,
+}) {
+  return _detectVisualTabGeometryFromImage(
+    sourceImage,
+    crop: crop,
+    expectedStringCount: expectedStringCount,
+  );
+}
+
+VisualTabGeometry _detectVisualTabGeometryFromImage(
+  img.Image sourceImage, {
+  required NormalizedRect crop,
+  int? expectedStringCount,
 }) {
   var image = sourceImage;
   final left = (crop.left * image.width).floor().clamp(0, image.width - 1);
@@ -1576,11 +2102,29 @@ VisualTabGeometry detectVisualTabGeometryFromImage(
   final clusteredRows = _clusterCoordinates(candidateRows)
       .map((cluster) => cluster.reduce((a, b) => a + b) / cluster.length)
       .toList(growable: false);
-  final lineGroups = _findEquallySpacedGroups(
-    clusteredRows,
-    expectedStringCount,
-    image.height,
-  );
+  final lineGroups = expectedStringCount == null
+      ? _findSupportedStringLineGroups(clusteredRows, image.height)
+      : _findEquallySpacedGroups(
+          clusteredRows,
+          expectedStringCount,
+          image.height,
+        );
+  final detectedOtherCounts = expectedStringCount != null && lineGroups.isEmpty
+      ? [
+          for (
+            var count = minimumVisualTabStringCount;
+            count <= maximumVisualTabStringCount;
+            count += 1
+          )
+            if (count != expectedStringCount &&
+                _findEquallySpacedGroups(
+                  clusteredRows,
+                  count,
+                  image.height,
+                ).isNotEmpty)
+              count,
+        ]
+      : const <int>[];
   final systems = <VisualTabSystemGeometry>[];
   for (final lines in lineGroups) {
     final spacingPixels = _medianSpacing(lines);
@@ -1596,24 +2140,56 @@ VisualTabGeometry detectVisualTabGeometryFromImage(
       top: lines.first,
       bottom: lines.last,
     );
-    final connectedNotationRisks = _detectConnectedNotationRisks(
+    final rawConnectedNotationRisks = _detectConnectedNotationRisks(
       image,
       background: background,
       threshold: threshold,
       lines: lines,
       barLines: barLines,
     );
+    final normalizedRect = _safeNormalizedRect(
+      0,
+      systemTop / image.height,
+      1,
+      systemBottom / image.height,
+    );
+    final normalizedLines = [for (final line in lines) line / image.height];
+    final normalizedBarLines = [
+      for (final line in barLines) line / image.width,
+    ];
+    final provisionalSystem = VisualTabSystemGeometry(
+      rect: normalizedRect,
+      stringLines: normalizedLines,
+      barLines: normalizedBarLines,
+      connectedNotationRisks: rawConnectedNotationRisks,
+      confidence: _spacingConfidence(lines),
+    );
+    final openingSignatureRects = _detectOpeningSignatureRects(
+      _detectRasterGlyphCandidates(
+        image,
+        stripCrop: const NormalizedRect.full(),
+        system: provisionalSystem,
+      ),
+      connectedNotationRisks: rawConnectedNotationRisks,
+      barLines: normalizedBarLines,
+      stringSpacing: spacingPixels / image.width,
+      systemRect: normalizedRect,
+      stringCount: lines.length,
+    );
+    final connectedNotationRisks = rawConnectedNotationRisks
+        .where(
+          (risk) => !openingSignatureRects.any(
+            (signature) => _candidateRectsOverlap(signature, risk.rect),
+          ),
+        )
+        .toList(growable: false);
     systems.add(
       VisualTabSystemGeometry(
-        rect: _safeNormalizedRect(
-          0,
-          systemTop / image.height,
-          1,
-          systemBottom / image.height,
-        ),
-        stringLines: [for (final line in lines) line / image.height],
-        barLines: [for (final line in barLines) line / image.width],
+        rect: normalizedRect,
+        stringLines: normalizedLines,
+        barLines: normalizedBarLines,
         connectedNotationRisks: connectedNotationRisks,
+        openingSignatureRects: openingSignatureRects,
         confidence: _spacingConfidence(lines),
       ),
     );
@@ -1622,10 +2198,47 @@ VisualTabGeometry detectVisualTabGeometryFromImage(
     systems: systems,
     warnings: [
       if (systems.isEmpty)
-        'Raster geometry did not find $expectedStringCount evenly spaced '
-            'string lines.',
+        if (expectedStringCount == null)
+          'Raster geometry did not find a supported evenly spaced string system.'
+        else if (detectedOtherCounts.length == 1)
+          'Raster geometry found ${detectedOtherCounts.single} strings while '
+              '$expectedStringCount source strings were selected.'
+        else
+          'Raster geometry did not find $expectedStringCount evenly spaced '
+              'string lines.',
     ],
   );
+}
+
+List<List<double>> _findSupportedStringLineGroups(
+  List<double> rows,
+  int imageHeight,
+) {
+  final candidates =
+      <List<double>>[
+        for (
+          var count = minimumVisualTabStringCount;
+          count <= maximumVisualTabStringCount;
+          count += 1
+        )
+          ..._findEquallySpacedGroups(rows, count, imageHeight),
+      ]..sort((left, right) {
+        final confidence = _spacingConfidence(
+          right,
+        ).compareTo(_spacingConfidence(left));
+        if (confidence != 0) return confidence;
+        return right.length.compareTo(left.length);
+      });
+  final accepted = <List<double>>[];
+  for (final candidate in candidates) {
+    final overlaps = accepted.any(
+      (existing) =>
+          candidate.first <= existing.last && candidate.last >= existing.first,
+    );
+    if (!overlaps) accepted.add(candidate);
+  }
+  accepted.sort((left, right) => left.first.compareTo(right.first));
+  return accepted;
 }
 
 List<double> _detectBarLines(
@@ -1692,13 +2305,6 @@ List<VisualConnectedNotationRisk> _detectConnectedNotationRisks(
     for (final cluster in clusters) {
       final centerX = cluster.reduce((a, b) => a + b) / cluster.length;
       if (barLines.any((bar) => (bar - centerX).abs() <= 4)) continue;
-      if (barLines.isNotEmpty &&
-          (barLines.first - centerX).abs() <= spacing * 3.0) {
-        // The stacked opening time signature is the only common wide symbol
-        // immediately beside the first bar line. It is not notation joining
-        // two tab strings and must never become a seam decision.
-        continue;
-      }
       final searchRadius = math.max(5, (spacing * 1.15).round());
       final searchLeft = (centerX.round() - searchRadius).clamp(
         0,
@@ -1790,6 +2396,86 @@ List<VisualConnectedNotationRisk> _detectConnectedNotationRisks(
   return risks;
 }
 
+List<NormalizedRect> _detectOpeningSignatureRects(
+  List<_RasterGlyphCandidate> candidates, {
+  required List<VisualConnectedNotationRisk> connectedNotationRisks,
+  required List<double> barLines,
+  required double stringSpacing,
+  required NormalizedRect systemRect,
+  required int stringCount,
+}) {
+  if (candidates.isEmpty ||
+      connectedNotationRisks.isEmpty ||
+      barLines.isEmpty) {
+    return const [];
+  }
+  final opening =
+      candidates
+          .where((candidate) {
+            final centerX = (candidate.rect.left + candidate.rect.right) / 2;
+            return _isOpeningSignatureX(centerX, barLines, stringSpacing);
+          })
+          .toList(growable: false)
+        ..sort((left, right) {
+          final leftCenter = (left.rect.left + left.rect.right) / 2;
+          final rightCenter = (right.rect.left + right.rect.right) / 2;
+          return leftCenter.compareTo(rightCenter);
+        });
+  if (opening.isEmpty) return const [];
+  final columns = <List<_RasterGlyphCandidate>>[];
+  for (final candidate in opening) {
+    final centerX = (candidate.rect.left + candidate.rect.right) / 2;
+    if (columns.isEmpty) {
+      columns.add([candidate]);
+      continue;
+    }
+    final previous = columns.last.last;
+    final previousCenter = (previous.rect.left + previous.rect.right) / 2;
+    if ((centerX - previousCenter).abs() <= stringSpacing) {
+      columns.last.add(candidate);
+    } else {
+      columns.add([candidate]);
+    }
+  }
+
+  final minimumCoveredStrings = math.min(4, stringCount);
+  final signatures = <NormalizedRect>[];
+  for (final column in columns) {
+    final coveredStrings = column
+        .map((candidate) => candidate.lineIndex)
+        .toSet();
+    if (coveredStrings.length < minimumCoveredStrings) continue;
+    final left = column
+        .map((candidate) => candidate.rect.left)
+        .reduce(math.min);
+    final right = column
+        .map((candidate) => candidate.rect.right)
+        .reduce(math.max);
+    final centerX = (left + right) / 2;
+    final intersectsPhysicalSeam = connectedNotationRisks.any((risk) {
+      final riskCenter = (risk.rect.left + risk.rect.right) / 2;
+      return (riskCenter - centerX).abs() <= stringSpacing * 1.5;
+    });
+    if (!intersectsPhysicalSeam) continue;
+    signatures.add(
+      _safeNormalizedRect(
+        left - stringSpacing * 0.55,
+        systemRect.top,
+        right + stringSpacing * 0.55,
+        systemRect.bottom,
+      ),
+    );
+  }
+  return signatures;
+}
+
+bool _isOpeningSignatureX(double x, List<double> barLines, double spacing) {
+  if (barLines.isEmpty) return false;
+  final firstBar = barLines.first;
+  final nextBar = barLines.length > 1 ? barLines[1] : firstBar + spacing * 8;
+  return x >= firstBar - spacing && x <= firstBar + (nextBar - firstBar) * 0.45;
+}
+
 List<List<double>> _findEquallySpacedGroups(
   List<double> rows,
   int count,
@@ -1808,6 +2494,19 @@ List<List<double>> _findEquallySpacedGroups(
         valid = false;
         break;
       }
+    }
+    // Never accept a partial window from a larger tab system. Previously an
+    // eight-string source analyzed as seven strings looked geometrically
+    // valid because either seven-line subset was evenly spaced. Tokens then
+    // mapped to the wrong strings and the omitted outer line was interpreted
+    // as notation. Require the candidate to be a maximal equally spaced run.
+    if (valid && start > 0) {
+      final previousSpacing = group.first - rows[start - 1];
+      if ((previousSpacing - spacing).abs() <= tolerance) valid = false;
+    }
+    if (valid && start + count < rows.length) {
+      final nextSpacing = rows[start + count] - group.last;
+      if ((nextSpacing - spacing).abs() <= tolerance) valid = false;
     }
     if (valid) candidates.add(group);
   }

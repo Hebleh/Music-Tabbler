@@ -921,8 +921,8 @@ class _TuningOffsetRowsState extends State<_TuningOffsetRows> {
       _noteName((_baseMidis[index] + _offset(index)).clamp(0, 127).toInt());
 
   void _changeStringCount(_TuningEdge edge, int delta) {
-    if (delta > 0 && _baseMidis.length >= 12) return;
-    if (delta < 0 && _baseMidis.length <= 2) return;
+    if (delta > 0 && _baseMidis.length >= maximumVisualTabStringCount) return;
+    if (delta < 0 && _baseMidis.length <= minimumVisualTabStringCount) return;
     final midis = [
       for (var index = 0; index < _baseMidis.length; index += 1)
         (_baseMidis[index] + _offset(index)).clamp(0, 127).toInt(),

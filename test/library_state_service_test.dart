@@ -58,72 +58,75 @@ void main() {
     },
   );
 
-  test('mtstate v2 retains visual state and reports retired semantics', () async {
-    final sourceFixture = await _fixture('legacy-state-source');
-    final targetFixture = await _fixture('legacy-state-target');
-    addTearDown(sourceFixture.dispose);
-    addTearDown(targetFixture.dispose);
-    await _saveChart(sourceFixture.library, 'visual-source', 'Visual source');
-    final current = await LibraryStateService(
-      sourceFixture.library,
-    ).exportStateBytes();
-    const codec = PortableContainerCodec();
-    final decoded = codec.decode(
-      current,
-      expectedKind: LibraryStateService.kind,
-    );
-    final metadata = Map<String, Object?>.of(decoded.metadata);
-    metadata['semanticVariants'] = [
-      {
-        'id': 'semantic-source',
-        'songId': 'song-visual-source',
-        'chartPath': 'semantic/0.json',
-        'updatedAt': DateTime.utc(2026, 7, 25).toIso8601String(),
-      },
-    ];
-    metadata['setlists'] = [
-      {
-        'id': 'legacy-semantic-set',
-        'name': 'Legacy set',
-        'scheduledAt': null,
-        'notes': null,
-        'createdAt': DateTime.utc(2026, 7, 25).toIso8601String(),
-        'updatedAt': DateTime.utc(2026, 7, 25).toIso8601String(),
-        'entries': [
-          {
-            'id': 'legacy-semantic-entry',
-            'kind': 'chart',
-            'chartVariantId': 'semantic-source',
-            'placeholderTitle': null,
-          },
+  test(
+    'mtstate v2 retains visual state and reports retired semantics',
+    () async {
+      final sourceFixture = await _fixture('legacy-state-source');
+      final targetFixture = await _fixture('legacy-state-target');
+      addTearDown(sourceFixture.dispose);
+      addTearDown(targetFixture.dispose);
+      await _saveChart(sourceFixture.library, 'visual-source', 'Visual source');
+      final current = await LibraryStateService(
+        sourceFixture.library,
+      ).exportStateBytes();
+      const codec = PortableContainerCodec();
+      final decoded = codec.decode(
+        current,
+        expectedKind: LibraryStateService.kind,
+      );
+      final metadata = Map<String, Object?>.of(decoded.metadata);
+      metadata['semanticVariants'] = [
+        {
+          'id': 'semantic-source',
+          'songId': 'song-visual-source',
+          'chartPath': 'semantic/0.json',
+          'updatedAt': DateTime.utc(2026, 7, 25).toIso8601String(),
+        },
+      ];
+      metadata['setlists'] = [
+        {
+          'id': 'legacy-semantic-set',
+          'name': 'Legacy set',
+          'scheduledAt': null,
+          'notes': null,
+          'createdAt': DateTime.utc(2026, 7, 25).toIso8601String(),
+          'updatedAt': DateTime.utc(2026, 7, 25).toIso8601String(),
+          'entries': [
+            {
+              'id': 'legacy-semantic-entry',
+              'kind': 'chart',
+              'chartVariantId': 'semantic-source',
+              'placeholderTitle': null,
+            },
+          ],
+        },
+      ];
+      final legacy = codec.encode(
+        kind: LibraryStateService.kind,
+        schemaVersion: 2,
+        metadata: metadata,
+        files: [
+          ...decoded.files,
+          PortableContainerFile(
+            path: 'semantic/0.json',
+            bytes: Uint8List.fromList(utf8.encode('{"legacy":true}')),
+          ),
         ],
-      },
-    ];
-    final legacy = codec.encode(
-      kind: LibraryStateService.kind,
-      schemaVersion: 2,
-      metadata: metadata,
-      files: [
-        ...decoded.files,
-        PortableContainerFile(
-          path: 'semantic/0.json',
-          bytes: Uint8List.fromList(utf8.encode('{"legacy":true}')),
-        ),
-      ],
-    );
-    final result = await LibraryStateService(
-      targetFixture.library,
-    ).importStateBytes(legacy, mode: StateImportMode.replace);
+      );
+      final result = await LibraryStateService(
+        targetFixture.library,
+      ).importStateBytes(legacy, mode: StateImportMode.replace);
 
-    expect(result.importedVariants, 1);
-    expect(result.skippedVariants, 1);
-    expect(result.skippedVariantIds, ['semantic-source']);
-    expect(await targetFixture.library.loadDraft('visual-source'), isNotNull);
-    final setlist = await targetFixture.library.loadSetlist(
-      'legacy-semantic-set',
-    );
-    expect(setlist!.entries.single.placeholderTitle, 'Visual source');
-  });
+      expect(result.importedVariants, 1);
+      expect(result.skippedVariants, 1);
+      expect(result.skippedVariantIds, ['semantic-source']);
+      expect(await targetFixture.library.loadDraft('visual-source'), isNotNull);
+      final setlist = await targetFixture.library.loadSetlist(
+        'legacy-semantic-set',
+      );
+      expect(setlist!.entries.single.placeholderTitle, 'Visual source');
+    },
+  );
 
   test('mtstate v1 remains importable without semantic metadata', () async {
     final sourceFixture = await _fixture('legacy-state-source');

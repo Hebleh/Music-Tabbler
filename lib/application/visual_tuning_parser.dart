@@ -1,3 +1,5 @@
+import '../domain/visual_tab_transform_models.dart';
+
 class ParsedVisualTuning {
   const ParsedVisualTuning({required this.labels, required this.openMidis});
 
@@ -27,7 +29,7 @@ ParsedVisualTuning parseVisualTuningSpec(String value) {
     labels.add(label);
     midis.add(midi);
   }
-  if (labels.length < 2 || labels.length > 12) {
+  if (!isSupportedVisualTabStringCount(labels.length)) {
     throw const FormatException('A tuning needs 2 to 12 strings.');
   }
   for (var index = 1; index < midis.length; index += 1) {

@@ -115,13 +115,46 @@ void main() {
 
     expect(repackGigDeckIntoBars(source).pages.single.elements, hasLength(3));
   });
+
+  test('splits supported string counts with one count-agnostic rule', () {
+    for (final stringCount in [2, 4, 7, 8, 12]) {
+      final element = PerformanceDeckElement(
+        kind: PerformanceElementKind.strip,
+        entryIndex: 0,
+        entryId: 'song-$stringCount',
+        width: 600,
+        height: 180,
+        imageBytes: _threeBarRow(stringCount: stringCount),
+      );
+      final source = PerformanceDeck(
+        setlistId: 'set',
+        setlistName: 'Gig',
+        density: VisualExportDensity.stageReadable,
+        pageWidth: 840,
+        pageHeight: 595,
+        margin: 5,
+        gap: 4,
+        pages: [
+          PerformanceDeckPage(id: 'page', index: 0, elements: [element]),
+        ],
+      );
+
+      expect(
+        repackGigDeckIntoBars(source).pages.single.elements,
+        hasLength(3),
+        reason: '$stringCount-string rows must reflow in Gig mode.',
+      );
+    }
+  });
 }
 
-Uint8List _threeBarRow({bool edgeAligned = false}) {
-  final image = img.Image(width: 600, height: 120);
+Uint8List _threeBarRow({bool edgeAligned = false, int stringCount = 4}) {
+  final image = img.Image(width: 600, height: 180);
   img.fill(image, color: img.ColorRgb8(255, 255, 255));
-  for (var line = 0; line < 4; line += 1) {
-    final y = 36 + line * 12;
+  const top = 24;
+  const spacing = 11;
+  for (var line = 0; line < stringCount; line += 1) {
+    final y = top + line * spacing;
     img.drawLine(
       image,
       x1: 20,
@@ -140,9 +173,9 @@ Uint8List _threeBarRow({bool edgeAligned = false}) {
     img.drawLine(
       image,
       x1: x,
-      y1: 36,
+      y1: top,
       x2: x,
-      y2: 72,
+      y2: top + spacing * (stringCount - 1),
       color: img.ColorRgb8(0, 0, 0),
     );
   }

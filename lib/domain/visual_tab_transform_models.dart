@@ -1,5 +1,12 @@
 import 'visual_chart_models.dart';
 
+const minimumVisualTabStringCount = 2;
+const maximumVisualTabStringCount = 12;
+
+bool isSupportedVisualTabStringCount(int value) =>
+    value >= minimumVisualTabStringCount &&
+    value <= maximumVisualTabStringCount;
+
 enum VisualTabSourceType { positionedPdf, rasterOcr }
 
 enum VisualTabTokenKind { fret, deadNote, measureNumber, ambiguous }
@@ -427,10 +434,9 @@ void validateMonotonicVisualRoutes(
   required int sourceStringCount,
   required int targetStringCount,
 }) {
-  if (sourceStringCount < 2 ||
-      sourceStringCount > 12 ||
+  if (!isSupportedVisualTabStringCount(sourceStringCount) ||
       targetStringCount < sourceStringCount ||
-      targetStringCount > 12) {
+      targetStringCount > maximumVisualTabStringCount) {
     throw const FormatException(
       'Visual routing supports 2 to 12 source strings and the same or a '
       'larger target string count, up to 12.',

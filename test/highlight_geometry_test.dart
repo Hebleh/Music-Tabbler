@@ -18,6 +18,32 @@ void main() {
     expect(roundTrip.bottom, closeTo(local.bottom, 0.000001));
   });
 
+  test('row crop editing can recover notation outside the stored crop', () {
+    const crop = NormalizedRect(0.08, 0.30, 0.92, 0.42);
+
+    final viewport = editableVisualCropViewport(crop);
+    final initial = assetRectToCropLocal(crop, viewport)!;
+
+    expect(viewport.top, lessThan(crop.top));
+    expect(viewport.bottom, greaterThan(crop.bottom));
+    expect(initial.top, greaterThan(0));
+    expect(initial.bottom, lessThan(1));
+    expect(
+      cropLocalRectToAsset(
+        NormalizedRect(initial.left, 0, initial.right, initial.bottom),
+        viewport,
+      ).top,
+      lessThan(crop.top),
+    );
+    expect(
+      cropLocalRectToAsset(
+        NormalizedRect(initial.left, initial.top, initial.right, 1),
+        viewport,
+      ).bottom,
+      greaterThan(crop.bottom),
+    );
+  });
+
   test('different crops of one asset use different OCR cache entries', () {
     const first = VisualStrip(
       id: 'first',

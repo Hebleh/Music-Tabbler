@@ -69,10 +69,9 @@ void main() {
       library = await LocalLibrary.forTesting(root, inMemory: false);
       library.close();
       expect(
-        retirementDirectory
-            .listSync()
-            .whereType<File>()
-            .where((file) => file.path.endsWith('.mtstate')),
+        retirementDirectory.listSync().whereType<File>().where(
+          (file) => file.path.endsWith('.mtstate'),
+        ),
         hasLength(1),
       );
     },
@@ -102,7 +101,9 @@ void main() {
     );
     expect(
       database
-          .select("SELECT COUNT(*) AS count FROM chart_variants WHERE kind = 'semantic';")
+          .select(
+            "SELECT COUNT(*) AS count FROM chart_variants WHERE kind = 'semantic';",
+          )
           .single['count'],
       1,
     );
@@ -175,39 +176,63 @@ void _createVersion5Library(Directory root) {
     ('visual-song', 'Visual chart'),
     ('semantic-song', 'Semantic only'),
   ]) {
-    database.execute(
-      'INSERT INTO songs VALUES (?, ?, ?, ?, ?);',
-      [song.$1, song.$2, 'Band', now.toIso8601String(), now.toIso8601String()],
-    );
+    database.execute('INSERT INTO songs VALUES (?, ?, ?, ?, ?);', [
+      song.$1,
+      song.$2,
+      'Band',
+      now.toIso8601String(),
+      now.toIso8601String(),
+    ]);
   }
-  database.execute(
-    'INSERT INTO chart_variants VALUES (?, ?, ?, ?, ?);',
-    ['visual-chart', 'visual-song', 'visual', now.toIso8601String(), now.toIso8601String()],
-  );
-  database.execute(
-    'INSERT INTO chart_variants VALUES (?, ?, ?, ?, ?);',
-    ['semantic-chart', 'semantic-song', 'semantic', now.toIso8601String(), now.toIso8601String()],
-  );
-  database.execute(
-    'INSERT INTO visual_charts VALUES (?, ?, ?, ?, ?);',
-    [visual.id, visual.title, visual.artist, now.toIso8601String(), visual.encode()],
-  );
-  database.execute(
-    'INSERT INTO semantic_charts VALUES (?, ?);',
-    ['semantic-chart', jsonEncode({'id': 'semantic-chart', 'legacy': true})],
-  );
-  database.execute(
-    'INSERT INTO setlists VALUES (?, ?, ?, ?, ?, ?);',
-    ['set', 'Gig', null, null, now.toIso8601String(), now.toIso8601String()],
-  );
-  database.execute(
-    'INSERT INTO setlist_entries VALUES (?, ?, ?, ?, ?, ?);',
-    ['visual-entry', 'set', 'chart', 'visual-chart', null, 0],
-  );
-  database.execute(
-    'INSERT INTO setlist_entries VALUES (?, ?, ?, ?, ?, ?);',
-    ['semantic-entry', 'set', 'chart', 'semantic-chart', null, 1],
-  );
+  database.execute('INSERT INTO chart_variants VALUES (?, ?, ?, ?, ?);', [
+    'visual-chart',
+    'visual-song',
+    'visual',
+    now.toIso8601String(),
+    now.toIso8601String(),
+  ]);
+  database.execute('INSERT INTO chart_variants VALUES (?, ?, ?, ?, ?);', [
+    'semantic-chart',
+    'semantic-song',
+    'semantic',
+    now.toIso8601String(),
+    now.toIso8601String(),
+  ]);
+  database.execute('INSERT INTO visual_charts VALUES (?, ?, ?, ?, ?);', [
+    visual.id,
+    visual.title,
+    visual.artist,
+    now.toIso8601String(),
+    visual.encode(),
+  ]);
+  database.execute('INSERT INTO semantic_charts VALUES (?, ?);', [
+    'semantic-chart',
+    jsonEncode({'id': 'semantic-chart', 'legacy': true}),
+  ]);
+  database.execute('INSERT INTO setlists VALUES (?, ?, ?, ?, ?, ?);', [
+    'set',
+    'Gig',
+    null,
+    null,
+    now.toIso8601String(),
+    now.toIso8601String(),
+  ]);
+  database.execute('INSERT INTO setlist_entries VALUES (?, ?, ?, ?, ?, ?);', [
+    'visual-entry',
+    'set',
+    'chart',
+    'visual-chart',
+    null,
+    0,
+  ]);
+  database.execute('INSERT INTO setlist_entries VALUES (?, ?, ?, ?, ?, ?);', [
+    'semantic-entry',
+    'set',
+    'chart',
+    'semantic-chart',
+    null,
+    1,
+  ]);
   database.execute('PRAGMA user_version = 5;');
   database.close();
 }

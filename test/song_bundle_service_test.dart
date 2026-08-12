@@ -126,62 +126,68 @@ void main() {
     },
   );
 
-  test('mtsong v2 skips opaque semantic variants and imports visuals', () async {
-    final sourceDirectory = await Directory.systemTemp.createTemp(
-      'music_tabbler_mtsong_legacy_source_',
-    );
-    final targetDirectory = await Directory.systemTemp.createTemp(
-      'music_tabbler_mtsong_legacy_target_',
-    );
-    final source = await LocalLibrary.forTesting(sourceDirectory);
-    final target = await LocalLibrary.forTesting(targetDirectory);
-    addTearDown(() {
-      source.close();
-      target.close();
-      sourceDirectory.deleteSync(recursive: true);
-      targetDirectory.deleteSync(recursive: true);
-    });
-    final now = DateTime.utc(2026, 7, 24);
-    await source.saveDraftAsVariant(
-      VisualChartDraft(
-        id: 'visual',
-        title: 'Legacy mixed song',
-        artist: 'Band',
-        createdAt: now,
-        updatedAt: now,
-      ),
-      songId: 'song',
-    );
-    final current = await SongBundleService(source).exportSongBytes('visual');
-    const codec = PortableContainerCodec();
-    final decoded = codec.decode(current, expectedKind: SongBundleService.kind);
-    final metadata = Map<String, Object?>.of(decoded.metadata)
-      ..['semanticVariants'] = [
-        {
-          'id': 'legacy-semantic',
-          'chartPath': 'semantic/0.json',
-          'updatedAt': now.toIso8601String(),
-        },
-      ];
-    final legacy = codec.encode(
-      kind: SongBundleService.kind,
-      schemaVersion: 2,
-      metadata: metadata,
-      files: [
-        ...decoded.files,
-        PortableContainerFile(
-          path: 'semantic/0.json',
-          bytes: Uint8List.fromList(utf8.encode('{"legacy":true}')),
+  test(
+    'mtsong v2 skips opaque semantic variants and imports visuals',
+    () async {
+      final sourceDirectory = await Directory.systemTemp.createTemp(
+        'music_tabbler_mtsong_legacy_source_',
+      );
+      final targetDirectory = await Directory.systemTemp.createTemp(
+        'music_tabbler_mtsong_legacy_target_',
+      );
+      final source = await LocalLibrary.forTesting(sourceDirectory);
+      final target = await LocalLibrary.forTesting(targetDirectory);
+      addTearDown(() {
+        source.close();
+        target.close();
+        sourceDirectory.deleteSync(recursive: true);
+        targetDirectory.deleteSync(recursive: true);
+      });
+      final now = DateTime.utc(2026, 7, 24);
+      await source.saveDraftAsVariant(
+        VisualChartDraft(
+          id: 'visual',
+          title: 'Legacy mixed song',
+          artist: 'Band',
+          createdAt: now,
+          updatedAt: now,
         ),
-      ],
-    );
+        songId: 'song',
+      );
+      final current = await SongBundleService(source).exportSongBytes('visual');
+      const codec = PortableContainerCodec();
+      final decoded = codec.decode(
+        current,
+        expectedKind: SongBundleService.kind,
+      );
+      final metadata = Map<String, Object?>.of(decoded.metadata)
+        ..['semanticVariants'] = [
+          {
+            'id': 'legacy-semantic',
+            'chartPath': 'semantic/0.json',
+            'updatedAt': now.toIso8601String(),
+          },
+        ];
+      final legacy = codec.encode(
+        kind: SongBundleService.kind,
+        schemaVersion: 2,
+        metadata: metadata,
+        files: [
+          ...decoded.files,
+          PortableContainerFile(
+            path: 'semantic/0.json',
+            bytes: Uint8List.fromList(utf8.encode('{"legacy":true}')),
+          ),
+        ],
+      );
 
-    final result = await SongBundleService(target).importSongBytes(legacy);
+      final result = await SongBundleService(target).importSongBytes(legacy);
 
-    expect(result.importedVariantIds, ['visual']);
-    expect(result.skippedVariantIds, ['legacy-semantic']);
-    expect(await target.loadDraft('visual'), isNotNull);
-  });
+      expect(result.importedVariantIds, ['visual']);
+      expect(result.skippedVariantIds, ['legacy-semantic']);
+      expect(await target.loadDraft('visual'), isNotNull);
+    },
+  );
 
   test('semantic-only v2 bundle reports the retired variant', () async {
     final directory = await Directory.systemTemp.createTemp(
@@ -229,55 +235,58 @@ void main() {
     expect(await library.listSongs(), isEmpty);
   });
 
-  test('malformed retired semantic payload does not modify the library', () async {
-    final directory = await Directory.systemTemp.createTemp(
-      'music_tabbler_mtsong_bad_semantic_',
-    );
-    final library = await LocalLibrary.forTesting(directory);
-    addTearDown(() {
-      library.close();
-      directory.deleteSync(recursive: true);
-    });
-    final now = DateTime.utc(2026, 7, 24);
-    await library.saveDraft(
-      VisualChartDraft(
-        id: 'safe',
-        title: 'Safe',
-        artist: '',
-        createdAt: now,
-        updatedAt: now,
-      ),
-    );
-    final malformed = const PortableContainerCodec().encode(
-      kind: SongBundleService.kind,
-      schemaVersion: 2,
-      metadata: {
-        'song': {
-          'id': 'legacy-song',
-          'title': 'Legacy',
-          'artist': '',
-          'createdAt': now.toIso8601String(),
-          'updatedAt': now.toIso8601String(),
-        },
-        'variants': const [],
-        'semanticVariants': [
-          {
-            'id': 'legacy-semantic',
-            'chartPath': 'semantic/missing.json',
+  test(
+    'malformed retired semantic payload does not modify the library',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'music_tabbler_mtsong_bad_semantic_',
+      );
+      final library = await LocalLibrary.forTesting(directory);
+      addTearDown(() {
+        library.close();
+        directory.deleteSync(recursive: true);
+      });
+      final now = DateTime.utc(2026, 7, 24);
+      await library.saveDraft(
+        VisualChartDraft(
+          id: 'safe',
+          title: 'Safe',
+          artist: '',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      final malformed = const PortableContainerCodec().encode(
+        kind: SongBundleService.kind,
+        schemaVersion: 2,
+        metadata: {
+          'song': {
+            'id': 'legacy-song',
+            'title': 'Legacy',
+            'artist': '',
+            'createdAt': now.toIso8601String(),
             'updatedAt': now.toIso8601String(),
           },
-        ],
-      },
-      files: const [],
-    );
+          'variants': const [],
+          'semanticVariants': [
+            {
+              'id': 'legacy-semantic',
+              'chartPath': 'semantic/missing.json',
+              'updatedAt': now.toIso8601String(),
+            },
+          ],
+        },
+        files: const [],
+      );
 
-    await expectLater(
-      SongBundleService(library).importSongBytes(malformed),
-      throwsA(isA<PortableContainerException>()),
-    );
-    expect(await library.loadDraft('safe'), isNotNull);
-    expect(await library.listDrafts(), hasLength(1));
-  });
+      await expectLater(
+        SongBundleService(library).importSongBytes(malformed),
+        throwsA(isA<PortableContainerException>()),
+      );
+      expect(await library.loadDraft('safe'), isNotNull);
+      expect(await library.listDrafts(), hasLength(1));
+    },
+  );
 
   test(
     'identical and divergent imports are retained as new variants',

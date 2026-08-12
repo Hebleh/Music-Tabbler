@@ -24,6 +24,16 @@ import 'visual_tab_transform_dialog.dart';
 import 'visual_strip_preview.dart';
 import 'visual_deskew_dialog.dart';
 
+Future<int?> showVisualSourceStringCountDialog({
+  required BuildContext context,
+  required Future<VisualTabStringCountGuess> guess,
+}) {
+  return showDialog<int>(
+    context: context,
+    builder: (context) => _SourceStringCountDialog(guess: guess),
+  );
+}
+
 class VisualImportScreen extends StatefulWidget {
   const VisualImportScreen({
     super.key,
@@ -112,9 +122,20 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   }) async {
     final strips = stripsOverride ?? _draft.strips;
     if (_busy || strips.isEmpty) return;
-    final sourceStringCount = await _chooseSourceStringCount();
+    final analyzer = VisualTabAnalysisService(
+      library: widget.services.library,
+      textRecognition: widget.services.textRecognition,
+    );
+    final sourceStringCount = await _chooseSourceStringCount(
+      strips.first,
+      analyzer,
+    );
     if (sourceStringCount == null || !mounted) return;
-    final result = await _reviewStripsAtStringCount(strips, sourceStringCount);
+    final result = await _reviewStripsAtStringCount(
+      strips,
+      sourceStringCount,
+      analyzer: analyzer,
+    );
     if (result == null || !mounted) return;
     final configuration = await showVisualTabTransformDialog(
       context: context,
@@ -126,6 +147,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       final rereviewed = await _reviewStripsAtStringCount(
         strips,
         configuration.sourceLabels.length,
+        analyzer: analyzer,
       );
       if (rereviewed == null || !mounted) return;
       reviewed = rereviewed;
@@ -135,14 +157,17 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
 
   Future<List<VisualTabAnalysis>?> _reviewStripsAtStringCount(
     List<VisualStrip> strips,
-    int sourceStringCount,
-  ) => showVisualTabAnalysisReview(
+    int sourceStringCount, {
+    VisualTabAnalysisService? analyzer,
+  }) => showVisualTabAnalysisReview(
     context: context,
     library: widget.services.library,
-    analyzer: VisualTabAnalysisService(
-      library: widget.services.library,
-      textRecognition: widget.services.textRecognition,
-    ),
+    analyzer:
+        analyzer ??
+        VisualTabAnalysisService(
+          library: widget.services.library,
+          textRecognition: widget.services.textRecognition,
+        ),
     strips: strips,
     sourceStringCount: sourceStringCount,
   );
@@ -276,59 +301,14 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     }
   }
 
-  Future<int?> _chooseSourceStringCount() async {
-    final controller = TextEditingController(text: '4');
-    String? error;
-    final result = await showDialog<int>(
+  Future<int?> _chooseSourceStringCount(
+    VisualStrip firstStrip,
+    VisualTabAnalysisService analyzer,
+  ) {
+    return showVisualSourceStringCountDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Confirm source tab strings'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Source string count',
-                    errorText: error,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Music Tabbler will detect string lines and propose fret '
-                  'tokens. It will not silently verify the source tuning.',
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final value = int.tryParse(controller.text.trim());
-                if (value == null || value < 2 || value > 12) {
-                  setDialogState(() => error = 'Enter 2 to 12 strings.');
-                  return;
-                }
-                Navigator.pop(context, value);
-              },
-              child: const Text('Analyze'),
-            ),
-          ],
-        ),
-      ),
+      guess: analyzer.guessSourceStringCount(firstStrip),
     );
-    controller.dispose();
-    return result;
   }
 
   @override
@@ -1092,6 +1072,8 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
 
   Future<void> _editCrop(int index) async {
     final strip = _draft.strips[index];
+    final viewport = editableVisualCropViewport(strip.crop);
+    final initialRect = assetRectToCropLocal(strip.crop, viewport)!;
     final value = await showDialog<NormalizedRect>(
       context: context,
       builder: (_) => RectEditorDialog(
@@ -1099,17 +1081,19 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
           strip.assetHash,
           strip.assetExtension,
         ),
-        imageAspectRatio: strip.croppedAspectRatio,
+        imageAspectRatio:
+            (strip.deskewedPixelWidth * viewport.width) /
+            (strip.deskewedPixelHeight * viewport.height),
         title: 'Crop tab row',
-        initialRect: const NormalizedRect.full(),
-        viewportRect: strip.crop,
+        initialRect: initialRect,
+        viewportRect: viewport,
         deskewDegrees: strip.deskewDegrees,
       ),
     );
     if (value != null) {
       _replaceStrip(
         index,
-        strip.copyWith(crop: cropLocalRectToAsset(value, strip.crop)),
+        strip.copyWith(crop: cropLocalRectToAsset(value, viewport)),
       );
     }
   }
@@ -1598,6 +1582,176 @@ class _StripCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SourceStringCountDialog extends StatefulWidget {
+  const _SourceStringCountDialog({required this.guess});
+
+  final Future<VisualTabStringCountGuess> guess;
+
+  @override
+  State<_SourceStringCountDialog> createState() =>
+      _SourceStringCountDialogState();
+}
+
+class _SourceStringCountDialogState extends State<_SourceStringCountDialog> {
+  late final TextEditingController _controller;
+  VisualTabStringCountGuess? _guess;
+  String? _error;
+  var _userEdited = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: '4');
+    unawaited(_loadGuess());
+  }
+
+  Future<void> _loadGuess() async {
+    final guess = await widget.guess;
+    if (!mounted) return;
+    setState(() {
+      _guess = guess;
+      if (!_userEdited && guess.stringCount != null) {
+        _controller.text = '${guess.stringCount}';
+        _controller.selection = TextSelection.collapsed(
+          offset: _controller.text.length,
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final value = int.tryParse(_controller.text.trim());
+    if (value == null || !isSupportedVisualTabStringCount(value)) {
+      setState(() => _error = 'Enter 2 to 12 strings.');
+      return;
+    }
+    Navigator.pop(context, value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Confirm source tab strings'),
+      content: SizedBox(
+        width: 440,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              onChanged: (_) => _userEdited = true,
+              onSubmitted: (_) {
+                if (_guess != null) _submit();
+              },
+              decoration: InputDecoration(
+                labelText: 'Source string count',
+                errorText: _error,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _RasterStringCountPreview(guess: _guess),
+            const SizedBox(height: 12),
+            const Text(
+              'The detected count is an editable raster geometry guess, not '
+              'a verified tuning. A wrong preview is an early warning to '
+              'check the crop or choose the correct count before continuing.',
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _guess == null ? null : _submit,
+          child: const Text('Analyze'),
+        ),
+      ],
+    );
+  }
+}
+
+class _RasterStringCountPreview extends StatelessWidget {
+  const _RasterStringCountPreview({required this.guess});
+
+  final VisualTabStringCountGuess? guess;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = guess;
+    if (value == null) {
+      return const Row(
+        key: ValueKey('raster-string-count-guess-loading'),
+        children: [
+          SizedBox.square(
+            dimension: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 10),
+          Expanded(child: Text('Raster preview: scanning Row 1…')),
+        ],
+      );
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    final ready = value.rasterLikelyUsable;
+    final count = value.stringCount;
+    final confidence = (value.geometryConfidence * 100).round();
+    final headline = count == null
+        ? 'Raster preview did not find a tab system in Row 1'
+        : ready
+        ? 'Raster preview: $count strings detected'
+        : 'Raster preview: check the $count-string guess';
+    final details = count == null
+        ? value.warning ?? 'Check the Row 1 crop before analysis.'
+        : '$confidence% line-spacing confidence · '
+              '${value.detectedBarLines} bar line(s) detected'
+              '${value.warning == null ? '' : '\n${value.warning}'}';
+    return Container(
+      key: const ValueKey('raster-string-count-guess'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ready
+            ? colorScheme.primaryContainer
+            : colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            ready ? Icons.check_circle_outline : Icons.warning_amber_rounded,
+            color: ready
+                ? colorScheme.onPrimaryContainer
+                : colorScheme.onErrorContainer,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(headline, style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 3),
+                Text(details),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

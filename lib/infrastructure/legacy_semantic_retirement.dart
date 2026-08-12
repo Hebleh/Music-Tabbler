@@ -44,9 +44,7 @@ Future<String?> createLegacySemanticRetirementBackup({
     files.add(
       PortableContainerFile(
         path: path,
-        bytes: Uint8List.fromList(
-          utf8.encode(row['payload_json']! as String),
-        ),
+        bytes: Uint8List.fromList(utf8.encode(row['payload_json']! as String)),
       ),
     );
     visualVariants.add({
@@ -62,9 +60,7 @@ Future<String?> createLegacySemanticRetirementBackup({
     files.add(
       PortableContainerFile(
         path: path,
-        bytes: Uint8List.fromList(
-          utf8.encode(row['payload_json']! as String),
-        ),
+        bytes: Uint8List.fromList(utf8.encode(row['payload_json']! as String)),
       ),
     );
     semanticVariants.add({
@@ -149,10 +145,7 @@ Future<String?> createLegacySemanticRetirementBackup({
     },
     files: files,
   );
-  final validated = codec.decode(
-    bytes,
-    expectedKind: 'music-tabbler-state',
-  );
+  final validated = codec.decode(bytes, expectedKind: 'music-tabbler-state');
   if (validated.schemaVersion != 2 ||
       (validated.metadata['semanticVariants'] as List?)?.length !=
           semanticRows.length) {
@@ -161,9 +154,7 @@ Future<String?> createLegacySemanticRetirementBackup({
     );
   }
 
-  final directory = Directory(
-    p.join(root.path, 'backups', 'retired-semantic'),
-  );
+  final directory = Directory(p.join(root.path, 'backups', 'retired-semantic'));
   await directory.create(recursive: true);
   final stamp = DateTime.now().toUtc().microsecondsSinceEpoch;
   final destination = File(

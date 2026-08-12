@@ -10,9 +10,9 @@ void main() {
     () async {
       final now = DateTime.utc(2026, 8, 11);
       final draft = VisualChartDraft(
-      id: 'variant',
-      title: 'Song',
-      artist: 'Artist',
+        id: 'variant',
+        title: 'Song',
+        artist: 'Artist',
         createdAt: now,
         updatedAt: now,
         strips: const [

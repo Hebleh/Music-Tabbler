@@ -1,6 +1,49 @@
 part of 'widget_test.dart';
 
 void _registerVisualWorkflowTests() {
+  testWidgets('source string dialog previews the raster geometry guess', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () => showVisualSourceStringCountDialog(
+                context: context,
+                guess: Future.value(
+                  const VisualTabStringCountGuess(
+                    stringCount: 8,
+                    geometryConfidence: 0.98,
+                    detectedBarLines: 4,
+                  ),
+                ),
+              ),
+              child: const Text('Open string preview'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open string preview'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      find.byKey(const ValueKey('raster-string-count-guess')),
+      findsOneWidget,
+    );
+    expect(find.text('Raster preview: 8 strings detected'), findsOneWidget);
+    final field = tester.widget<TextField>(find.byType(TextField).last);
+    expect(field.controller!.text, '8');
+  });
+
   testWidgets(
     'visual tab analysis review is a keyboard-dismissible page route',
     (tester) async {
@@ -79,64 +122,59 @@ void _registerVisualWorkflowTests() {
     },
   );
 
-  testWidgets('visual tab review can rerun every row through raster OCR', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'visual tab review automatically runs every row through raster OCR',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    final library = _FakeLibrary();
-    final analyzer = _RecordingVisualTabAnalyzer(library);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: FilledButton(
-              onPressed: () => showVisualTabAnalysisReview(
-                context: context,
-                library: library,
-                analyzer: analyzer,
-                strips: const [
-                  VisualStrip(
-                    id: 'row-a',
-                    assetHash: 'a',
-                    assetExtension: 'png',
-                    pixelWidth: 400,
-                    pixelHeight: 100,
-                  ),
-                  VisualStrip(
-                    id: 'row-b',
-                    assetHash: 'b',
-                    assetExtension: 'png',
-                    pixelWidth: 400,
-                    pixelHeight: 100,
-                  ),
-                ],
-                sourceStringCount: 4,
+      final library = _FakeLibrary();
+      final analyzer = _RecordingVisualTabAnalyzer(library);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                onPressed: () => showVisualTabAnalysisReview(
+                  context: context,
+                  library: library,
+                  analyzer: analyzer,
+                  strips: const [
+                    VisualStrip(
+                      id: 'row-a',
+                      assetHash: 'a',
+                      assetExtension: 'png',
+                      pixelWidth: 400,
+                      pixelHeight: 100,
+                    ),
+                    VisualStrip(
+                      id: 'row-b',
+                      assetHash: 'b',
+                      assetExtension: 'png',
+                      pixelWidth: 400,
+                      pixelHeight: 100,
+                    ),
+                  ],
+                  sourceStringCount: 4,
+                ),
+                child: const Text('Open review'),
               ),
-              child: const Text('Open review'),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('Open review'));
-    for (var index = 0; index < 5; index += 1) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(analyzer.preferPositionedPdf, [isTrue, isTrue]);
-
-    await tester.tap(find.byKey(const ValueKey('raster-ocr-all-rows')));
-    for (var index = 0; index < 5; index += 1) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-
-    expect(analyzer.preferPositionedPdf, [isTrue, isTrue, isFalse, isFalse]);
-    expect(find.text('2 / 2'), findsOneWidget);
-  });
+      await tester.tap(find.text('Open review'));
+      for (var index = 0; index < 5; index += 1) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(analyzer.preferPositionedPdf, [isFalse, isFalse]);
+      expect(find.byKey(const ValueKey('raster-ocr-all-rows')), findsOneWidget);
+      expect(find.text('1 / 2'), findsOneWidget);
+    },
+  );
 
   testWidgets('visual tab review matches seam risks to numbered markers', (
     tester,

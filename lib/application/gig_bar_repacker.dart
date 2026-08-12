@@ -78,24 +78,13 @@ List<PerformanceDeckElement> _splitElementIntoBars(
 }
 
 VisualTabSystemGeometry? _bestSingleSystemGeometry(Uint8List bytes) {
-  VisualTabSystemGeometry? best;
-  var bestScore = double.negativeInfinity;
-  for (var stringCount = 4; stringCount <= 6; stringCount += 1) {
-    final geometry = detectVisualTabGeometry(
-      bytes,
-      crop: const NormalizedRect.full(),
-      expectedStringCount: stringCount,
-    );
-    if (geometry.systems.length != 1) continue;
-    final candidate = geometry.systems.single;
-    if (candidate.barLines.length < 3) continue;
-    final score = candidate.confidence + candidate.barLines.length * 0.025;
-    if (score > bestScore) {
-      best = candidate;
-      bestScore = score;
-    }
-  }
-  return best;
+  final geometry = detectVisualTabGeometryAnyStringCount(
+    bytes,
+    crop: const NormalizedRect.full(),
+  );
+  if (geometry.systems.length != 1) return null;
+  final candidate = geometry.systems.single;
+  return candidate.barLines.length >= 3 ? candidate : null;
 }
 
 List<double> _cleanBarBoundaries(
