@@ -9,6 +9,7 @@ import 'package:music_tabbler/application/portable_container.dart';
 import 'package:music_tabbler/application/service_contracts.dart';
 import 'package:music_tabbler/domain/library_models.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
+import 'package:music_tabbler/domain/visual_tab_transform_models.dart';
 import 'package:music_tabbler/infrastructure/local_library.dart';
 
 void main() {
@@ -48,6 +49,16 @@ void main() {
       expect(
         (await targetFixture.library.loadDraft('source-chart'))!.title,
         'Source song',
+      );
+      final restoredDraft = await targetFixture.library.loadDraft(
+        'source-chart',
+      );
+      final restoredAnalysis = VisualTabAnalysis.fromJson(
+        restoredDraft!.visualTabTransform!.analyses.single,
+      );
+      expect(
+        restoredAnalysis.systems.single.tokens.single.origin,
+        VisualTabTokenOrigin.manual,
       );
       expect(
         (await targetFixture.library.loadSetlist(
@@ -360,6 +371,43 @@ Future<void> _saveChart(LocalLibrary library, String id, String title) async {
       artist: 'Band',
       createdAt: now,
       updatedAt: now,
+      visualTabTransform: VisualTabTransformRecord(
+        id: 'transform-$id',
+        appliedAt: now,
+        baseStrips: [
+          VisualStrip(
+            id: 'base-$id',
+            assetHash: asset.hash,
+            assetExtension: asset.extension,
+            pixelWidth: 80,
+            pixelHeight: 40,
+          ),
+        ],
+        configuration: const {'globalPitchChange': 0},
+        analyses: [
+          const VisualTabAnalysis(
+            stripId: 'manual-source',
+            sourceType: VisualTabSourceType.rasterOcr,
+            systems: [
+              VisualTabSystem(
+                id: 'system',
+                rect: NormalizedRect(0, 0, 1, 1),
+                stringLines: [0.2, 0.4, 0.6, 0.8],
+                tokens: [
+                  VisualTabToken(
+                    id: 'manual-note',
+                    text: 'X',
+                    rect: NormalizedRect(0.4, 0.56, 0.45, 0.64),
+                    kind: VisualTabTokenKind.deadNote,
+                    stringIndex: 1,
+                    origin: VisualTabTokenOrigin.manual,
+                  ),
+                ],
+              ),
+            ],
+          ).toJson(),
+        ],
+      ),
       strips: [
         VisualStrip(
           id: 'strip-$id',

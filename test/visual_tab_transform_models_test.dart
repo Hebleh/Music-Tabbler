@@ -125,6 +125,7 @@ void main() {
               stringIndex: 2,
               confidence: 0.85,
               enabled: false,
+              origin: VisualTabTokenOrigin.manual,
             ),
           ],
         ),
@@ -135,12 +136,28 @@ void main() {
     expect(restored.sourceType, VisualTabSourceType.positionedPdf);
     expect(restored.systems.single.tokens.single.text, '(12)');
     expect(restored.systems.single.tokens.single.enabled, isFalse);
+    expect(
+      restored.systems.single.tokens.single.origin,
+      VisualTabTokenOrigin.manual,
+    );
     expect(restored.keepUnchanged, isFalse);
     expect(restored.systems.single.stringLines, [0.3, 0.4, 0.5, 0.6]);
     expect(
       restored.systems.single.connectedNotationRisks.single.side,
       VisualConnectedComponentSide.upper,
     );
+  });
+
+  test('legacy token JSON defaults provenance to detected', () {
+    final json = const VisualTabToken(
+      id: 'legacy',
+      text: '7',
+      rect: NormalizedRect(0.1, 0.2, 0.2, 0.3),
+      kind: VisualTabTokenKind.fret,
+      stringIndex: 0,
+    ).toJson()..remove('origin');
+
+    expect(VisualTabToken.fromJson(json).origin, VisualTabTokenOrigin.detected);
   });
 
   test('analysis round-trips an explicit keep-unchanged review decision', () {

@@ -11,6 +11,8 @@ enum VisualTabSourceType { positionedPdf, rasterOcr }
 
 enum VisualTabTokenKind { fret, deadNote, measureNumber, ambiguous }
 
+enum VisualTabTokenOrigin { detected, manual }
+
 enum VisualConnectedComponentSide { unresolved, upper, lower }
 
 class VisualConnectedNotationRisk {
@@ -65,6 +67,7 @@ class VisualTabToken {
     this.stringIndex,
     this.confidence = 1,
     this.enabled = true,
+    this.origin = VisualTabTokenOrigin.detected,
   });
 
   final String id;
@@ -74,6 +77,7 @@ class VisualTabToken {
   final int? stringIndex;
   final double confidence;
   final bool enabled;
+  final VisualTabTokenOrigin origin;
 
   bool get isFretLike =>
       kind == VisualTabTokenKind.fret || kind == VisualTabTokenKind.deadNote;
@@ -86,6 +90,7 @@ class VisualTabToken {
     bool clearStringIndex = false,
     double? confidence,
     bool? enabled,
+    VisualTabTokenOrigin? origin,
   }) {
     return VisualTabToken(
       id: id,
@@ -95,6 +100,7 @@ class VisualTabToken {
       stringIndex: clearStringIndex ? null : stringIndex ?? this.stringIndex,
       confidence: confidence ?? this.confidence,
       enabled: enabled ?? this.enabled,
+      origin: origin ?? this.origin,
     );
   }
 
@@ -106,6 +112,7 @@ class VisualTabToken {
     'stringIndex': stringIndex,
     'confidence': confidence,
     'enabled': enabled,
+    'origin': origin.name,
   };
 
   factory VisualTabToken.fromJson(Map<String, Object?> json) {
@@ -119,6 +126,9 @@ class VisualTabToken {
       stringIndex: json['stringIndex'] as int?,
       confidence: (json['confidence'] as num?)?.toDouble() ?? 1,
       enabled: json['enabled'] as bool? ?? true,
+      origin: VisualTabTokenOrigin.values.byName(
+        json['origin'] as String? ?? VisualTabTokenOrigin.detected.name,
+      ),
     );
   }
 }

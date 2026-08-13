@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../application/library_contracts.dart';
 import '../../application/visual_analysis_review_session.dart';
+import '../../application/visual_manual_note_placement.dart';
 import '../../application/visual_image_processor.dart';
 import '../../domain/visual_chart_models.dart';
 import '../../domain/visual_tab_transform_models.dart';
@@ -77,26 +78,26 @@ class VisualAnalysisCanvas extends StatefulWidget {
     required this.strip,
     required this.analysis,
     required this.selectedTokenIds,
-    required this.drawing,
-    required this.drawStart,
-    required this.drawEnd,
+    required this.addingNote,
     required this.onTokenTap,
-    required this.onDrawStart,
-    required this.onDrawUpdate,
-    required this.onDrawEnd,
+    required this.onAddNote,
+    required this.onManualDragStart,
+    required this.onManualDragUpdate,
+    required this.onManualDragEnd,
+    required this.onManualDragCancel,
   });
 
   final ChartLibrary library;
   final VisualStrip strip;
   final VisualTabAnalysis analysis;
   final Set<String> selectedTokenIds;
-  final bool drawing;
-  final Offset? drawStart;
-  final Offset? drawEnd;
+  final bool addingNote;
   final ValueChanged<String> onTokenTap;
-  final ValueChanged<Offset> onDrawStart;
-  final ValueChanged<Offset> onDrawUpdate;
-  final ValueChanged<NormalizedRect?> onDrawEnd;
+  final ValueChanged<Offset> onAddNote;
+  final ValueChanged<String> onManualDragStart;
+  final void Function(String id, Offset normalizedDelta) onManualDragUpdate;
+  final ValueChanged<String> onManualDragEnd;
+  final ValueChanged<String> onManualDragCancel;
 
   @override
   State<VisualAnalysisCanvas> createState() => VisualAnalysisCanvasState();
@@ -104,6 +105,8 @@ class VisualAnalysisCanvas extends StatefulWidget {
 
 class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
   late Future<Uint8List> _preview;
+  Offset? _hoverPosition;
+  String? _draggingTokenId;
 
   @override
   void initState() {
@@ -151,62 +154,98 @@ class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
                 (local.dx / constraints.maxWidth).clamp(0.0, 1.0),
                 (local.dy / constraints.maxHeight).clamp(0.0, 1.0),
               );
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanStart: widget.drawing
-                    ? (details) =>
-                          widget.onDrawStart(normalize(details.localPosition))
+              return MouseRegion(
+                cursor: widget.addingNote
+                    ? SystemMouseCursors.precise
+                    : MouseCursor.defer,
+                onHover: widget.addingNote
+                    ? (event) => setState(
+                        () => _hoverPosition = normalize(event.localPosition),
+                      )
                     : null,
-                onPanUpdate: widget.drawing
-                    ? (details) =>
-                          widget.onDrawUpdate(normalize(details.localPosition))
-                    : null,
-                onPanEnd: widget.drawing
-                    ? (_) {
-                        final start = widget.drawStart;
-                        final end = widget.drawEnd;
-                        if (start == null || end == null) {
-                          widget.onDrawEnd(null);
-                          return;
-                        }
-                        final left = math.min(start.dx, end.dx);
-                        final top = math.min(start.dy, end.dy);
-                        final right = math.max(start.dx, end.dx);
-                        final bottom = math.max(start.dy, end.dy);
-                        widget.onDrawEnd(
-                          right > left && bottom > top
-                              ? NormalizedRect(left, top, right, bottom)
-                              : null,
-                        );
-                      }
-                    : null,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.memory(snapshot.data!, fit: BoxFit.fill),
-                    CustomPaint(
-                      painter: _AnalysisOverlayPainter(
+                onExit: (_) => setState(() => _hoverPosition = null),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: widget.addingNote
+                      ? (details) =>
+                            widget.onAddNote(normalize(details.localPosition))
+                      : null,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.memory(snapshot.data!, fit: BoxFit.fill),
+                      VisualAnalysisOverlay(
                         analysis: widget.analysis,
                         selectedTokenIds: widget.selectedTokenIds,
-                        drawStart: widget.drawStart,
-                        drawEnd: widget.drawEnd,
+                        provisionalPlacement:
+                            widget.addingNote && _hoverPosition != null
+                            ? placeVisualManualNote(
+                                analysis: widget.analysis,
+                                x: _hoverPosition!.dx,
+                                y: _hoverPosition!.dy,
+                                text: '0',
+                              )
+                            : null,
+                        draggingTokenId: _draggingTokenId,
                       ),
-                    ),
-                    for (final system in widget.analysis.systems)
-                      for (final token in system.tokens)
-                        Positioned(
-                          left: token.rect.left * constraints.maxWidth,
-                          top: token.rect.top * constraints.maxHeight,
-                          width: token.rect.width * constraints.maxWidth,
-                          height: token.rect.height * constraints.maxHeight,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onTap: widget.drawing
-                                ? null
-                                : () => widget.onTokenTap(token.id),
+                      for (final system in widget.analysis.systems)
+                        for (final token in system.tokens)
+                          Positioned(
+                            left: token.rect.left * constraints.maxWidth,
+                            top: token.rect.top * constraints.maxHeight,
+                            width: token.rect.width * constraints.maxWidth,
+                            height: token.rect.height * constraints.maxHeight,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onTap: widget.addingNote
+                                  ? null
+                                  : () => widget.onTokenTap(token.id),
+                              onPanStart:
+                                  !widget.addingNote &&
+                                      token.origin ==
+                                          VisualTabTokenOrigin.manual
+                                  ? (_) {
+                                      setState(
+                                        () => _draggingTokenId = token.id,
+                                      );
+                                      widget.onManualDragStart(token.id);
+                                    }
+                                  : null,
+                              onPanUpdate:
+                                  !widget.addingNote &&
+                                      token.origin ==
+                                          VisualTabTokenOrigin.manual
+                                  ? (details) => widget.onManualDragUpdate(
+                                      token.id,
+                                      Offset(
+                                        details.delta.dx / constraints.maxWidth,
+                                        details.delta.dy /
+                                            constraints.maxHeight,
+                                      ),
+                                    )
+                                  : null,
+                              onPanEnd:
+                                  !widget.addingNote &&
+                                      token.origin ==
+                                          VisualTabTokenOrigin.manual
+                                  ? (_) {
+                                      setState(() => _draggingTokenId = null);
+                                      widget.onManualDragEnd(token.id);
+                                    }
+                                  : null,
+                              onPanCancel:
+                                  !widget.addingNote &&
+                                      token.origin ==
+                                          VisualTabTokenOrigin.manual
+                                  ? () {
+                                      setState(() => _draggingTokenId = null);
+                                      widget.onManualDragCancel(token.id);
+                                    }
+                                  : null,
+                            ),
                           ),
-                        ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },
@@ -217,18 +256,45 @@ class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
   }
 }
 
-class _AnalysisOverlayPainter extends CustomPainter {
-  const _AnalysisOverlayPainter({
+class VisualAnalysisOverlay extends StatelessWidget {
+  const VisualAnalysisOverlay({
+    super.key,
     required this.analysis,
-    required this.selectedTokenIds,
-    required this.drawStart,
-    required this.drawEnd,
+    this.selectedTokenIds = const {},
+    this.provisionalPlacement,
+    this.draggingTokenId,
   });
 
   final VisualTabAnalysis analysis;
   final Set<String> selectedTokenIds;
-  final Offset? drawStart;
-  final Offset? drawEnd;
+  final VisualManualNotePlacement? provisionalPlacement;
+  final String? draggingTokenId;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _AnalysisOverlayPainter(
+        analysis: analysis,
+        selectedTokenIds: selectedTokenIds,
+        provisionalPlacement: provisionalPlacement,
+        draggingTokenId: draggingTokenId,
+      ),
+    );
+  }
+}
+
+class _AnalysisOverlayPainter extends CustomPainter {
+  const _AnalysisOverlayPainter({
+    required this.analysis,
+    required this.selectedTokenIds,
+    required this.provisionalPlacement,
+    required this.draggingTokenId,
+  });
+
+  final VisualTabAnalysis analysis;
+  final Set<String> selectedTokenIds;
+  final VisualManualNotePlacement? provisionalPlacement;
+  final String? draggingTokenId;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -298,6 +364,16 @@ class _AnalysisOverlayPainter extends CustomPainter {
       }
       for (final token in system.tokens) {
         final selected = selectedTokenIds.contains(token.id);
+        final active = selected || draggingTokenId == token.id;
+        if (token.origin == VisualTabTokenOrigin.manual &&
+            token.stringIndex != null) {
+          _drawManualGradient(
+            canvas,
+            size,
+            manualNoteGradient(system, token),
+            active: active,
+          );
+        }
         final color = selected
             ? Colors.yellowAccent
             : switch (token.kind) {
@@ -323,12 +399,35 @@ class _AnalysisOverlayPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeWidth = selected ? 2.5 : 1.3,
         );
+        if (token.origin == VisualTabTokenOrigin.manual) {
+          _drawManualTokenText(canvas, rect, token.text, color);
+        }
       }
     }
-    if (drawStart != null && drawEnd != null) {
-      final rect = Rect.fromPoints(
-        Offset(drawStart!.dx * size.width, drawStart!.dy * size.height),
-        Offset(drawEnd!.dx * size.width, drawEnd!.dy * size.height),
+    final provisional = provisionalPlacement;
+    if (provisional != null) {
+      final system = analysis.systems.firstWhere(
+        (candidate) => candidate.id == provisional.systemId,
+      );
+      final token = VisualTabToken(
+        id: 'provisional',
+        text: '0',
+        rect: provisional.rect,
+        kind: VisualTabTokenKind.fret,
+        stringIndex: provisional.stringIndex,
+        origin: VisualTabTokenOrigin.manual,
+      );
+      _drawManualGradient(
+        canvas,
+        size,
+        manualNoteGradient(system, token),
+        active: true,
+      );
+      final rect = Rect.fromLTRB(
+        token.rect.left * size.width,
+        token.rect.top * size.height,
+        token.rect.right * size.width,
+        token.rect.bottom * size.height,
       );
       canvas.drawRect(
         rect,
@@ -342,6 +441,56 @@ class _AnalysisOverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _AnalysisOverlayPainter oldDelegate) => true;
+}
+
+void _drawManualGradient(
+  Canvas canvas,
+  Size size,
+  VisualManualNoteGradient gradient, {
+  required bool active,
+}) {
+  final left = gradient.left * size.width;
+  final right = gradient.right * size.width;
+  final center = gradient.centerX * size.width;
+  final y = gradient.lineY * size.height;
+  final alpha = active ? 0.42 : 0.18;
+  final paint = Paint()
+    ..shader = LinearGradient(
+      colors: [
+        Colors.transparent,
+        Colors.lightBlueAccent.withValues(alpha: alpha),
+        Colors.transparent,
+      ],
+      stops: [
+        0,
+        ((center - left) / math.max(1, right - left)).clamp(0.0, 1.0),
+        1,
+      ],
+    ).createShader(Rect.fromLTRB(left, y - 4, right, y + 4));
+  canvas.drawRect(Rect.fromLTRB(left, y - 4, right, y + 4), paint);
+}
+
+void _drawManualTokenText(Canvas canvas, Rect rect, String text, Color accent) {
+  final painter = TextPainter(
+    text: TextSpan(
+      text: text,
+      style: TextStyle(
+        color: Colors.white,
+        backgroundColor: Colors.black.withValues(alpha: 0.72),
+        fontSize: math.max(8, rect.height * 0.82),
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    maxLines: 1,
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: math.max(1, rect.width));
+  painter.paint(
+    canvas,
+    Offset(
+      rect.center.dx - painter.width / 2,
+      rect.center.dy - painter.height / 2,
+    ),
+  );
 }
 
 String visualRiskLocationLabel(

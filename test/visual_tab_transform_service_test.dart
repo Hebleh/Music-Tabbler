@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -143,6 +144,243 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+
+  test(
+    'manual sustain keeps its explicit fret during sustain resolution',
+    () async {
+      final fixture = _fourStringFixture();
+      final asset = await library.storeAsset(fixture, 'png');
+      final now = DateTime.utc(2026, 8, 12);
+      final strip = VisualStrip(
+        id: 'source-strip',
+        assetHash: asset.hash,
+        assetExtension: 'png',
+        pixelWidth: 600,
+        pixelHeight: 120,
+      );
+      final draft = VisualChartDraft(
+        id: 'manual-sustain',
+        title: 'Manual sustain',
+        artist: '',
+        createdAt: now,
+        updatedAt: now,
+        strips: [strip],
+      );
+      final source = _analysis(tokenText: '12', tokenString: 0);
+      final system = source.systems.single;
+      final analysis = source.copyWith(
+        systems: [
+          system.copyWith(
+            tokens: [
+              ...system.tokens,
+              const VisualTabToken(
+                id: 'manual-sustain',
+                text: '(9)',
+                rect: NormalizedRect(0.45, 0.55, 0.5, 0.61),
+                kind: VisualTabTokenKind.fret,
+                stringIndex: 0,
+                origin: VisualTabTokenOrigin.manual,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final transformed = await VisualTabTransformService(library).apply(
+        draft: draft,
+        analyses: [analysis],
+        configuration: _dropDToFiveStringConfiguration(),
+      );
+
+      final savedManual =
+          VisualTabAnalysis.fromJson(
+            transformed.visualTabTransform!.analyses.single,
+          ).systems.single.tokens.singleWhere(
+            (token) => token.id == 'manual-sustain',
+          );
+      expect(savedManual.text, '(9)');
+      expect(savedManual.origin, VisualTabTokenOrigin.manual);
+    },
+  );
+
+  test(
+    'manual X is painted at zero offset while detected X is untouched',
+    () async {
+      final fixture = _fourStringFixture();
+      final asset = await library.storeAsset(fixture, 'png');
+      final now = DateTime.utc(2026, 8, 12);
+      VisualChartDraft draft(String id) => VisualChartDraft(
+        id: id,
+        title: 'Manual X',
+        artist: '',
+        createdAt: now,
+        updatedAt: now,
+        strips: [
+          VisualStrip(
+            id: 'source-strip',
+            assetHash: asset.hash,
+            assetExtension: 'png',
+            pixelWidth: 600,
+            pixelHeight: 120,
+          ),
+        ],
+      );
+      VisualTabAnalysis analysis(VisualTabTokenOrigin origin) =>
+          VisualTabAnalysis(
+            stripId: 'source-strip',
+            sourceType: VisualTabSourceType.rasterOcr,
+            systems: [
+              VisualTabSystem(
+                id: 'system',
+                rect: const NormalizedRect(0, 0.12, 1, 0.72),
+                stringLines: const [0.22, 0.34, 0.46, 0.58],
+                barLines: const [0.04, 0.96],
+                tokens: [
+                  VisualTabToken(
+                    id: 'x',
+                    text: 'X',
+                    rect: const NormalizedRect(0.48, 0.43, 0.52, 0.49),
+                    kind: VisualTabTokenKind.deadNote,
+                    stringIndex: 1,
+                    origin: origin,
+                  ),
+                ],
+              ),
+            ],
+          );
+      final config = VisualTabTransformConfiguration(
+        sourceLabels: const ['E', 'A', 'D', 'G'],
+        sourceOpenMidis: const [40, 45, 50, 55],
+        sourceCapo: 0,
+        targetLabels: const ['E', 'A', 'D', 'G'],
+        targetOpenMidis: const [40, 45, 50, 55],
+        targetCapo: 0,
+        globalPitchChange: 0,
+        routes: const [
+          VisualStringRoute(sourceString: 0, targetString: 0, fretOffset: 0),
+          VisualStringRoute(sourceString: 1, targetString: 1, fretOffset: 0),
+          VisualStringRoute(sourceString: 2, targetString: 2, fretOffset: 0),
+          VisualStringRoute(sourceString: 3, targetString: 3, fretOffset: 0),
+        ],
+      );
+      final service = VisualTabTransformService(library);
+      final detected = await service.apply(
+        draft: draft('detected-x'),
+        analyses: [analysis(VisualTabTokenOrigin.detected)],
+        configuration: config,
+      );
+      final manual = await service.apply(
+        draft: draft('manual-x'),
+        analyses: [analysis(VisualTabTokenOrigin.manual)],
+        configuration: config,
+      );
+      final detectedBytes = await File(
+        library.assetPath(
+          detected.strips.single.assetHash,
+          detected.strips.single.assetExtension,
+        ),
+      ).readAsBytes();
+      final manualBytes = await File(
+        library.assetPath(
+          manual.strips.single.assetHash,
+          manual.strips.single.assetExtension,
+        ),
+      ).readAsBytes();
+
+      expect(
+        manual.strips.single.assetHash,
+        isNot(detected.strips.single.assetHash),
+      );
+      expect(
+        _darkPixelsInRect(
+          manualBytes,
+          left: 270,
+          top: 30,
+          right: 330,
+          bottom: 60,
+        ),
+        greaterThan(
+          _darkPixelsInRect(
+            detectedBytes,
+            left: 270,
+            top: 30,
+            right: 330,
+            bottom: 60,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'manual fret is painted at zero offset and keeps its x center',
+    () async {
+      final fixture = _fourStringFixture();
+      final asset = await library.storeAsset(fixture, 'png');
+      final now = DateTime.utc(2026, 8, 12);
+      final strip = VisualStrip(
+        id: 'source-strip',
+        assetHash: asset.hash,
+        assetExtension: 'png',
+        pixelWidth: 600,
+        pixelHeight: 120,
+      );
+      final draft = VisualChartDraft(
+        id: 'manual-fret-zero',
+        title: 'Manual fret zero',
+        artist: '',
+        createdAt: now,
+        updatedAt: now,
+        strips: [strip],
+      );
+      const centerX = 0.62;
+      final analysis = VisualTabAnalysis(
+        stripId: strip.id,
+        sourceType: VisualTabSourceType.rasterOcr,
+        systems: const [
+          VisualTabSystem(
+            id: 'system',
+            rect: NormalizedRect(0, 0.12, 1, 0.72),
+            stringLines: [0.22, 0.34, 0.46, 0.58],
+            barLines: [0.04, 0.96],
+            tokens: [
+              VisualTabToken(
+                id: 'manual-fret',
+                text: '12',
+                rect: NormalizedRect(0.60, 0.43, 0.64, 0.49),
+                kind: VisualTabTokenKind.fret,
+                stringIndex: 1,
+                origin: VisualTabTokenOrigin.manual,
+              ),
+            ],
+          ),
+        ],
+      );
+      final transformed = await VisualTabTransformService(library).apply(
+        draft: draft,
+        analyses: [analysis],
+        configuration: _identityConfiguration(),
+      );
+      final outputBytes = await File(
+        library.assetPath(
+          transformed.strips.single.assetHash,
+          transformed.strips.single.assetExtension,
+        ),
+      ).readAsBytes();
+      final output = img.decodePng(outputBytes)!;
+      final expectedX = (centerX * output.width).round();
+      final expectedY = ((0.46 - 0.12) / (0.72 - 0.12) * output.height).round();
+      final inkBounds = _localInkBounds(
+        output,
+        centerX: expectedX,
+        centerY: expectedY,
+        halfWidth: 28,
+        halfHeight: 12,
+      );
+      expect(inkBounds, isNotNull);
+      expect((inkBounds!.$1 + inkBounds.$2) / 2, closeTo(expectedX, 1));
+    },
+  );
 
   test(
     'renders multiple added edge strings as complete bounded tab lines',
@@ -712,6 +950,24 @@ VisualTabAnalysis _analysis({
   );
 }
 
+VisualTabTransformConfiguration _identityConfiguration() {
+  return VisualTabTransformConfiguration(
+    sourceLabels: const ['E', 'A', 'D', 'G'],
+    sourceOpenMidis: const [40, 45, 50, 55],
+    sourceCapo: 0,
+    targetLabels: const ['E', 'A', 'D', 'G'],
+    targetOpenMidis: const [40, 45, 50, 55],
+    targetCapo: 0,
+    globalPitchChange: 0,
+    routes: const [
+      VisualStringRoute(sourceString: 0, targetString: 0, fretOffset: 0),
+      VisualStringRoute(sourceString: 1, targetString: 1, fretOffset: 0),
+      VisualStringRoute(sourceString: 2, targetString: 2, fretOffset: 0),
+      VisualStringRoute(sourceString: 3, targetString: 3, fretOffset: 0),
+    ],
+  );
+}
+
 Uint8List _fourStringFixture() {
   final image = img.Image(width: 600, height: 120)
     ..clear(img.ColorRgb8(248, 248, 248));
@@ -802,6 +1058,34 @@ int _darkPixelsInRect(
     }
   }
   return count;
+}
+
+(int, int)? _localInkBounds(
+  img.Image image, {
+  required int centerX,
+  required int centerY,
+  required int halfWidth,
+  required int halfHeight,
+}) {
+  int? left;
+  int? right;
+  for (
+    var y = (centerY - halfHeight).clamp(0, image.height - 1);
+    y <= (centerY + halfHeight).clamp(0, image.height - 1);
+    y += 1
+  ) {
+    if ((y - centerY).abs() <= 1) continue;
+    for (
+      var x = (centerX - halfWidth).clamp(0, image.width - 1);
+      x <= (centerX + halfWidth).clamp(0, image.width - 1);
+      x += 1
+    ) {
+      if (!_isDark(image.getPixel(x, y))) continue;
+      left = left == null ? x : math.min(left, x);
+      right = right == null ? x : math.max(right, x);
+    }
+  }
+  return left == null || right == null ? null : (left, right);
 }
 
 int _redPixelsInRect(

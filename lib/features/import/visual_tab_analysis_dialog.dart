@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../application/service_contracts.dart';
 import '../../application/visual_analysis_review_session.dart';
+import '../../application/visual_manual_note_placement.dart';
 import '../../application/visual_tab_analysis_service.dart';
 import '../../domain/visual_chart_models.dart';
 import '../../domain/visual_tab_transform_models.dart';
@@ -55,9 +56,7 @@ class _VisualTabAnalysisReviewScreenState
   late final VisualAnalysisReviewSession _review;
   final Set<String> _selectedTokenIds = {};
   bool _rerunningSource = false;
-  bool _drawing = false;
-  Offset? _drawStart;
-  Offset? _drawEnd;
+  bool _addingNote = false;
 
   List<VisualTabAnalysis?> get _analyses => _review.analyses;
   List<VisualAnalysisRowState> get _rowStates => _review.rowStates;
@@ -87,12 +86,40 @@ class _VisualTabAnalysisReviewScreenState
   }
 
   bool _handleHardwareKey(KeyEvent event) {
-    if (event is! KeyDownEvent ||
-        event.logicalKey != LogicalKeyboardKey.escape) {
+    if (event is! KeyDownEvent || _editableOwnsFocus()) {
       return false;
     }
-    Navigator.maybePop(context);
-    return true;
+    final key = event.logicalKey;
+    final control =
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+    if (key == LogicalKeyboardKey.escape) {
+      if (_addingNote) {
+        setState(() => _addingNote = false);
+      } else {
+        Navigator.maybePop(context);
+      }
+      return true;
+    }
+    if ((key == LogicalKeyboardKey.backspace ||
+            key == LogicalKeyboardKey.delete) &&
+        _selectedTokenIds.isNotEmpty) {
+      _deleteSelected();
+      return true;
+    }
+    if (control && key == LogicalKeyboardKey.keyZ) {
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        _redo();
+      } else {
+        _undo();
+      }
+      return true;
+    }
+    if (control && key == LogicalKeyboardKey.keyY) {
+      _redo();
+      return true;
+    }
+    return false;
   }
 
   Future<void> _run() async {
@@ -171,7 +198,9 @@ class _VisualTabAnalysisReviewScreenState
             currentIndex: _currentIndex,
             analysis: _analysis,
             rerunningSource: _rerunningSource,
-            drawing: _drawing,
+            addingNote: _addingNote,
+            canUndo: _review.canUndo,
+            canRedo: _review.canRedo,
             stripCount: widget.strips.length,
             selectedTokenCount: _selectedTokenIds.length,
             onRowSelected: (value) {
@@ -182,7 +211,9 @@ class _VisualTabAnalysisReviewScreenState
             },
             onRerunCurrent: _rerunCurrentWithOcr,
             onRerunAll: _rerunAllWithOcr,
-            onDrawingChanged: (value) => setState(() => _drawing = value),
+            onAddingNoteChanged: (value) => setState(() => _addingNote = value),
+            onUndo: _undo,
+            onRedo: _redo,
             onEdit: _editSelected,
             onMerge: _mergeSelected,
             onSplit: _splitSelected,
@@ -202,22 +233,15 @@ class _VisualTabAnalysisReviewScreenState
                   rowErrors: _rowErrors,
                   currentIndex: _currentIndex,
                   selectedTokenIds: _selectedTokenIds,
-                  drawing: _drawing,
-                  drawStart: _drawStart,
-                  drawEnd: _drawEnd,
+                  addingNote: _addingNote,
                   onRetry: _analyzeIndex,
                   onActivateRow: _activateRow,
                   onTokenTap: _activateAndToggle,
-                  onDrawStart: (index, position) {
-                    _activateRow(index);
-                    setState(() {
-                      _drawStart = position;
-                      _drawEnd = position;
-                    });
-                  },
-                  onDrawUpdate: (position) =>
-                      setState(() => _drawEnd = position),
-                  onDrawEnd: _finishDraw,
+                  onAddNote: _startAddNote,
+                  onManualDragStart: _startManualDrag,
+                  onManualDragUpdate: _updateManualDrag,
+                  onManualDragEnd: _finishManualDrag,
+                  onManualDragCancel: _cancelManualDrag,
                 ),
               ),
               VisualAnalysisInspector(
@@ -291,8 +315,6 @@ class _VisualTabAnalysisReviewScreenState
     setState(() {
       _currentIndex = index;
       _selectedTokenIds.clear();
-      _drawStart = null;
-      _drawEnd = null;
     });
   }
 
@@ -312,7 +334,13 @@ class _VisualTabAnalysisReviewScreenState
       _selectedTokenIds.clear();
     });
     try {
-      await _analyzeIndex(_currentIndex, preferPositionedPdf: false);
+      await _review.rerunIndex(
+        _currentIndex,
+        preferPositionedPdf: false,
+        onChanged: () {
+          if (mounted) setState(() {});
+        },
+      );
     } finally {
       if (mounted) setState(() => _rerunningSource = false);
     }
@@ -324,11 +352,11 @@ class _VisualTabAnalysisReviewScreenState
       _selectedTokenIds.clear();
     });
     try {
-      for (var index = 0; index < widget.strips.length; index += 1) {
-        if (!mounted) return;
-        setState(() => _currentIndex = index);
-        await _analyzeIndex(index, preferPositionedPdf: false);
-      }
+      await _review.rerunAll(
+        onChanged: () {
+          if (mounted) setState(() {});
+        },
+      );
     } finally {
       if (mounted) setState(() => _rerunningSource = false);
     }
@@ -340,43 +368,41 @@ class _VisualTabAnalysisReviewScreenState
     });
   }
 
+  void _undo() {
+    if (!_review.canUndo) return;
+    setState(() {
+      _review.undo();
+      _selectedTokenIds.clear();
+    });
+  }
+
+  void _redo() {
+    if (!_review.canRedo) return;
+    setState(() {
+      _review.redo();
+      _selectedTokenIds.clear();
+    });
+  }
+
+  bool _editableOwnsFocus() {
+    final context = FocusManager.instance.primaryFocus?.context;
+    return context?.findAncestorWidgetOfExactType<EditableText>() != null ||
+        context?.widget is EditableText;
+  }
+
   void _setRiskSide(
     String systemId,
     String riskId,
     VisualConnectedComponentSide side,
   ) {
     setState(() {
-      final systems = [
-        for (final system in _analysis.systems)
-          if (system.id != systemId)
-            system
-          else
-            system.copyWith(
-              connectedNotationRisks: [
-                for (final risk in system.connectedNotationRisks)
-                  if (risk.id == riskId) risk.copyWith(side: side) else risk,
-              ],
-            ),
-      ];
-      _review.replaceCurrent(_analysis.copyWith(systems: systems));
+      _review.setRiskSide(systemId, riskId, side);
     });
   }
 
   void _removeRisk(String systemId, String riskId) {
     setState(() {
-      final systems = [
-        for (final system in _analysis.systems)
-          if (system.id != systemId)
-            system
-          else
-            system.copyWith(
-              connectedNotationRisks: [
-                for (final risk in system.connectedNotationRisks)
-                  if (risk.id != riskId) risk,
-              ],
-            ),
-      ];
-      _review.replaceCurrent(_analysis.copyWith(systems: systems));
+      _review.removeRisk(systemId, riskId);
     });
   }
 
@@ -394,9 +420,30 @@ class _VisualTabAnalysisReviewScreenState
   Future<void> _editSelected() async {
     final token = _selectedToken();
     if (token == null) return;
+    if (token.origin == VisualTabTokenOrigin.manual) {
+      final entry = await _manualNoteDialog(token.stringIndex!, initial: token);
+      if (entry == null) return;
+      final replacement = _review.updateManualNote(
+        id: token.id,
+        text: entry.text,
+        stringIndex: entry.stringIndex,
+      );
+      if (replacement == null) return;
+      setState(() {
+        _selectedTokenIds
+          ..clear()
+          ..add(replacement.id);
+      });
+      return;
+    }
     final result = await _editTokenDialog(token);
     if (result == null) return;
-    _replaceToken(token.id, result);
+    setState(() {
+      _review.replaceToken(token.id, result);
+      _selectedTokenIds
+        ..clear()
+        ..add(result.id);
+    });
   }
 
   Future<void> _mergeSelected() async {
@@ -423,9 +470,20 @@ class _VisualTabAnalysisReviewScreenState
       stringIndex: firstString,
       confidence:
           selected.map((token) => token.confidence).reduce(math.min) * 0.95,
+      origin:
+          selected.any((token) => token.origin == VisualTabTokenOrigin.manual)
+          ? VisualTabTokenOrigin.manual
+          : VisualTabTokenOrigin.detected,
     );
-    _removeTokens(_selectedTokenIds);
-    _addTokenToNearestSystem(merged);
+    _review.beginTransaction();
+    _review.removeTokens(_selectedTokenIds);
+    _review.addTokenToNearestSystem(merged);
+    _review.commitTransaction();
+    setState(() {
+      _selectedTokenIds
+        ..clear()
+        ..add(merged.id);
+    });
   }
 
   Future<void> _splitSelected() async {
@@ -467,7 +525,9 @@ class _VisualTabAnalysisReviewScreenState
     );
     controller.dispose();
     if (values == null || values.length < 2) return;
-    _removeTokens({token.id});
+    _review.beginTransaction();
+    _review.removeTokens({token.id});
+    final replacements = <VisualTabToken>[];
     final width = token.rect.width / values.length;
     for (var index = 0; index < values.length; index += 1) {
       final part = token.copyWith(
@@ -480,125 +540,212 @@ class _VisualTabAnalysisReviewScreenState
         ),
         kind: _kindForEditedValue(values[index], token.stringIndex),
       );
-      _addTokenToNearestSystem(
-        VisualTabToken(
-          id: 'review_${DateTime.now().microsecondsSinceEpoch}_$index',
-          text: part.text,
-          rect: part.rect,
-          kind: part.kind,
-          stringIndex: part.stringIndex,
-          confidence: part.confidence * 0.9,
-          enabled: part.enabled,
-        ),
+      final replacement = VisualTabToken(
+        id: 'review_${DateTime.now().microsecondsSinceEpoch}_$index',
+        text: part.text,
+        rect: part.rect,
+        kind: part.kind,
+        stringIndex: part.stringIndex,
+        confidence: part.confidence * 0.9,
+        enabled: part.enabled,
+        origin: part.origin,
       );
+      replacements.add(replacement);
+      _review.addTokenToNearestSystem(replacement);
     }
+    _review.commitTransaction();
+    setState(() {
+      _selectedTokenIds
+        ..clear()
+        ..addAll(replacements.map((token) => token.id));
+    });
   }
 
-  void _deleteSelected() => _removeTokens(_selectedTokenIds);
-
-  void _removeTokens(Set<String> ids) {
-    final systems = [
-      for (final system in _analysis.systems)
-        system.copyWith(
-          tokens: system.tokens
-              .where((token) => !ids.contains(token.id))
-              .toList(),
-        ),
-    ];
+  void _deleteSelected() {
     setState(() {
-      _review.replaceCurrent(_analysis.copyWith(systems: systems));
+      _review.removeTokens(_selectedTokenIds);
       _selectedTokenIds.clear();
     });
   }
 
-  void _replaceToken(String id, VisualTabToken replacement) {
-    final systems = [
-      for (final system in _analysis.systems)
-        system.copyWith(
-          tokens: [
-            for (final token in system.tokens)
-              if (token.id == id) replacement else token,
-          ],
-        ),
-    ];
-    setState(() {
-      _review.replaceCurrent(_analysis.copyWith(systems: systems));
-      _selectedTokenIds
-        ..clear()
-        ..add(replacement.id);
-    });
-  }
-
-  Future<void> _finishDraw(NormalizedRect? rect) async {
-    if (rect == null || rect.width < 0.002 || rect.height < 0.002) {
-      setState(() {
-        _drawStart = null;
-        _drawEnd = null;
-      });
+  Future<void> _startAddNote(int index, Offset position) async {
+    _activateRow(index);
+    final provisional = placeVisualManualNote(
+      analysis: _analysis,
+      x: position.dx,
+      y: position.dy,
+      text: '0',
+    );
+    if (provisional == null) {
+      _message('No tablature string was found near that position.');
       return;
     }
-    final nearest = _nearestString(rect);
-    final provisional = VisualTabToken(
-      id: 'review_${DateTime.now().microsecondsSinceEpoch}',
-      text: '',
-      rect: rect,
-      kind: VisualTabTokenKind.ambiguous,
-      stringIndex: nearest,
-      confidence: 1,
+    final entry = await _manualNoteDialog(provisional.stringIndex);
+    if (!mounted || entry == null) return;
+    final token = _review.addManualNote(
+      id: 'manual_${DateTime.now().microsecondsSinceEpoch}',
+      x: position.dx,
+      y: position.dy,
+      text: entry.text,
+      stringIndex: entry.stringIndex,
     );
-    final edited = await _editTokenDialog(provisional);
-    if (!mounted) return;
+    if (token == null) return;
     setState(() {
-      _drawStart = null;
-      _drawEnd = null;
-      _drawing = false;
-    });
-    if (edited != null) _addTokenToNearestSystem(edited);
-  }
-
-  int? _nearestString(NormalizedRect rect) {
-    final centerY = (rect.top + rect.bottom) / 2;
-    int? nearest;
-    var distance = double.infinity;
-    for (final system in _analysis.systems) {
-      for (var index = 0; index < system.stringLines.length; index += 1) {
-        final next = (system.stringLines[index] - centerY).abs();
-        if (next < distance) {
-          distance = next;
-          nearest = index;
-        }
-      }
-    }
-    return nearest;
-  }
-
-  void _addTokenToNearestSystem(VisualTabToken token) {
-    if (_analysis.systems.isEmpty) return;
-    final centerY = (token.rect.top + token.rect.bottom) / 2;
-    var nearestIndex = 0;
-    var distance = double.infinity;
-    for (var index = 0; index < _analysis.systems.length; index += 1) {
-      final rect = _analysis.systems[index].rect;
-      final next = centerY < rect.top
-          ? rect.top - centerY
-          : centerY > rect.bottom
-          ? centerY - rect.bottom
-          : 0.0;
-      if (next < distance) {
-        distance = next;
-        nearestIndex = index;
-      }
-    }
-    final systems = [..._analysis.systems];
-    systems[nearestIndex] = systems[nearestIndex].copyWith(
-      tokens: [...systems[nearestIndex].tokens, token],
-    );
-    setState(() {
-      _review.replaceCurrent(_analysis.copyWith(systems: systems));
       _selectedTokenIds
         ..clear()
         ..add(token.id);
     });
+  }
+
+  void _startManualDrag(int index, String tokenId) {
+    _activateRow(index);
+    _review.beginTransaction();
+    setState(() {
+      _selectedTokenIds
+        ..clear()
+        ..add(tokenId);
+    });
+  }
+
+  void _updateManualDrag(int index, String tokenId, Offset delta) {
+    if (_currentIndex != index) return;
+    if (!_review.moveManualToken(tokenId, deltaX: delta.dx, deltaY: delta.dy)) {
+      return;
+    }
+    setState(() {});
+  }
+
+  void _finishManualDrag(int index, String tokenId) {
+    if (_currentIndex != index || !_selectedTokenIds.contains(tokenId)) {
+      _review.cancelTransaction();
+    } else {
+      _review.commitTransaction();
+    }
+    setState(() {});
+  }
+
+  void _cancelManualDrag(int index, String tokenId) {
+    _review.cancelTransaction();
+    if (!mounted) return;
+    setState(() {
+      _currentIndex = index;
+      _selectedTokenIds
+        ..clear()
+        ..add(tokenId);
+    });
+  }
+
+  Future<_ManualNoteEntry?> _manualNoteDialog(
+    int initialStringIndex, {
+    VisualTabToken? initial,
+  }) async {
+    final initialText = initial?.text ?? '';
+    final fretController = TextEditingController(
+      text: initialText.replaceAll(RegExp(r'[^0-9]'), ''),
+    );
+    var mode = initialText.toUpperCase() == 'X'
+        ? VisualManualNoteType.deadNote
+        : initialText.startsWith('(')
+        ? VisualManualNoteType.sustained
+        : VisualManualNoteType.normal;
+    var stringIndex = initialStringIndex;
+    String? errorText;
+    final result = await showDialog<_ManualNoteEntry>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(initial == null ? 'Add note' : 'Edit manual note'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<VisualManualNoteType>(
+                initialValue: mode,
+                autofocus: false,
+                decoration: const InputDecoration(labelText: 'Note type'),
+                items: const [
+                  DropdownMenuItem(
+                    value: VisualManualNoteType.normal,
+                    child: Text('Normal fret'),
+                  ),
+                  DropdownMenuItem(
+                    value: VisualManualNoteType.sustained,
+                    child: Text('Sustained fret'),
+                  ),
+                  DropdownMenuItem(
+                    value: VisualManualNoteType.deadNote,
+                    child: Text('Dead note (X)'),
+                  ),
+                ],
+                onChanged: (value) => setDialogState(() {
+                  mode = value ?? mode;
+                  errorText = null;
+                }),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const ValueKey('manual-fret-input'),
+                controller: fretController,
+                autofocus: true,
+                enabled: mode != VisualManualNoteType.deadNote,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: 'Fret (0-36)',
+                  errorText: errorText,
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                initialValue: stringIndex,
+                decoration: const InputDecoration(
+                  labelText: 'Source string (low to high)',
+                ),
+                items: [
+                  for (
+                    var index = 0;
+                    index < widget.sourceStringCount;
+                    index += 1
+                  )
+                    DropdownMenuItem(
+                      value: index,
+                      child: Text('String ${index + 1}'),
+                    ),
+                ],
+                onChanged: (value) =>
+                    setDialogState(() => stringIndex = value ?? stringIndex),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final fret = int.tryParse(fretController.text);
+                String value;
+                try {
+                  value = formatVisualManualNoteValue(type: mode, fret: fret);
+                } on FormatException {
+                  setDialogState(
+                    () => errorText = 'Enter a fret from 0 through 36.',
+                  );
+                  return;
+                }
+                Navigator.pop(
+                  context,
+                  _ManualNoteEntry(text: value, stringIndex: stringIndex),
+                );
+              },
+              child: Text(initial == null ? 'Add' : 'Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+    fretController.dispose();
+    return result;
   }
 
   Future<VisualTabToken?> _editTokenDialog(VisualTabToken token) async {
@@ -684,6 +831,13 @@ class _VisualTabAnalysisReviewScreenState
   void _message(String value) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
   }
+}
+
+class _ManualNoteEntry {
+  const _ManualNoteEntry({required this.text, required this.stringIndex});
+
+  final String text;
+  final int stringIndex;
 }
 
 VisualTabTokenKind _kindForEditedValue(String value, int? stringIndex) {

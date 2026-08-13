@@ -9,13 +9,17 @@ class VisualAnalysisToolbar extends StatelessWidget {
     required this.currentIndex,
     required this.analysis,
     required this.rerunningSource,
-    required this.drawing,
+    required this.addingNote,
+    required this.canUndo,
+    required this.canRedo,
     required this.stripCount,
     required this.selectedTokenCount,
     required this.onRowSelected,
     required this.onRerunCurrent,
     required this.onRerunAll,
-    required this.onDrawingChanged,
+    required this.onAddingNoteChanged,
+    required this.onUndo,
+    required this.onRedo,
     required this.onEdit,
     required this.onMerge,
     required this.onSplit,
@@ -26,13 +30,17 @@ class VisualAnalysisToolbar extends StatelessWidget {
   final int currentIndex;
   final VisualTabAnalysis analysis;
   final bool rerunningSource;
-  final bool drawing;
+  final bool addingNote;
+  final bool canUndo;
+  final bool canRedo;
   final int stripCount;
   final int selectedTokenCount;
   final ValueChanged<int> onRowSelected;
   final VoidCallback onRerunCurrent;
   final VoidCallback onRerunAll;
-  final ValueChanged<bool> onDrawingChanged;
+  final ValueChanged<bool> onAddingNoteChanged;
+  final VoidCallback onUndo;
+  final VoidCallback onRedo;
   final VoidCallback onEdit;
   final VoidCallback onMerge;
   final VoidCallback onSplit;
@@ -96,10 +104,21 @@ class VisualAnalysisToolbar extends StatelessWidget {
               label: const Text('Raster / OCR all rows'),
             ),
             FilterChip(
-              selected: drawing,
+              key: const ValueKey('add-manual-note'),
+              selected: addingNote,
               avatar: const Icon(Icons.add_box_outlined),
-              label: const Text('Draw missing token'),
-              onSelected: onDrawingChanged,
+              label: const Text('Add note'),
+              onSelected: onAddingNoteChanged,
+            ),
+            IconButton(
+              tooltip: 'Undo review change',
+              onPressed: canUndo ? onUndo : null,
+              icon: const Icon(Icons.undo),
+            ),
+            IconButton(
+              tooltip: 'Redo review change',
+              onPressed: canRedo ? onRedo : null,
+              icon: const Icon(Icons.redo),
             ),
             OutlinedButton.icon(
               onPressed: selectedTokenCount == 1 ? onEdit : null,
@@ -119,7 +138,7 @@ class VisualAnalysisToolbar extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: selectedTokenCount == 0 ? null : onDelete,
               icon: const Icon(Icons.delete_outline),
-              label: const Text('Delete'),
+              label: const Text('Remove selected'),
             ),
           ],
         ),

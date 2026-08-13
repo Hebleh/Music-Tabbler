@@ -168,6 +168,7 @@ class VisualAnalysisInspector extends StatelessWidget {
                         ),
                       ),
                       subtitle: Text(
+                        '${token.origin == VisualTabTokenOrigin.manual ? "manual \u00B7 " : ""}'
                         '${token.kind.name} \u00B7 '
                         '${token.stringIndex == null ? "no string" : "string ${token.stringIndex! + 1}"}',
                       ),
