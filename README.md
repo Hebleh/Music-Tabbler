@@ -5,6 +5,10 @@ tablature screenshots and PDFs into compact, stage-readable charts. Local OCR
 is an editable aid; the supported source of truth remains the preserved visual
 material.
 
+It is designed and tested with both guitar and bass tablature in mind,
+including different source and output string counts, tunings, and
+instrument-specific layouts.
+
 The application targets Windows, macOS, Android, and iOS. Gig Mode is
 optimized for stage displays and stylus annotation, while deterministic A4 PDF
 remains a first-class output.
