@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../application/library_contracts.dart';
 import '../../application/visual_analysis_review_session.dart';
+import '../../application/visual_manual_note_placement.dart';
 import '../../application/visual_image_processor.dart';
 import '../../domain/visual_chart_models.dart';
 import '../../domain/visual_tab_transform_models.dart';
@@ -77,26 +78,26 @@ class VisualAnalysisCanvas extends StatefulWidget {
     required this.strip,
     required this.analysis,
     required this.selectedTokenIds,
-    required this.drawing,
-    required this.drawStart,
-    required this.drawEnd,
+    required this.addingNote,
     required this.onTokenTap,
-    required this.onDrawStart,
-    required this.onDrawUpdate,
-    required this.onDrawEnd,
+    required this.onAddNote,
+    required this.onManualDragStart,
+    required this.onManualDragUpdate,
+    required this.onManualDragEnd,
+    required this.onManualDragCancel,
   });
 
   final ChartLibrary library;
   final VisualStrip strip;
   final VisualTabAnalysis analysis;
   final Set<String> selectedTokenIds;
-  final bool drawing;
-  final Offset? drawStart;
-  final Offset? drawEnd;
+  final bool addingNote;
   final ValueChanged<String> onTokenTap;
-  final ValueChanged<Offset> onDrawStart;
-  final ValueChanged<Offset> onDrawUpdate;
-  final ValueChanged<NormalizedRect?> onDrawEnd;
+  final ValueChanged<Offset> onAddNote;
+  final ValueChanged<String> onManualDragStart;
+  final void Function(String id, Offset normalizedDelta) onManualDragUpdate;
+  final ValueChanged<String> onManualDragEnd;
+  final ValueChanged<String> onManualDragCancel;
 
   @override
   State<VisualAnalysisCanvas> createState() => VisualAnalysisCanvasState();
@@ -104,8 +105,8 @@ class VisualAnalysisCanvas extends StatefulWidget {
 
 class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
   late Future<Uint8List> _preview;
-  int? _activeDrawPointer;
-  Offset? _drawPointerStart;
+  Offset? _hoverPosition;
+  String? _draggingTokenId;
 
   @override
   void initState() {
@@ -117,10 +118,6 @@ class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
   void didUpdateWidget(covariant VisualAnalysisCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.strip.id != widget.strip.id) _load();
-    if (oldWidget.drawing && !widget.drawing) {
-      _activeDrawPointer = null;
-      _drawPointerStart = null;
-    }
   }
 
   void _load() {
@@ -142,148 +139,116 @@ class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
   Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: widget.strip.croppedAspectRatio,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          Offset normalize(Offset local) => Offset(
-            (local.dx / constraints.maxWidth).clamp(0.0, 1.0),
-            (local.dy / constraints.maxHeight).clamp(0.0, 1.0),
-          );
-          final guide =
-              _nearestDrawStringGuide(
-                widget.analysis,
-                widget.drawEnd ?? widget.drawStart,
-              ) ??
-              _selectedTokenStringGuide(
-                widget.analysis,
-                widget.selectedTokenIds,
-              );
-          final preview = Stack(
-            fit: StackFit.expand,
-            children: [
-              FutureBuilder<Uint8List>(
-                future: _preview,
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return const Center(child: Text('Preview unavailable'));
-                  }
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  return Image.memory(snapshot.data!, fit: BoxFit.fill);
-                },
-              ),
-              CustomPaint(
-                painter: _AnalysisOverlayPainter(
-                  analysis: widget.analysis,
-                  selectedTokenIds: widget.selectedTokenIds,
-                  drawStart: widget.drawStart,
-                  drawEnd: widget.drawEnd,
-                ),
-              ),
-              if (guide != null)
-                Positioned(
-                  left: guide.systemLeft * constraints.maxWidth,
-                  width:
-                      (guide.systemRight - guide.systemLeft) *
-                      constraints.maxWidth,
-                  top: guide.normalizedY * constraints.maxHeight - 2,
-                  height: 4,
-                  child: IgnorePointer(
-                    child: Semantics(
-                      label: 'Source string ${guide.sourceStringNumber} guide',
-                      child: DecoratedBox(
-                        key: ValueKey(
-                          'analysis-string-guide-${widget.strip.id}',
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.transparent,
-                              Colors.deepPurpleAccent.withValues(alpha: 0.72),
-                              Colors.yellowAccent,
-                              Colors.deepPurpleAccent.withValues(alpha: 0.72),
-                              Colors.transparent,
-                            ],
-                            stops: const [0, 0.28, 0.5, 0.72, 1],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              for (final system in widget.analysis.systems)
-                for (final token in system.tokens)
-                  Positioned(
-                    left: token.rect.left * constraints.maxWidth,
-                    top: token.rect.top * constraints.maxHeight,
-                    width: token.rect.width * constraints.maxWidth,
-                    height: token.rect.height * constraints.maxHeight,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: widget.drawing
-                          ? null
-                          : () => widget.onTokenTap(token.id),
-                    ),
-                  ),
-            ],
-          );
-          final surfaceKey = ValueKey(
-            'analysis-draw-surface-${widget.strip.id}',
-          );
-          if (!widget.drawing) {
-            return KeyedSubtree(key: surfaceKey, child: preview);
+      child: FutureBuilder<Uint8List>(
+        future: _preview,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(child: Text('Preview unavailable'));
           }
-          final canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
-          return Listener(
-            key: surfaceKey,
-            behavior: HitTestBehavior.opaque,
-            onPointerDown: (event) {
-              if (_activeDrawPointer != null) return;
-              _activeDrawPointer = event.pointer;
-              _drawPointerStart = event.localPosition;
-              widget.onDrawStart(normalize(event.localPosition));
-            },
-            onPointerMove: (event) {
-              if (_activeDrawPointer != event.pointer) return;
-              widget.onDrawUpdate(normalize(event.localPosition));
-            },
-            onPointerUp: (event) {
-              if (_activeDrawPointer != event.pointer) return;
-              final localStart = _drawPointerStart;
-              final start = localStart == null ? null : normalize(localStart);
-              final end = normalize(event.localPosition);
-              _activeDrawPointer = null;
-              _drawPointerStart = null;
-              if (start == null) {
-                widget.onDrawEnd(null);
-                return;
-              }
-              if ((event.localPosition - localStart!).distance < 6) {
-                final rect = _missingTokenTapRect(end, canvasSize);
-                widget.onDrawUpdate(Offset(rect.right, rect.bottom));
-                widget.onDrawEnd(rect);
-                return;
-              }
-              final left = math.min(start.dx, end.dx);
-              final top = math.min(start.dy, end.dy);
-              final right = math.max(start.dx, end.dx);
-              final bottom = math.max(start.dy, end.dy);
-              widget.onDrawEnd(
-                right > left && bottom > top
-                    ? NormalizedRect(left, top, right, bottom)
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              Offset normalize(Offset local) => Offset(
+                (local.dx / constraints.maxWidth).clamp(0.0, 1.0),
+                (local.dy / constraints.maxHeight).clamp(0.0, 1.0),
+              );
+              return MouseRegion(
+                cursor: widget.addingNote
+                    ? SystemMouseCursors.precise
+                    : MouseCursor.defer,
+                onHover: widget.addingNote
+                    ? (event) => setState(
+                        () => _hoverPosition = normalize(event.localPosition),
+                      )
                     : null,
+                onExit: (_) => setState(() => _hoverPosition = null),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: widget.addingNote
+                      ? (details) =>
+                            widget.onAddNote(normalize(details.localPosition))
+                      : null,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.memory(snapshot.data!, fit: BoxFit.fill),
+                      VisualAnalysisOverlay(
+                        analysis: widget.analysis,
+                        selectedTokenIds: widget.selectedTokenIds,
+                        provisionalPlacement:
+                            widget.addingNote && _hoverPosition != null
+                            ? placeVisualManualNote(
+                                analysis: widget.analysis,
+                                x: _hoverPosition!.dx,
+                                y: _hoverPosition!.dy,
+                                text: '0',
+                              )
+                            : null,
+                        draggingTokenId: _draggingTokenId,
+                      ),
+                      for (final system in widget.analysis.systems)
+                        for (final token in system.tokens)
+                          Positioned(
+                            left: token.rect.left * constraints.maxWidth,
+                            top: token.rect.top * constraints.maxHeight,
+                            width: token.rect.width * constraints.maxWidth,
+                            height: token.rect.height * constraints.maxHeight,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onTap: widget.addingNote
+                                  ? null
+                                  : () => widget.onTokenTap(token.id),
+                              onPanStart:
+                                  !widget.addingNote &&
+                                      token.origin ==
+                                          VisualTabTokenOrigin.manual
+                                  ? (_) {
+                                      setState(
+                                        () => _draggingTokenId = token.id,
+                                      );
+                                      widget.onManualDragStart(token.id);
+                                    }
+                                  : null,
+                              onPanUpdate:
+                                  !widget.addingNote &&
+                                      token.origin ==
+                                          VisualTabTokenOrigin.manual
+                                  ? (details) => widget.onManualDragUpdate(
+                                      token.id,
+                                      Offset(
+                                        details.delta.dx / constraints.maxWidth,
+                                        details.delta.dy /
+                                            constraints.maxHeight,
+                                      ),
+                                    )
+                                  : null,
+                              onPanEnd:
+                                  !widget.addingNote &&
+                                      token.origin ==
+                                          VisualTabTokenOrigin.manual
+                                  ? (_) {
+                                      setState(() => _draggingTokenId = null);
+                                      widget.onManualDragEnd(token.id);
+                                    }
+                                  : null,
+                              onPanCancel:
+                                  !widget.addingNote &&
+                                      token.origin ==
+                                          VisualTabTokenOrigin.manual
+                                  ? () {
+                                      setState(() => _draggingTokenId = null);
+                                      widget.onManualDragCancel(token.id);
+                                    }
+                                  : null,
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
               );
             },
-            onPointerCancel: (event) {
-              if (_activeDrawPointer != event.pointer) return;
-              _activeDrawPointer = null;
-              _drawPointerStart = null;
-              widget.onDrawEnd(null);
-            },
-            // Claim an actual drag so drawing does not scroll the row list.
-            // Pointer events above handle both clicks and drags without adding
-            // a competing tap recognizer to the row's InkWell.
-            child: GestureDetector(onPanStart: (_) {}, child: preview),
           );
         },
       ),
@@ -291,89 +256,45 @@ class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
   }
 }
 
-_AnalysisStringGuide? _nearestDrawStringGuide(
-  VisualTabAnalysis analysis,
-  Offset? position,
-) {
-  if (position == null) return null;
-  _AnalysisStringGuide? nearest;
-  var nearestDistance = double.infinity;
-  for (final system in analysis.systems) {
-    for (var index = 0; index < system.stringLines.length; index += 1) {
-      final distance = (system.stringLines[index] - position.dy).abs();
-      if (distance >= nearestDistance) continue;
-      nearestDistance = distance;
-      nearest = _AnalysisStringGuide(
-        systemLeft: system.rect.left,
-        systemRight: system.rect.right,
-        normalizedY: system.stringLines[index],
-        sourceStringNumber: system.stringLines.length - index,
-      );
-    }
-  }
-  return nearest;
-}
-
-_AnalysisStringGuide? _selectedTokenStringGuide(
-  VisualTabAnalysis analysis,
-  Set<String> selectedTokenIds,
-) {
-  if (selectedTokenIds.length != 1) return null;
-  final selectedId = selectedTokenIds.single;
-  for (final system in analysis.systems) {
-    for (final token in system.tokens) {
-      if (token.id != selectedId || token.stringIndex == null) continue;
-      final lineIndex = system.stringLines.length - 1 - token.stringIndex!;
-      if (lineIndex < 0 || lineIndex >= system.stringLines.length) return null;
-      return _AnalysisStringGuide(
-        systemLeft: system.rect.left,
-        systemRight: system.rect.right,
-        normalizedY: system.stringLines[lineIndex],
-        sourceStringNumber: token.stringIndex! + 1,
-      );
-    }
-  }
-  return null;
-}
-
-class _AnalysisStringGuide {
-  const _AnalysisStringGuide({
-    required this.systemLeft,
-    required this.systemRight,
-    required this.normalizedY,
-    required this.sourceStringNumber,
+class VisualAnalysisOverlay extends StatelessWidget {
+  const VisualAnalysisOverlay({
+    super.key,
+    required this.analysis,
+    this.selectedTokenIds = const {},
+    this.provisionalPlacement,
+    this.draggingTokenId,
   });
 
-  final double systemLeft;
-  final double systemRight;
-  final double normalizedY;
-  final int sourceStringNumber;
-}
+  final VisualTabAnalysis analysis;
+  final Set<String> selectedTokenIds;
+  final VisualManualNotePlacement? provisionalPlacement;
+  final String? draggingTokenId;
 
-NormalizedRect _missingTokenTapRect(Offset center, Size canvasSize) {
-  const halfExtent = 12.0;
-  final halfWidth = halfExtent / math.max(1.0, canvasSize.width);
-  final halfHeight = halfExtent / math.max(1.0, canvasSize.height);
-  return NormalizedRect(
-    center.dx - halfWidth,
-    center.dy - halfHeight,
-    center.dx + halfWidth,
-    center.dy + halfHeight,
-  ).clamp();
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _AnalysisOverlayPainter(
+        analysis: analysis,
+        selectedTokenIds: selectedTokenIds,
+        provisionalPlacement: provisionalPlacement,
+        draggingTokenId: draggingTokenId,
+      ),
+    );
+  }
 }
 
 class _AnalysisOverlayPainter extends CustomPainter {
   const _AnalysisOverlayPainter({
     required this.analysis,
     required this.selectedTokenIds,
-    required this.drawStart,
-    required this.drawEnd,
+    required this.provisionalPlacement,
+    required this.draggingTokenId,
   });
 
   final VisualTabAnalysis analysis;
   final Set<String> selectedTokenIds;
-  final Offset? drawStart;
-  final Offset? drawEnd;
+  final VisualManualNotePlacement? provisionalPlacement;
+  final String? draggingTokenId;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -443,6 +364,16 @@ class _AnalysisOverlayPainter extends CustomPainter {
       }
       for (final token in system.tokens) {
         final selected = selectedTokenIds.contains(token.id);
+        final active = selected || draggingTokenId == token.id;
+        if (token.origin == VisualTabTokenOrigin.manual &&
+            token.stringIndex != null) {
+          _drawManualGradient(
+            canvas,
+            size,
+            manualNoteGradient(system, token),
+            active: active,
+          );
+        }
         final color = selected
             ? Colors.yellowAccent
             : switch (token.kind) {
@@ -468,12 +399,35 @@ class _AnalysisOverlayPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeWidth = selected ? 2.5 : 1.3,
         );
+        if (token.origin == VisualTabTokenOrigin.manual) {
+          _drawManualTokenText(canvas, rect, token.text, color);
+        }
       }
     }
-    if (drawStart != null && drawEnd != null) {
-      final rect = Rect.fromPoints(
-        Offset(drawStart!.dx * size.width, drawStart!.dy * size.height),
-        Offset(drawEnd!.dx * size.width, drawEnd!.dy * size.height),
+    final provisional = provisionalPlacement;
+    if (provisional != null) {
+      final system = analysis.systems.firstWhere(
+        (candidate) => candidate.id == provisional.systemId,
+      );
+      final token = VisualTabToken(
+        id: 'provisional',
+        text: '0',
+        rect: provisional.rect,
+        kind: VisualTabTokenKind.fret,
+        stringIndex: provisional.stringIndex,
+        origin: VisualTabTokenOrigin.manual,
+      );
+      _drawManualGradient(
+        canvas,
+        size,
+        manualNoteGradient(system, token),
+        active: true,
+      );
+      final rect = Rect.fromLTRB(
+        token.rect.left * size.width,
+        token.rect.top * size.height,
+        token.rect.right * size.width,
+        token.rect.bottom * size.height,
       );
       canvas.drawRect(
         rect,
@@ -487,6 +441,56 @@ class _AnalysisOverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _AnalysisOverlayPainter oldDelegate) => true;
+}
+
+void _drawManualGradient(
+  Canvas canvas,
+  Size size,
+  VisualManualNoteGradient gradient, {
+  required bool active,
+}) {
+  final left = gradient.left * size.width;
+  final right = gradient.right * size.width;
+  final center = gradient.centerX * size.width;
+  final y = gradient.lineY * size.height;
+  final alpha = active ? 0.42 : 0.18;
+  final paint = Paint()
+    ..shader = LinearGradient(
+      colors: [
+        Colors.transparent,
+        Colors.lightBlueAccent.withValues(alpha: alpha),
+        Colors.transparent,
+      ],
+      stops: [
+        0,
+        ((center - left) / math.max(1, right - left)).clamp(0.0, 1.0),
+        1,
+      ],
+    ).createShader(Rect.fromLTRB(left, y - 4, right, y + 4));
+  canvas.drawRect(Rect.fromLTRB(left, y - 4, right, y + 4), paint);
+}
+
+void _drawManualTokenText(Canvas canvas, Rect rect, String text, Color accent) {
+  final painter = TextPainter(
+    text: TextSpan(
+      text: text,
+      style: TextStyle(
+        color: Colors.white,
+        backgroundColor: Colors.black.withValues(alpha: 0.72),
+        fontSize: math.max(8, rect.height * 0.82),
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    maxLines: 1,
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: math.max(1, rect.width));
+  painter.paint(
+    canvas,
+    Offset(
+      rect.center.dx - painter.width / 2,
+      rect.center.dy - painter.height / 2,
+    ),
+  );
 }
 
 String visualRiskLocationLabel(

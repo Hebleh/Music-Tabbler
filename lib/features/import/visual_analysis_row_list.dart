@@ -16,15 +16,15 @@ class VisualAnalysisRowList extends StatelessWidget {
     required this.rowErrors,
     required this.currentIndex,
     required this.selectedTokenIds,
-    required this.drawing,
-    required this.drawStart,
-    required this.drawEnd,
+    required this.addingNote,
     required this.onRetry,
     required this.onActivateRow,
     required this.onTokenTap,
-    required this.onDrawStart,
-    required this.onDrawUpdate,
-    required this.onDrawEnd,
+    required this.onAddNote,
+    required this.onManualDragStart,
+    required this.onManualDragUpdate,
+    required this.onManualDragEnd,
+    required this.onManualDragCancel,
   });
 
   final ChartLibrary library;
@@ -34,15 +34,16 @@ class VisualAnalysisRowList extends StatelessWidget {
   final Map<int, Object> rowErrors;
   final int currentIndex;
   final Set<String> selectedTokenIds;
-  final bool drawing;
-  final Offset? drawStart;
-  final Offset? drawEnd;
+  final bool addingNote;
   final ValueChanged<int> onRetry;
   final ValueChanged<int> onActivateRow;
   final void Function(int index, String tokenId) onTokenTap;
-  final void Function(int index, Offset position) onDrawStart;
-  final ValueChanged<Offset> onDrawUpdate;
-  final ValueChanged<NormalizedRect?> onDrawEnd;
+  final void Function(int index, Offset position) onAddNote;
+  final void Function(int index, String tokenId) onManualDragStart;
+  final void Function(int index, String tokenId, Offset normalizedDelta)
+  onManualDragUpdate;
+  final void Function(int index, String tokenId) onManualDragEnd;
+  final void Function(int index, String tokenId) onManualDragCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -124,13 +125,14 @@ class VisualAnalysisRowList extends StatelessWidget {
                     selectedTokenIds: index == currentIndex
                         ? selectedTokenIds
                         : const {},
-                    drawing: drawing,
-                    drawStart: index == currentIndex ? drawStart : null,
-                    drawEnd: index == currentIndex ? drawEnd : null,
+                    addingNote: index == currentIndex && addingNote,
                     onTokenTap: (id) => onTokenTap(index, id),
-                    onDrawStart: (position) => onDrawStart(index, position),
-                    onDrawUpdate: onDrawUpdate,
-                    onDrawEnd: onDrawEnd,
+                    onAddNote: (position) => onAddNote(index, position),
+                    onManualDragStart: (id) => onManualDragStart(index, id),
+                    onManualDragUpdate: (id, delta) =>
+                        onManualDragUpdate(index, id, delta),
+                    onManualDragEnd: (id) => onManualDragEnd(index, id),
+                    onManualDragCancel: (id) => onManualDragCancel(index, id),
                   ),
                 ],
               ),

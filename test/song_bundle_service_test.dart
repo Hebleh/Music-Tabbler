@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'package:music_tabbler/application/portable_container.dart';
 import 'package:music_tabbler/application/song_bundle_service.dart';
 import 'package:music_tabbler/domain/visual_chart_models.dart';
+import 'package:music_tabbler/domain/visual_tab_transform_models.dart';
 import 'package:music_tabbler/infrastructure/local_library.dart';
 
 void main() {
@@ -61,7 +62,29 @@ void main() {
             ),
           ],
           configuration: const {'globalPitchChange': 1},
-          analyses: const [],
+          analyses: [
+            const VisualTabAnalysis(
+              stripId: 'manual-source',
+              sourceType: VisualTabSourceType.rasterOcr,
+              systems: [
+                VisualTabSystem(
+                  id: 'system',
+                  rect: NormalizedRect(0, 0, 1, 1),
+                  stringLines: [0.2, 0.4, 0.6, 0.8],
+                  tokens: [
+                    VisualTabToken(
+                      id: 'manual-note',
+                      text: '(12)',
+                      rect: NormalizedRect(0.4, 0.56, 0.45, 0.64),
+                      kind: VisualTabTokenKind.fret,
+                      stringIndex: 1,
+                      origin: VisualTabTokenOrigin.manual,
+                    ),
+                  ],
+                ),
+              ],
+            ).toJson(),
+          ],
           audit: const ['fixture'],
         ),
         strips: [
@@ -107,6 +130,13 @@ void main() {
       expect(await target.listVariants('song'), hasLength(2));
       final restored = await target.loadDraft('variant-b');
       expect(restored!.provenance!.versionName, 'Stage');
+      final restoredAnalysis = VisualTabAnalysis.fromJson(
+        restored.visualTabTransform!.analyses.single,
+      );
+      expect(
+        restoredAnalysis.systems.single.tokens.single.origin,
+        VisualTabTokenOrigin.manual,
+      );
       expect(
         restored.strips.single.annotations.single.points.last.pressure,
         0.8,

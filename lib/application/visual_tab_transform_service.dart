@@ -180,7 +180,9 @@ _resolveSustainFretsAcrossRows(
         if (parsed == null) continue;
         var sourceFret = parsed.$1;
         final previous = lastFretByString[stringIndex];
-        if (parsed.$2 && previous != null) {
+        if (parsed.$2 &&
+            previous != null &&
+            token.origin != VisualTabTokenOrigin.manual) {
           sourceFret = previous;
           if (parsed.$1 != previous) {
             tokens[index] = token.copyWith(text: '($previous)');
@@ -561,20 +563,41 @@ Map<String, Object?> _renderSystem(
     ..sort((left, right) => left.rect.left.compareTo(right.rect.left));
   final lastFretBySourceString = <int, int>{};
   for (final token in transformTokens) {
-    if (!token.enabled ||
-        token.kind != VisualTabTokenKind.fret ||
-        token.stringIndex == null) {
+    if (!token.enabled || !token.isFretLike || token.stringIndex == null) {
       continue;
     }
     final route = routes[token.stringIndex];
     if (route == null) continue;
+    if (token.kind == VisualTabTokenKind.deadNote) {
+      if (token.origin != VisualTabTokenOrigin.manual) continue;
+      final targetLineIndex =
+          configuration.targetLabels.length - 1 - route.targetString;
+      final sourceLineIndex =
+          system.stringLines.length - 1 - token.stringIndex!;
+      _replaceToken(
+        output,
+        token,
+        system.rect,
+        'X',
+        insertionSeams: insertionSeams,
+        insertionBandPixels: insertionBandPixels,
+        totalInsertionPixels: insertionBandPixels * unusedTopToBottom.length,
+        sourceLineY: sourceLines[sourceLineIndex],
+        targetLineY: targetLines[targetLineIndex],
+        targetLines: targetLines,
+        staffSpacing: _medianSpacing(targetLines),
+        background: background,
+        foreground: foreground,
+      );
+      continue;
+    }
     final parsed = _parseFret(token.text);
     if (parsed == null) continue;
     // Songsterr-style parenthesized frets denote a sustained/tied note. OCR
     // occasionally reads the enclosed zero as a three because the tie crosses
     // the glyph. Resolve it from the preceding played fret on the same string
     // before applying the route offset.
-    final sourceFret = parsed.$2
+    final sourceFret = parsed.$2 && token.origin != VisualTabTokenOrigin.manual
         ? lastFretBySourceString[token.stringIndex] ?? parsed.$1
         : parsed.$1;
     lastFretBySourceString[token.stringIndex!] = sourceFret;
@@ -587,7 +610,9 @@ Map<String, Object?> _renderSystem(
       );
     }
     final replacement = parsed.$2 ? '($targetFret)' : '$targetFret';
-    if (targetFret == sourceFret && token.sourceGlyphMatchesToken) {
+    if (targetFret == sourceFret &&
+        token.origin != VisualTabTokenOrigin.manual &&
+        token.sourceGlyphMatchesToken) {
       // The inserted band already moves the source string to the routed
       // target line. Preserve a detected source glyph when its fret is
       // unchanged. Manually drawn or materially edited proposals have no
@@ -676,6 +701,15 @@ List<VisualTabToken> _deduplicatedTransformTokens(List<VisualTabToken> tokens) {
       continue;
     }
     final existing = result[duplicateIndex];
+    if (token.origin == VisualTabTokenOrigin.manual &&
+        existing.origin != VisualTabTokenOrigin.manual) {
+      result[duplicateIndex] = token;
+      continue;
+    }
+    if (existing.origin == VisualTabTokenOrigin.manual &&
+        token.origin != VisualTabTokenOrigin.manual) {
+      continue;
+    }
     final tokenIsParenthesized = token.text.startsWith('(');
     final existingIsParenthesized = existing.text.startsWith('(');
     if ((tokenIsParenthesized && !existingIsParenthesized) ||

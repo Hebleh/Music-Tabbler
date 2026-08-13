@@ -11,6 +11,8 @@ enum VisualTabSourceType { positionedPdf, rasterOcr }
 
 enum VisualTabTokenKind { fret, deadNote, measureNumber, ambiguous }
 
+enum VisualTabTokenOrigin { detected, manual }
+
 enum VisualConnectedComponentSide { unresolved, upper, lower }
 
 class VisualConnectedNotationRisk {
@@ -66,6 +68,7 @@ class VisualTabToken {
     this.confidence = 1,
     this.enabled = true,
     this.sourceGlyphMatchesToken = true,
+    this.origin = VisualTabTokenOrigin.detected,
   });
 
   final String id;
@@ -76,6 +79,7 @@ class VisualTabToken {
   final double confidence;
   final bool enabled;
   final bool sourceGlyphMatchesToken;
+  final VisualTabTokenOrigin origin;
 
   bool get isFretLike =>
       kind == VisualTabTokenKind.fret || kind == VisualTabTokenKind.deadNote;
@@ -89,6 +93,7 @@ class VisualTabToken {
     double? confidence,
     bool? enabled,
     bool? sourceGlyphMatchesToken,
+    VisualTabTokenOrigin? origin,
   }) {
     return VisualTabToken(
       id: id,
@@ -100,6 +105,7 @@ class VisualTabToken {
       enabled: enabled ?? this.enabled,
       sourceGlyphMatchesToken:
           sourceGlyphMatchesToken ?? this.sourceGlyphMatchesToken,
+      origin: origin ?? this.origin,
     );
   }
 
@@ -112,6 +118,7 @@ class VisualTabToken {
     'confidence': confidence,
     'enabled': enabled,
     if (!sourceGlyphMatchesToken) 'sourceGlyphMatchesToken': false,
+    'origin': origin.name,
   };
 
   factory VisualTabToken.fromJson(Map<String, Object?> json) {
@@ -125,7 +132,12 @@ class VisualTabToken {
       stringIndex: json['stringIndex'] as int?,
       confidence: (json['confidence'] as num?)?.toDouble() ?? 1,
       enabled: json['enabled'] as bool? ?? true,
-      sourceGlyphMatchesToken: json['sourceGlyphMatchesToken'] as bool? ?? true,
+      origin: VisualTabTokenOrigin.values.byName(
+        json['origin'] as String? ?? VisualTabTokenOrigin.detected.name,
+      ),
+      sourceGlyphMatchesToken:
+          json['sourceGlyphMatchesToken'] as bool? ??
+          ((json['origin'] as String?) != VisualTabTokenOrigin.manual.name),
     );
   }
 }
