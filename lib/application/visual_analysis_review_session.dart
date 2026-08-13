@@ -22,6 +22,7 @@ class VisualAnalysisReviewSession {
   final List<VisualTabAnalysis?> _analyses;
   final List<VisualAnalysisRowState> _rowStates;
   final Map<int, Object> _rowErrors = {};
+  final List<_VisualAnalysisUndoEntry> _undoEntries = [];
   int _currentIndex = 0;
 
   List<VisualTabAnalysis?> get analyses =>
@@ -38,6 +39,7 @@ class VisualAnalysisReviewSession {
       _analyses.isEmpty ? null : _analyses[_currentIndex];
   bool get processingComplete =>
       _rowStates.every((state) => state == VisualAnalysisRowState.completed);
+  bool get canUndo => _undoEntries.isNotEmpty;
   List<int> get blockedRows => [
     for (var index = 0; index < _analyses.length; index += 1)
       if (!(_analyses[index]?.isSourceUsable ?? false)) index,
@@ -46,7 +48,22 @@ class VisualAnalysisReviewSession {
   void select(int index) => _currentIndex = index;
 
   void replaceCurrent(VisualTabAnalysis value) {
+    final previous = _analyses[_currentIndex];
+    if (previous != null) {
+      _undoEntries.add(
+        _VisualAnalysisUndoEntry(index: _currentIndex, analysis: previous),
+      );
+      if (_undoEntries.length > 100) _undoEntries.removeAt(0);
+    }
     _analyses[_currentIndex] = value;
+  }
+
+  bool undo() {
+    if (_undoEntries.isEmpty) return false;
+    final entry = _undoEntries.removeLast();
+    _analyses[entry.index] = entry.analysis;
+    _currentIndex = entry.index;
+    return true;
   }
 
   Future<void> analyzeIndex(
@@ -54,6 +71,7 @@ class VisualAnalysisReviewSession {
     bool preferPositionedPdf = true,
     void Function()? onChanged,
   }) async {
+    _undoEntries.removeWhere((entry) => entry.index == index);
     _rowStates[index] = VisualAnalysisRowState.analyzing;
     _rowErrors.remove(index);
     onChanged?.call();
@@ -72,4 +90,11 @@ class VisualAnalysisReviewSession {
     }
     onChanged?.call();
   }
+}
+
+class _VisualAnalysisUndoEntry {
+  const _VisualAnalysisUndoEntry({required this.index, required this.analysis});
+
+  final int index;
+  final VisualTabAnalysis analysis;
 }

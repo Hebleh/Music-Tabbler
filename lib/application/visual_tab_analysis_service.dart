@@ -1877,6 +1877,9 @@ VisualTabAnalysis buildVisualTabAnalysis({
             ),
       );
     }
+    if (sourceType == VisualTabSourceType.rasterOcr) {
+      _removeRasterSustainNotationFragments(tokens, stringSpacing: spacing);
+    }
     for (var index = 0; index < tokens.length; index += 1) {
       final token = tokens[index];
       if (!token.isFretLike) continue;
@@ -1968,6 +1971,103 @@ VisualTabAnalysis buildVisualTabAnalysis({
     systems: systems,
     warnings: warnings,
   );
+}
+
+void _removeRasterSustainNotationFragments(
+  List<VisualTabToken> tokens, {
+  required double stringSpacing,
+}) {
+  final sustains = tokens
+      .where(
+        (token) =>
+            token.enabled &&
+            token.isFretLike &&
+            token.stringIndex != null &&
+            RegExp(r'^\(\d{1,2}\)$').hasMatch(token.text),
+      )
+      .toList(growable: false);
+  if (sustains.isEmpty) return;
+
+  final removedIds = <String>{};
+  for (final sustain in sustains) {
+    final sustainCenterY = (sustain.rect.top + sustain.rect.bottom) / 2;
+
+    // A tall parenthesized sustain can be detected in two neighbouring string
+    // bands. The duplicate occupies substantially the same horizontal glyph,
+    // but its centre is too close to be a separate string and its confidence
+    // is lower than the complete parenthesized token. This was the extra `11`
+    // box drawn over the Pan bar-18 tie/bar junction.
+    for (final token in tokens) {
+      if (identical(token, sustain) ||
+          !token.enabled ||
+          !token.isFretLike ||
+          token.stringIndex == null ||
+          token.stringIndex == sustain.stringIndex ||
+          token.text.startsWith('(') ||
+          token.confidence >= sustain.confidence) {
+        continue;
+      }
+      final horizontalOverlap = math.max(
+        0.0,
+        math.min(token.rect.right, sustain.rect.right) -
+            math.max(token.rect.left, sustain.rect.left),
+      );
+      final smallerWidth = math.min(token.rect.width, sustain.rect.width);
+      final verticalOverlap = math.max(
+        0.0,
+        math.min(token.rect.bottom, sustain.rect.bottom) -
+            math.max(token.rect.top, sustain.rect.top),
+      );
+      final tokenCenterY = (token.rect.top + token.rect.bottom) / 2;
+      if (smallerWidth > 0 &&
+          horizontalOverlap / smallerWidth >= 0.75 &&
+          verticalOverlap > 0 &&
+          (tokenCenterY - sustainCenterY).abs() < stringSpacing * 0.78) {
+        removedIds.add(token.id);
+      }
+    }
+
+    final preceding =
+        tokens
+            .where(
+              (token) =>
+                  !removedIds.contains(token.id) &&
+                  token.enabled &&
+                  token.isFretLike &&
+                  token.stringIndex == sustain.stringIndex &&
+                  !token.text.startsWith('(') &&
+                  token.rect.right <= sustain.rect.left + 0.002,
+            )
+            .toList()
+          ..sort((left, right) => right.rect.right.compareTo(left.rect.right));
+    VisualTabToken? anchor;
+    for (final token in preceding) {
+      final tokenCenterY = (token.rect.top + token.rect.bottom) / 2;
+      if ((tokenCenterY - sustainCenterY).abs() <= stringSpacing * 0.18) {
+        anchor = token;
+        break;
+      }
+    }
+    if (anchor == null) continue;
+    final anchorCenterY = (anchor.rect.top + anchor.rect.bottom) / 2;
+    final referenceCenterY = (anchorCenterY + sustainCenterY) / 2;
+    final maximumNotationConfidence = math.min(
+      anchor.confidence,
+      sustain.confidence,
+    );
+    for (final token in preceding) {
+      if (identical(token, anchor) ||
+          token.rect.left < anchor.rect.right ||
+          token.confidence > maximumNotationConfidence) {
+        continue;
+      }
+      final tokenCenterY = (token.rect.top + token.rect.bottom) / 2;
+      if ((tokenCenterY - referenceCenterY).abs() > stringSpacing * 0.18) {
+        removedIds.add(token.id);
+      }
+    }
+  }
+  tokens.removeWhere((token) => removedIds.contains(token.id));
 }
 
 VisualTabTokenKind classifyVisualTabToken(

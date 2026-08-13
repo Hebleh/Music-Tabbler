@@ -43,6 +43,50 @@ void main() {
     expect(session.blockedRows, isEmpty);
     expect(analyzer.preferences, [true, true, false]);
   });
+
+  test('review session undoes the latest manual analysis edit', () async {
+    final session = VisualAnalysisReviewSession(
+      analyzer: _Analyzer(),
+      strips: const [
+        VisualStrip(
+          id: 'good',
+          assetHash: 'a',
+          assetExtension: 'png',
+          pixelWidth: 100,
+          pixelHeight: 20,
+        ),
+      ],
+      sourceStringCount: 4,
+    );
+    await session.analyzeIndex(0);
+    final original = session.analysis;
+    final system = original.systems.single;
+    session.replaceCurrent(
+      original.copyWith(
+        systems: [
+          system.copyWith(
+            tokens: [
+              ...system.tokens,
+              const VisualTabToken(
+                id: 'review_manual',
+                text: '7',
+                rect: NormalizedRect(0.6, 0.36, 0.64, 0.44),
+                kind: VisualTabTokenKind.fret,
+                stringIndex: 2,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    expect(session.canUndo, isTrue);
+    expect(session.analysis.systems.single.tokens, hasLength(2));
+    expect(session.undo(), isTrue);
+    expect(session.analysis.systems.single.tokens, hasLength(1));
+    expect(session.analysis.systems.single.tokens.single.id, 'token');
+    expect(session.canUndo, isFalse);
+  });
 }
 
 class _Analyzer implements VisualTabAnalyzer {

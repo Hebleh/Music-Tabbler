@@ -52,6 +52,7 @@ class _VisualTabAnalysisReviewScreen extends StatefulWidget {
 
 class _VisualTabAnalysisReviewScreenState
     extends State<_VisualTabAnalysisReviewScreen> {
+  late final FocusNode _shortcutFocusNode;
   late final VisualAnalysisReviewSession _review;
   final Set<String> _selectedTokenIds = {};
   bool _rerunningSource = false;
@@ -71,28 +72,45 @@ class _VisualTabAnalysisReviewScreenState
   @override
   void initState() {
     super.initState();
+    _shortcutFocusNode = FocusNode(debugLabel: 'visual-analysis-shortcuts');
     _review = VisualAnalysisReviewSession(
       analyzer: widget.analyzer,
       strips: widget.strips,
       sourceStringCount: widget.sourceStringCount,
     );
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
+    _requestShortcutFocus();
     _run();
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
+    _shortcutFocusNode.dispose();
     super.dispose();
   }
 
+  void _requestShortcutFocus() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _shortcutFocusNode.requestFocus();
+    });
+  }
+
   bool _handleHardwareKey(KeyEvent event) {
-    if (event is! KeyDownEvent ||
-        event.logicalKey != LogicalKeyboardKey.escape) {
-      return false;
+    if (event is! KeyDownEvent) return false;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.maybePop(context);
+      return true;
     }
-    Navigator.maybePop(context);
-    return true;
+    final keyboard = HardwareKeyboard.instance;
+    if (event.logicalKey == LogicalKeyboardKey.keyZ &&
+        (keyboard.isControlPressed || keyboard.isMetaPressed) &&
+        (ModalRoute.of(context)?.isCurrent ?? false)) {
+      _undoReviewEdit();
+      return true;
+    }
+    return false;
   }
 
   Future<void> _run() async {
@@ -120,40 +138,66 @@ class _VisualTabAnalysisReviewScreenState
   Widget build(BuildContext context) {
     final processingComplete = _review.processingComplete;
     final blockedRows = _review.blockedRows;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Review visual tab analysis'),
-        leading: IconButton(
-          tooltip: 'Cancel',
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.close),
-        ),
-        actions: [
-          if (_currentAnalysis != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Center(
-                child: Text('${_currentIndex + 1} / ${widget.strips.length}'),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
+            _undoReviewEdit,
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true):
+            _undoReviewEdit,
+      },
+      child: Focus(
+        focusNode: _shortcutFocusNode,
+        autofocus: true,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Review visual tab analysis'),
+            leading: IconButton(
+              tooltip: 'Cancel',
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.close),
+            ),
+            actions: [
+              if (_currentAnalysis != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Center(
+                    child: Text(
+                      '${_currentIndex + 1} / ${widget.strips.length}',
+                    ),
+                  ),
+                ),
+              FilledButton.icon(
+                onPressed: processingComplete
+                    ? () => _finishReview(blockedRows)
+                    : null,
+                icon: Icon(
+                  blockedRows.isEmpty
+                      ? Icons.check
+                      : Icons.warning_amber_rounded,
+                ),
+                label: Text(
+                  blockedRows.isEmpty
+                      ? 'Use reviewed analysis'
+                      : 'Continue (${blockedRows.length} unchanged)',
+                ),
               ),
-            ),
-          FilledButton.icon(
-            onPressed: processingComplete
-                ? () => _finishReview(blockedRows)
-                : null,
-            icon: Icon(
-              blockedRows.isEmpty ? Icons.check : Icons.warning_amber_rounded,
-            ),
-            label: Text(
-              blockedRows.isEmpty
-                  ? 'Use reviewed analysis'
-                  : 'Continue (${blockedRows.length} unchanged)',
-            ),
+              const SizedBox(width: 12),
+            ],
           ),
-          const SizedBox(width: 12),
-        ],
+          body: _buildBody(processingComplete),
+        ),
       ),
-      body: _buildBody(processingComplete),
     );
+  }
+
+  void _undoReviewEdit() {
+    if (!_review.undo()) return;
+    setState(() {
+      _selectedTokenIds.clear();
+      _drawing = false;
+      _drawStart = null;
+      _drawEnd = null;
+    });
   }
 
   Widget _buildBody(bool processingComplete) {
@@ -272,6 +316,7 @@ class _VisualTabAnalysisReviewScreenState
       ),
     );
     if (!mounted) return;
+    _requestShortcutFocus();
     if (keep != true) {
       setState(() {
         _currentIndex = blockedRows.first;
@@ -423,6 +468,7 @@ class _VisualTabAnalysisReviewScreenState
       stringIndex: firstString,
       confidence:
           selected.map((token) => token.confidence).reduce(math.min) * 0.95,
+      sourceGlyphMatchesToken: false,
     );
     _removeTokens(_selectedTokenIds);
     _addTokenToNearestSystem(merged);
@@ -431,20 +477,19 @@ class _VisualTabAnalysisReviewScreenState
   Future<void> _splitSelected() async {
     final token = _selectedToken();
     if (token == null) return;
-    final controller = TextEditingController(
-      text: token.text.split('').join(','),
-    );
+    var separatedValues = token.text.split('').join(',');
     final values = await showDialog<List<String>>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Separate OCR fragments'),
-        content: TextField(
-          controller: controller,
+        content: TextFormField(
+          initialValue: separatedValues,
           autofocus: true,
           decoration: const InputDecoration(
             labelText: 'Comma-separated token values',
             helperText: 'Example: 1, 2',
           ),
+          onChanged: (value) => separatedValues = value,
         ),
         actions: [
           TextButton(
@@ -453,7 +498,7 @@ class _VisualTabAnalysisReviewScreenState
           ),
           FilledButton(
             onPressed: () {
-              final parts = controller.text
+              final parts = separatedValues
                   .split(',')
                   .map((value) => value.trim())
                   .where((value) => value.isNotEmpty)
@@ -465,7 +510,7 @@ class _VisualTabAnalysisReviewScreenState
         ],
       ),
     );
-    controller.dispose();
+    _requestShortcutFocus();
     if (values == null || values.length < 2) return;
     _removeTokens({token.id});
     final width = token.rect.width / values.length;
@@ -545,6 +590,7 @@ class _VisualTabAnalysisReviewScreenState
       kind: VisualTabTokenKind.ambiguous,
       stringIndex: nearest,
       confidence: 1,
+      sourceGlyphMatchesToken: false,
     );
     final edited = await _editTokenDialog(provisional);
     if (!mounted) return;
@@ -565,7 +611,7 @@ class _VisualTabAnalysisReviewScreenState
         final next = (system.stringLines[index] - centerY).abs();
         if (next < distance) {
           distance = next;
-          nearest = index;
+          nearest = system.stringLines.length - 1 - index;
         }
       }
     }
@@ -602,7 +648,7 @@ class _VisualTabAnalysisReviewScreenState
   }
 
   Future<VisualTabToken?> _editTokenDialog(VisualTabToken token) async {
-    final text = TextEditingController(text: token.text);
+    var textValue = token.text;
     int? stringIndex = token.stringIndex;
     var enabled = token.enabled;
     final result = await showDialog<VisualTabToken>(
@@ -613,12 +659,13 @@ class _VisualTabAnalysisReviewScreenState
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: text,
+              TextFormField(
+                initialValue: textValue,
                 autofocus: true,
                 decoration: const InputDecoration(
                   labelText: 'Fret, (fret), X, or label',
                 ),
+                onChanged: (value) => textValue = value,
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<int?>(
@@ -657,7 +704,7 @@ class _VisualTabAnalysisReviewScreenState
             ),
             FilledButton(
               onPressed: () {
-                final value = text.text.trim();
+                final value = textValue.trim();
                 if (value.isEmpty) return;
                 Navigator.pop(
                   context,
@@ -668,6 +715,10 @@ class _VisualTabAnalysisReviewScreenState
                     clearStringIndex: stringIndex == null,
                     confidence: 1,
                     enabled: enabled,
+                    sourceGlyphMatchesToken:
+                        token.sourceGlyphMatchesToken &&
+                        value == token.text &&
+                        stringIndex == token.stringIndex,
                   ),
                 );
               },
@@ -677,7 +728,7 @@ class _VisualTabAnalysisReviewScreenState
         ),
       ),
     );
-    text.dispose();
+    _requestShortcutFocus();
     return result;
   }
 

@@ -175,11 +175,14 @@ class _RecordingImporter implements VisualImporter {
 }
 
 class _FakeLibrary implements ChartLibrary, SongVariantLibrary, SetlistLibrary {
+  _FakeLibrary({this.analysisAssetPath = ''});
+
+  final String analysisAssetPath;
   final List<VisualChartDraft> drafts = [];
   final List<LibrarySetlist> setlists = [];
 
   @override
-  String assetPath(String hash, String extension) => '';
+  String assetPath(String hash, String extension) => analysisAssetPath;
 
   @override
   Future<StoredAsset> storeAsset(List<int> bytes, String extension) {
@@ -373,6 +376,26 @@ class _RecordingVisualTabAnalyzer extends VisualTabAnalysisService {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _DelayedThirdVisualTabAnalyzer extends _RecordingVisualTabAnalyzer {
+  _DelayedThirdVisualTabAnalyzer(super.library);
+
+  @override
+  Future<VisualTabAnalysis> analyze(
+    VisualStrip strip, {
+    required int sourceStringCount,
+    bool preferPositionedPdf = true,
+  }) async {
+    if (strip.id == 'tap-row-c') {
+      await Future<void>.delayed(const Duration(seconds: 2));
+    }
+    return super.analyze(
+      strip,
+      sourceStringCount: sourceStringCount,
+      preferPositionedPdf: preferPositionedPdf,
     );
   }
 }

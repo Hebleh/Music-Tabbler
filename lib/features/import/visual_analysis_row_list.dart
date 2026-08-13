@@ -124,7 +124,7 @@ class VisualAnalysisRowList extends StatelessWidget {
                     selectedTokenIds: index == currentIndex
                         ? selectedTokenIds
                         : const {},
-                    drawing: index == currentIndex && drawing,
+                    drawing: drawing,
                     drawStart: index == currentIndex ? drawStart : null,
                     drawEnd: index == currentIndex ? drawEnd : null,
                     onTokenTap: (id) => onTokenTap(index, id),

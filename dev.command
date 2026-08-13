@@ -70,5 +70,9 @@ if [[ "$clean" == true ]]; then
 fi
 
 print "Launching Music Tabbler on '$device' in Flutter development mode..."
-"$flutter_command" run -d "$device" "${flutter_args[@]}"
+if command -v caffeinate >/dev/null 2>&1; then
+  caffeinate -di "$flutter_command" run -d "$device" "${flutter_args[@]}"
+else
+  "$flutter_command" run -d "$device" "${flutter_args[@]}"
+fi
 exit $?

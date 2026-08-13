@@ -98,6 +98,156 @@ void main() {
     },
   );
 
+  test(
+    'manually added review tokens use the canonical transform path',
+    () async {
+      final fixture = _fourStringFixture();
+      final asset = await library.storeAsset(fixture, 'png');
+      final now = DateTime.utc(2026, 8, 13);
+      VisualChartDraft draft(String id) => VisualChartDraft(
+        id: id,
+        title: 'Manual token transform',
+        artist: '',
+        createdAt: now,
+        updatedAt: now,
+        strips: [
+          VisualStrip(
+            id: 'source-strip',
+            assetHash: asset.hash,
+            assetExtension: 'png',
+            pixelWidth: 600,
+            pixelHeight: 120,
+          ),
+        ],
+      );
+      final service = VisualTabTransformService(library);
+      final expected = await service.apply(
+        draft: draft('detected-token'),
+        analyses: [_analysis(tokenText: '7', tokenString: 2)],
+        configuration: _dropDToFiveStringConfiguration(),
+      );
+      final manual = await service.apply(
+        draft: draft('manual-token'),
+        analyses: [
+          _analysis(
+            tokenId: 'review_manual_token',
+            tokenText: '7',
+            tokenString: 2,
+          ),
+        ],
+        configuration: _dropDToFiveStringConfiguration(),
+      );
+
+      expect(manual.strips.single.assetHash, expected.strips.single.assetHash);
+      final storedAnalysis = VisualTabAnalysis.fromJson(
+        manual.visualTabTransform!.analyses.single,
+      );
+      expect(
+        storedAnalysis.systems.single.tokens.single.id,
+        'review_manual_token',
+      );
+      expect(storedAnalysis.systems.single.tokens.single.stringIndex, 2);
+    },
+  );
+
+  test('identity transform renders a manually drawn missing token', () async {
+    final fixture = _fourStringFixture();
+    final asset = await library.storeAsset(fixture, 'png');
+    final now = DateTime.utc(2026, 8, 13);
+    final draft = VisualChartDraft(
+      id: 'manual-identity-token',
+      title: 'Manual identity token',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      strips: [
+        VisualStrip(
+          id: 'source-strip',
+          assetHash: asset.hash,
+          assetExtension: 'png',
+          pixelWidth: 600,
+          pixelHeight: 120,
+        ),
+      ],
+    );
+    VisualTabAnalysis analysis({required bool sourceGlyphMatchesToken}) =>
+        VisualTabAnalysis(
+          stripId: 'source-strip',
+          sourceType: VisualTabSourceType.rasterOcr,
+          systems: [
+            VisualTabSystem(
+              id: 'system',
+              rect: const NormalizedRect(0, 0.12, 1, 0.72),
+              stringLines: const [0.22, 0.34, 0.46, 0.58],
+              barLines: const [0.04, 0.96],
+              tokens: [
+                VisualTabToken(
+                  id: 'review_manual_token',
+                  text: '7',
+                  rect: const NormalizedRect(0.25, 0.55, 0.30, 0.61),
+                  kind: VisualTabTokenKind.fret,
+                  stringIndex: 0,
+                  sourceGlyphMatchesToken: sourceGlyphMatchesToken,
+                ),
+              ],
+            ),
+          ],
+        );
+    final configuration = VisualTabTransformConfiguration(
+      sourceLabels: const ['D', 'A', 'D', 'G'],
+      sourceOpenMidis: const [38, 45, 50, 55],
+      sourceCapo: 0,
+      targetLabels: const ['D', 'A', 'D', 'G'],
+      targetOpenMidis: const [38, 45, 50, 55],
+      targetCapo: 0,
+      globalPitchChange: 0,
+      routes: const [
+        VisualStringRoute(sourceString: 0, targetString: 0, fretOffset: 0),
+        VisualStringRoute(sourceString: 1, targetString: 1, fretOffset: 0),
+        VisualStringRoute(sourceString: 2, targetString: 2, fretOffset: 0),
+        VisualStringRoute(sourceString: 3, targetString: 3, fretOffset: 0),
+      ],
+    );
+
+    final transformed = await VisualTabTransformService(library).apply(
+      draft: draft,
+      analyses: [analysis(sourceGlyphMatchesToken: false)],
+      configuration: configuration,
+    );
+    final sourceGlyphTransform = await VisualTabTransformService(library).apply(
+      draft: draft,
+      analyses: [analysis(sourceGlyphMatchesToken: true)],
+      configuration: configuration,
+    );
+    final outputBytes = await File(
+      library.assetPath(
+        transformed.strips.single.assetHash,
+        transformed.strips.single.assetExtension,
+      ),
+    ).readAsBytes();
+
+    expect(
+      transformed.strips.single.assetHash,
+      isNot(sourceGlyphTransform.strips.single.assetHash),
+      reason:
+          'An identity route may preserve a detected source glyph, but a '
+          'manually added token must produce new rendered ink.',
+    );
+    expect(
+      _darkPixelsInRect(
+        outputBytes,
+        left: 140,
+        top: 45,
+        right: 190,
+        bottom: 80,
+      ),
+      greaterThan(70),
+      reason:
+          'The reviewed token has no source glyph, so identity routing '
+          'must still draw its value on the transformed row.',
+    );
+  });
+
   test('rejects transformed frets outside 0 to 36', () async {
     final fixture = _fourStringFixture();
     final asset = await library.storeAsset(fixture, 'png');
@@ -667,6 +817,7 @@ VisualTabTransformConfiguration _dropDToFiveStringConfiguration() {
 
 VisualTabAnalysis _analysis({
   String stripId = 'source-strip',
+  String tokenId = 'fret',
   required String tokenText,
   required int tokenString,
   bool includeDeadNote = false,
@@ -692,7 +843,7 @@ VisualTabAnalysis _analysis({
         ],
         tokens: [
           VisualTabToken(
-            id: 'fret',
+            id: tokenId,
             text: tokenText,
             rect: const NormalizedRect(0.25, 0.55, 0.30, 0.61),
             kind: VisualTabTokenKind.fret,

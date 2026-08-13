@@ -176,6 +176,146 @@ void _registerVisualWorkflowTests() {
     },
   );
 
+  testWidgets('draw missing token opens the editor from one canvas tap', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final previewDirectory = Directory.systemTemp.createTempSync(
+      'analysis-guide-preview-',
+    );
+    addTearDown(() => previewDirectory.deleteSync(recursive: true));
+    final preview = File('${previewDirectory.path}/preview.png')
+      ..writeAsBytesSync(
+        base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAZAAAABkCAYAAACoy2Z3AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAABkKADAAQAAAABAAAAZAAAAABt2Ur0AAAC0klEQVR4Ae3QMQEAAADCoPVPbQ0PiEBhwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwICBn4EBcYIAAXG5ZYUAAAAASUVORK5CYII=',
+        ),
+      );
+    final library = _FakeLibrary(analysisAssetPath: preview.path);
+    final analyzer = _DelayedThirdVisualTabAnalyzer(library);
+    var parentUndoCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () =>
+                parentUndoCount += 1,
+          },
+          child: Focus(
+            autofocus: true,
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: FilledButton(
+                  onPressed: () => showVisualTabAnalysisReview(
+                    context: context,
+                    library: library,
+                    analyzer: analyzer,
+                    strips: const [
+                      VisualStrip(
+                        id: 'tap-row-a',
+                        assetHash: 'missing-preview-a',
+                        assetExtension: 'png',
+                        pixelWidth: 400,
+                        pixelHeight: 100,
+                      ),
+                      VisualStrip(
+                        id: 'tap-row-b',
+                        assetHash: 'missing-preview-b',
+                        assetExtension: 'png',
+                        pixelWidth: 400,
+                        pixelHeight: 100,
+                      ),
+                      VisualStrip(
+                        id: 'tap-row-c',
+                        assetHash: 'missing-preview-c',
+                        assetExtension: 'png',
+                        pixelWidth: 400,
+                        pixelHeight: 100,
+                      ),
+                    ],
+                    sourceStringCount: 4,
+                  ),
+                  child: const Text('Open review'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open review'));
+    for (var index = 0; index < 4; index += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(seconds: 1)),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Draw missing token'));
+    await tester.pump();
+    final drawSurface = find.byKey(
+      const ValueKey('analysis-draw-surface-tap-row-b'),
+    );
+    final drawBounds = tester.getRect(drawSurface);
+    await tester.tapAt(
+      Offset(drawBounds.center.dx, drawBounds.top + drawBounds.height * 0.6),
+    );
+    await tester.pump();
+
+    expect(find.text('Review detected token'), findsOneWidget);
+
+    expect(find.text('String 2 (low to high)'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField).first, '7');
+    await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Review detected token'), findsNothing);
+    expect(find.text('7'), findsWidgets);
+    expect(find.text('fret · string 2'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('analysis-string-guide-tap-row-b')),
+      findsOneWidget,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(parentUndoCount, 0);
+    expect(find.text('fret · string 2'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('analysis-string-guide-tap-row-b')),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('Draw missing token'));
+    await tester.pump();
+    await tester.tapAt(
+      Offset(drawBounds.center.dx, drawBounds.top + drawBounds.height * 0.6),
+    );
+    await tester.pump();
+    expect(find.text('Review detected token'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pump();
+    for (var index = 0; index < 6; index += 1) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byTooltip('Cancel'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('Open review'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('visual tab review matches seam risks to numbered markers', (
     tester,
   ) async {

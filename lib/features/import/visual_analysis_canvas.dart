@@ -104,6 +104,8 @@ class VisualAnalysisCanvas extends StatefulWidget {
 
 class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
   late Future<Uint8List> _preview;
+  int? _activeDrawPointer;
+  Offset? _drawPointerStart;
 
   @override
   void initState() {
@@ -115,6 +117,10 @@ class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
   void didUpdateWidget(covariant VisualAnalysisCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.strip.id != widget.strip.id) _load();
+    if (oldWidget.drawing && !widget.drawing) {
+      _activeDrawPointer = null;
+      _drawPointerStart = null;
+    }
   }
 
   void _load() {
@@ -136,85 +142,224 @@ class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
   Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: widget.strip.croppedAspectRatio,
-      child: FutureBuilder<Uint8List>(
-        future: _preview,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(child: Text('Preview unavailable'));
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              Offset normalize(Offset local) => Offset(
-                (local.dx / constraints.maxWidth).clamp(0.0, 1.0),
-                (local.dy / constraints.maxHeight).clamp(0.0, 1.0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          Offset normalize(Offset local) => Offset(
+            (local.dx / constraints.maxWidth).clamp(0.0, 1.0),
+            (local.dy / constraints.maxHeight).clamp(0.0, 1.0),
+          );
+          final guide =
+              _nearestDrawStringGuide(
+                widget.analysis,
+                widget.drawEnd ?? widget.drawStart,
+              ) ??
+              _selectedTokenStringGuide(
+                widget.analysis,
+                widget.selectedTokenIds,
               );
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanStart: widget.drawing
-                    ? (details) =>
-                          widget.onDrawStart(normalize(details.localPosition))
-                    : null,
-                onPanUpdate: widget.drawing
-                    ? (details) =>
-                          widget.onDrawUpdate(normalize(details.localPosition))
-                    : null,
-                onPanEnd: widget.drawing
-                    ? (_) {
-                        final start = widget.drawStart;
-                        final end = widget.drawEnd;
-                        if (start == null || end == null) {
-                          widget.onDrawEnd(null);
-                          return;
-                        }
-                        final left = math.min(start.dx, end.dx);
-                        final top = math.min(start.dy, end.dy);
-                        final right = math.max(start.dx, end.dx);
-                        final bottom = math.max(start.dy, end.dy);
-                        widget.onDrawEnd(
-                          right > left && bottom > top
-                              ? NormalizedRect(left, top, right, bottom)
-                              : null,
-                        );
-                      }
-                    : null,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.memory(snapshot.data!, fit: BoxFit.fill),
-                    CustomPaint(
-                      painter: _AnalysisOverlayPainter(
-                        analysis: widget.analysis,
-                        selectedTokenIds: widget.selectedTokenIds,
-                        drawStart: widget.drawStart,
-                        drawEnd: widget.drawEnd,
-                      ),
-                    ),
-                    for (final system in widget.analysis.systems)
-                      for (final token in system.tokens)
-                        Positioned(
-                          left: token.rect.left * constraints.maxWidth,
-                          top: token.rect.top * constraints.maxHeight,
-                          width: token.rect.width * constraints.maxWidth,
-                          height: token.rect.height * constraints.maxHeight,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onTap: widget.drawing
-                                ? null
-                                : () => widget.onTokenTap(token.id),
+          final preview = Stack(
+            fit: StackFit.expand,
+            children: [
+              FutureBuilder<Uint8List>(
+                future: _preview,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Center(child: Text('Preview unavailable'));
+                  }
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  return Image.memory(snapshot.data!, fit: BoxFit.fill);
+                },
+              ),
+              CustomPaint(
+                painter: _AnalysisOverlayPainter(
+                  analysis: widget.analysis,
+                  selectedTokenIds: widget.selectedTokenIds,
+                  drawStart: widget.drawStart,
+                  drawEnd: widget.drawEnd,
+                ),
+              ),
+              if (guide != null)
+                Positioned(
+                  left: guide.systemLeft * constraints.maxWidth,
+                  width:
+                      (guide.systemRight - guide.systemLeft) *
+                      constraints.maxWidth,
+                  top: guide.normalizedY * constraints.maxHeight - 2,
+                  height: 4,
+                  child: IgnorePointer(
+                    child: Semantics(
+                      label: 'Source string ${guide.sourceStringNumber} guide',
+                      child: DecoratedBox(
+                        key: ValueKey(
+                          'analysis-string-guide-${widget.strip.id}',
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.transparent,
+                              Colors.deepPurpleAccent.withValues(alpha: 0.72),
+                              Colors.yellowAccent,
+                              Colors.deepPurpleAccent.withValues(alpha: 0.72),
+                              Colors.transparent,
+                            ],
+                            stops: const [0, 0.28, 0.5, 0.72, 1],
                           ),
                         ),
-                  ],
+                      ),
+                    ),
+                  ),
                 ),
+              for (final system in widget.analysis.systems)
+                for (final token in system.tokens)
+                  Positioned(
+                    left: token.rect.left * constraints.maxWidth,
+                    top: token.rect.top * constraints.maxHeight,
+                    width: token.rect.width * constraints.maxWidth,
+                    height: token.rect.height * constraints.maxHeight,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: widget.drawing
+                          ? null
+                          : () => widget.onTokenTap(token.id),
+                    ),
+                  ),
+            ],
+          );
+          final surfaceKey = ValueKey(
+            'analysis-draw-surface-${widget.strip.id}',
+          );
+          if (!widget.drawing) {
+            return KeyedSubtree(key: surfaceKey, child: preview);
+          }
+          final canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
+          return Listener(
+            key: surfaceKey,
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (event) {
+              if (_activeDrawPointer != null) return;
+              _activeDrawPointer = event.pointer;
+              _drawPointerStart = event.localPosition;
+              widget.onDrawStart(normalize(event.localPosition));
+            },
+            onPointerMove: (event) {
+              if (_activeDrawPointer != event.pointer) return;
+              widget.onDrawUpdate(normalize(event.localPosition));
+            },
+            onPointerUp: (event) {
+              if (_activeDrawPointer != event.pointer) return;
+              final localStart = _drawPointerStart;
+              final start = localStart == null ? null : normalize(localStart);
+              final end = normalize(event.localPosition);
+              _activeDrawPointer = null;
+              _drawPointerStart = null;
+              if (start == null) {
+                widget.onDrawEnd(null);
+                return;
+              }
+              if ((event.localPosition - localStart!).distance < 6) {
+                final rect = _missingTokenTapRect(end, canvasSize);
+                widget.onDrawUpdate(Offset(rect.right, rect.bottom));
+                widget.onDrawEnd(rect);
+                return;
+              }
+              final left = math.min(start.dx, end.dx);
+              final top = math.min(start.dy, end.dy);
+              final right = math.max(start.dx, end.dx);
+              final bottom = math.max(start.dy, end.dy);
+              widget.onDrawEnd(
+                right > left && bottom > top
+                    ? NormalizedRect(left, top, right, bottom)
+                    : null,
               );
             },
+            onPointerCancel: (event) {
+              if (_activeDrawPointer != event.pointer) return;
+              _activeDrawPointer = null;
+              _drawPointerStart = null;
+              widget.onDrawEnd(null);
+            },
+            // Claim an actual drag so drawing does not scroll the row list.
+            // Pointer events above handle both clicks and drags without adding
+            // a competing tap recognizer to the row's InkWell.
+            child: GestureDetector(onPanStart: (_) {}, child: preview),
           );
         },
       ),
     );
   }
+}
+
+_AnalysisStringGuide? _nearestDrawStringGuide(
+  VisualTabAnalysis analysis,
+  Offset? position,
+) {
+  if (position == null) return null;
+  _AnalysisStringGuide? nearest;
+  var nearestDistance = double.infinity;
+  for (final system in analysis.systems) {
+    for (var index = 0; index < system.stringLines.length; index += 1) {
+      final distance = (system.stringLines[index] - position.dy).abs();
+      if (distance >= nearestDistance) continue;
+      nearestDistance = distance;
+      nearest = _AnalysisStringGuide(
+        systemLeft: system.rect.left,
+        systemRight: system.rect.right,
+        normalizedY: system.stringLines[index],
+        sourceStringNumber: system.stringLines.length - index,
+      );
+    }
+  }
+  return nearest;
+}
+
+_AnalysisStringGuide? _selectedTokenStringGuide(
+  VisualTabAnalysis analysis,
+  Set<String> selectedTokenIds,
+) {
+  if (selectedTokenIds.length != 1) return null;
+  final selectedId = selectedTokenIds.single;
+  for (final system in analysis.systems) {
+    for (final token in system.tokens) {
+      if (token.id != selectedId || token.stringIndex == null) continue;
+      final lineIndex = system.stringLines.length - 1 - token.stringIndex!;
+      if (lineIndex < 0 || lineIndex >= system.stringLines.length) return null;
+      return _AnalysisStringGuide(
+        systemLeft: system.rect.left,
+        systemRight: system.rect.right,
+        normalizedY: system.stringLines[lineIndex],
+        sourceStringNumber: token.stringIndex! + 1,
+      );
+    }
+  }
+  return null;
+}
+
+class _AnalysisStringGuide {
+  const _AnalysisStringGuide({
+    required this.systemLeft,
+    required this.systemRight,
+    required this.normalizedY,
+    required this.sourceStringNumber,
+  });
+
+  final double systemLeft;
+  final double systemRight;
+  final double normalizedY;
+  final int sourceStringNumber;
+}
+
+NormalizedRect _missingTokenTapRect(Offset center, Size canvasSize) {
+  const halfExtent = 12.0;
+  final halfWidth = halfExtent / math.max(1.0, canvasSize.width);
+  final halfHeight = halfExtent / math.max(1.0, canvasSize.height);
+  return NormalizedRect(
+    center.dx - halfWidth,
+    center.dy - halfHeight,
+    center.dx + halfWidth,
+    center.dy + halfHeight,
+  ).clamp();
 }
 
 class _AnalysisOverlayPainter extends CustomPainter {

@@ -908,6 +908,75 @@ void main() {
     );
   });
 
+  test('tie fragments before a raster sustain are not fret tokens', () {
+    const stringLines = [
+      0.3090277777777778,
+      0.3900462962962963,
+      0.4710648148148148,
+      0.5543981481481481,
+      0.6354166666666666,
+      0.7164351851851852,
+      0.7974537037037037,
+      0.8784722222222222,
+    ];
+    const geometry = VisualTabGeometry(
+      systems: [
+        VisualTabSystemGeometry(
+          rect: NormalizedRect(0, 0.30, 1, 0.95),
+          stringLines: stringLines,
+          barLines: [0.0068, 0.0873, 0.0918, 0.6088, 0.9919],
+        ),
+      ],
+    );
+    const candidates = [
+      VisualTabTextCandidate(
+        text: '1',
+        rect: NormalizedRect(0.5274, 0.7593, 0.5374, 0.8310),
+        confidence: 0.98,
+      ),
+      // The descending and ascending sides of the tie curve were previously
+      // promoted to fret 21 and fret 11 on the sustained string.
+      VisualTabTextCandidate(
+        text: '21',
+        rect: NormalizedRect(0.5502, 0.7940, 0.5672, 0.8449),
+        confidence: 0.72,
+      ),
+      VisualTabTextCandidate(
+        text: '11',
+        rect: NormalizedRect(0.6132, 0.7940, 0.6277, 0.8472),
+        confidence: 0.74,
+      ),
+      // The bar/tie junction was also proposed on the neighbouring string.
+      VisualTabTextCandidate(
+        text: '11',
+        rect: NormalizedRect(0.6418, 0.7130, 0.6655, 0.7662),
+        confidence: 0.74,
+      ),
+      VisualTabTextCandidate(
+        text: '(1)',
+        rect: NormalizedRect(0.6393, 0.7523, 0.6655, 0.8449),
+        confidence: 0.90,
+      ),
+      VisualTabTextCandidate(
+        text: '1',
+        rect: NormalizedRect(0.7624, 0.7593, 0.7724, 0.8310),
+        confidence: 0.98,
+      ),
+    ];
+
+    final result = buildVisualTabAnalysis(
+      stripId: 'pan-row-2',
+      sourceType: VisualTabSourceType.rasterOcr,
+      geometry: geometry,
+      candidates: candidates,
+    );
+    final frets = result.systems.single.tokens
+        .where((token) => token.enabled && token.isFretLike)
+        .toList();
+
+    expect(frets.map((token) => token.text), ['1', '(1)', '1']);
+  });
+
   test('reported slide-adjacent fret remains enabled', () async {
     final directory = await Directory.systemTemp.createTemp(
       'music_tabbler_slide_adjacent_fret_',

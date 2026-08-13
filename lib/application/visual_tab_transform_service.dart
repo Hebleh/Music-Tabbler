@@ -562,9 +562,11 @@ Map<String, Object?> _renderSystem(
       );
     }
     final replacement = parsed.$2 ? '($targetFret)' : '$targetFret';
-    if (targetFret == sourceFret) {
+    if (targetFret == sourceFret && token.sourceGlyphMatchesToken) {
       // The inserted band already moves the source string to the routed
-      // target line. Preserve the source glyph when its fret is unchanged.
+      // target line. Preserve a detected source glyph when its fret is
+      // unchanged. Manually drawn or materially edited proposals have no
+      // matching source glyph, so identity routes must still render them.
       continue;
     }
     final targetLineIndex =

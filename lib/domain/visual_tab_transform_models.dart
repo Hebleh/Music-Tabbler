@@ -65,6 +65,7 @@ class VisualTabToken {
     this.stringIndex,
     this.confidence = 1,
     this.enabled = true,
+    this.sourceGlyphMatchesToken = true,
   });
 
   final String id;
@@ -74,6 +75,7 @@ class VisualTabToken {
   final int? stringIndex;
   final double confidence;
   final bool enabled;
+  final bool sourceGlyphMatchesToken;
 
   bool get isFretLike =>
       kind == VisualTabTokenKind.fret || kind == VisualTabTokenKind.deadNote;
@@ -86,6 +88,7 @@ class VisualTabToken {
     bool clearStringIndex = false,
     double? confidence,
     bool? enabled,
+    bool? sourceGlyphMatchesToken,
   }) {
     return VisualTabToken(
       id: id,
@@ -95,6 +98,8 @@ class VisualTabToken {
       stringIndex: clearStringIndex ? null : stringIndex ?? this.stringIndex,
       confidence: confidence ?? this.confidence,
       enabled: enabled ?? this.enabled,
+      sourceGlyphMatchesToken:
+          sourceGlyphMatchesToken ?? this.sourceGlyphMatchesToken,
     );
   }
 
@@ -106,6 +111,7 @@ class VisualTabToken {
     'stringIndex': stringIndex,
     'confidence': confidence,
     'enabled': enabled,
+    if (!sourceGlyphMatchesToken) 'sourceGlyphMatchesToken': false,
   };
 
   factory VisualTabToken.fromJson(Map<String, Object?> json) {
@@ -119,6 +125,7 @@ class VisualTabToken {
       stringIndex: json['stringIndex'] as int?,
       confidence: (json['confidence'] as num?)?.toDouble() ?? 1,
       enabled: json['enabled'] as bool? ?? true,
+      sourceGlyphMatchesToken: json['sourceGlyphMatchesToken'] as bool? ?? true,
     );
   }
 }
