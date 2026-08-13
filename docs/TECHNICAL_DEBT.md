@@ -61,10 +61,3 @@ goldens are also needed before aggressive presentation splitting.
   remain hardware gates.
 - macOS is a development/smoke target; signed/notarized distribution is outside
   ordinary iteration.
-
-## Source and legal gates
-
-Online source adapters and public distribution remain gated by source terms,
-content rights, dependency licenses, and application licensing. User-initiated
-local PDF sharing is ordinary file intake, but it does not grant rights to
-redistribute the source material.

@@ -4,6 +4,9 @@
 *.pyc
 *.swp
 .DS_Store
+.Rhistory
+*.mtstate
+*.mtsong
 .atom/
 .build/
 .buildlog/

@@ -5,11 +5,14 @@ tablature screenshots and PDFs into compact, stage-readable charts. Local OCR
 is an editable aid; the supported source of truth remains the preserved visual
 material.
 
-The first implementation target is Windows. Android follows as a full peer application, with gig mode optimized for tablets and stylus annotation. A4 PDF remains a first-class output on every platform.
+The application targets Windows, macOS, Android, and iOS. Gig Mode is
+optimized for stage displays and stylus annotation, while deterministic A4 PDF
+remains a first-class output.
 
 ## Status
 
-The project has a working Flutter application with a Windows-first visual-chart workflow and an Android target. See the current-status and handover documents before continuing development.
+The project has a working Flutter application with visual import, OCR review,
+non-destructive tab transformation, setlists, PDF export, and Gig Mode.
 
 - Product requirements: [`docs/SPEC.md`](docs/SPEC.md)
 - Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md)
@@ -52,10 +55,14 @@ options:
 
 Use `flutter devices` to find an Android device ID. Release builds and versioned packaging are intentionally separate and should only be run for an explicit release or milestone checkpoint.
 
-## Windows MVP release
+## Releases
 
-The `v0.1.0` checkpoint is Windows x64 only. GitHub release assets include a single-file user-level installer and a portable ZIP containing the complete Flutter runtime. The installer places the app under Local AppData and adds a Start Menu shortcut; the portable ZIP can be extracted anywhere before running `music_tabbler.exe`.
+Release assets are published on GitHub when their target platform can be built
+and verified. Android prerelease APKs may use development signing and are
+labelled accordingly. Apple installation packages require a valid Apple
+Developer signing identity and provisioning profile.
 
-The MVP binaries are unsigned, so Windows SmartScreen may show an unknown-publisher warning. Windows 10 or later and the current Microsoft Visual C++ Redistributable are required.
+## License
 
-Repository visibility and open-source licensing are intentionally undecided until the third-party source, copyright, and dependency questions have been reviewed. No license is granted by this repository unless a license file is added later.
+Music Tabbler is available under the [MIT License](LICENSE). Third-party
+components retain their own licenses.

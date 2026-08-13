@@ -1,6 +1,6 @@
 # Music Tabbler roadmap
 
-Updated: 11 August 2026
+Updated: 13 August 2026
 
 The supported product direction is visual-first. Historical semantic contracts
 are archived in Git and release/validation documents; they are not future work.

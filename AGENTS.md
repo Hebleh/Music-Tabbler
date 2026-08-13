@@ -8,7 +8,8 @@ This file applies to the entire repository.
 - Read `docs/CURRENT_STATUS.md` before planning or implementing work.
 - Treat `docs/SPEC.md` as the product requirements.
 - Treat `ARCHITECTURE.md` as the current technical direction.
-- Preserve the manual screenshot/PDF workflow as a reliable fallback even while semantic recognition improves.
+- Preserve the manual screenshot/PDF workflow as a reliable fallback whenever
+  automatic visual analysis is incomplete.
 
 ## Delegation hierarchy
 
@@ -33,13 +34,11 @@ The local rig can generate slowly. Use a timeout of at least 20 minutes for subs
 - Keep pitch transposition separate from same-pitch re-tabbing for another tuning or string count.
 - Never lose the current library during state import. Validate in staging and retain a last-known-good backup before replacement.
 - Source provenance stays in the app and must never leak into chart or PDF rendering.
-- Direct-URL and search adapters must not bypass authentication, paid features, CAPTCHAs, rate limits, or technical restrictions. A VPN does not change this rule.
-- Do not claim a source adapter is legally distributable until the relevant terms, content rights, and dependency licenses have been reviewed.
 - Do not claim OCR/OMR accuracy without reporting the fixture set, metric, threshold, and manual corrections required.
 
 ## Engineering rules
 
-- Keep the semantic domain model independent of UI, persistence, source acquisition, and OCR/OMR engines.
+- Keep the visual domain model independent of UI, persistence, and OCR engines.
 - Windows is implemented first, but shared behavior must remain compatible with the planned full Android application.
 - Use deterministic rendering for screen and A4 PDF; test both tab-only and tab-plus-notation layouts.
 - Store stylus annotations as nondestructive vector overlays.

@@ -23,8 +23,8 @@ safely during migration and import; they are not active chart variants.
 7. Export a single chart or combined setlist to deterministic A4 PDF, or open
    the same performance deck in Gig Mode.
 
-Manual screenshot/PDF editing is always a supported fallback. A failed URL,
-OCR, row detector, or transform must never prevent users from keeping and
+Manual screenshot/PDF editing is always a supported fallback. Failed OCR, row
+detection, or transformation must never prevent users from keeping and
 exporting the visual source.
 
 ## Visual drafts and variants
@@ -99,13 +99,11 @@ Gig Mode provides:
 - Corrupt, incomplete, unsupported, or cancelled imports leave installed data
   untouched.
 
-## Source and distribution boundary
+## Provenance
 
-Charts may retain source URL/file identity, title/artist/instrument labels,
-retrieval date, import method, and notes inside the app. Direct URL/search
-adapters are optional and must not bypass authentication, paid features,
-CAPTCHAs, rate limits, or technical restrictions. Repository visibility and VPN
-usage do not change content rights.
+Charts may retain file identity, title/artist/instrument labels, import date,
+method, and notes inside the app. Provenance remains private to the library and
+is never rendered into charts or PDFs.
 
 ## Acceptance principles
 

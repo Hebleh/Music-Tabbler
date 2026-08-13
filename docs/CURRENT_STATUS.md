@@ -1,12 +1,11 @@
 # Current status
 
-Updated: 11 August 2026
+Updated: 13 August 2026
 
 ## Repository state
 
-- `master` remains at the verified visual-first checkpoint `17aace3`.
-  `refractor` contains the semantic-retirement refactor and subsequent focused
-  cleanup; GitHub's remote default branch has not been changed.
+- `master` and `refractor` contain the verified visual-first application and
+  the completed architecture cleanup.
 - `music-tabbler-library.mtstate`, coverage output, build products, and local
   user data are not repository inputs. The tracked refactor must not alter the
   user's state file.
@@ -74,8 +73,9 @@ edit-session, Gig viewport/annotation, OCR review, PDF, and widget tests protect
 the active behavior. Windows visual goldens now protect representative Gig
 viewport composition, the open Gig setlist drawer, the unlocked Gig toolbar,
 and analysis waiting/failure states before further presentation extraction.
-The current visual-only suite passes 234/234 with clean strict analysis. The
-most recent measured line coverage remains 71.2% (7,152 of 10,049 lines).
+The current suite passes 249 tests with 5 platform-gated skips and clean strict
+analysis. The most recent measured line coverage remains 71.2% (7,152 of
+10,049 lines).
 
 ## Intentionally unchanged
 

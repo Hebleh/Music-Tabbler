@@ -99,5 +99,3 @@ PDF inclusion are explicit stored choices.
 - No required cloud account, cloud processing, telemetry, or CDN assets.
 - Imported archives never execute content. Paths, counts, sizes, and checksums
   are validated before extraction or installation.
-- Source adapters must not bypass authentication, paid features, CAPTCHAs,
-  rate limits, or access restrictions.

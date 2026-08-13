@@ -1,106 +1,55 @@
 # Music Tabbler handover
 
-Updated: 11 August 2026
+Updated: 13 August 2026
 
-Read `AGENTS.md`, `docs/CURRENT_STATUS.md`, `docs/SPEC.md`, and
-`ARCHITECTURE.md` before changing the repository. Preserve the manual visual
-workflow and never discard user work.
+Read `AGENTS.md`, `CURRENT_STATUS.md`, `SPEC.md`, and `../ARCHITECTURE.md`
+before changing the repository.
 
-## Immediate state
+## Product state
 
-- Windows workspace: `C:\vibes\Music Tabbler`
-- macOS workspace: `/Users/guh/Vibes/Codex/Music Tabbler`
-- Stable branch: `master` at visual-first checkpoint `17aace3`
-- Active working branch: `refractor`
-- Remote: private `Hebleh/Music-Tabbler`
-- Remote default branch: unchanged
-- Normal macOS launch: `./dev.command`
-- Normal Windows launch: `dev.bat`
-- Do not create release builds or packages without an explicit release request.
+Music Tabbler is a local-first, visual-first Flutter application. Its supported
+workflow covers local PDF/image import, row preparation, editable OCR review,
+non-destructive visual tab transformation, Song Pool and setlist management,
+deterministic A4 export, and Gig Mode with annotations.
 
-The user's `music-tabbler-library.mtstate` is deliberately untracked. Its
-protected checksum at refactor start is:
+The persistence layer uses visual-only library schema v6 and portable schema
+v3. Older containers are validated before their supported visual content is
+installed. State replacement is staged, backed up, and atomic.
 
-```text
-e8c6b9d5d7d112b0cd3688a6173bb810535a48b28c860dab49b9f41978332cc9
-```
+## Verification baseline
 
-`docs/.Rhistory` is unrelated user data and must remain untouched/uncommitted.
+- 249 automated tests pass; 5 platform-gated tests are skipped.
+- Strict `flutter analyze` is clean.
+- Representative screen and PDF fixtures have been checked.
+- macOS development launch has been smoke-tested.
 
-## Refactor outcome
-
-The active app remains behavior-compatible and visual-first. The only intended
-product removal is the sunset semantic subsystem.
-
-- Library v6 performs a backup-gated semantic retirement migration.
-- Portable `.mtstate` / `.mtsong` schema v3 is visual-only and safely reads
-  legacy v2 archives.
-- Semantic product/domain/runtime files and dedicated tests are removed.
-- Portable services depend on `PortableLibraryStore`, not `LocalLibrary` paths.
-- Application contracts are grouped into library/import/export/platform files.
-- Display labels, visual draft editing, setlist editing, analysis review, and
-  Gig viewport rules each have a canonical owner.
-- Chart PDF, cached performance deck, and setlist PDF are separate services.
-
-The migration tests explicitly cover mixed v5 data, semantic setlist references,
-successful backup, backup failure without mutation, and idempotent reopen.
-Legacy container tests cover mixed and semantic-only imports plus malformed
-payloads that never modify installed state.
-
-Current automated gate: 234/234 active tests pass, strict `flutter analyze` is
-clean, and the most recent measured line coverage is 71.2% (7,152 of 10,049
-lines). Representative
-single-chart portrait A4 and four-page setlist landscape A4 PDFs were rendered
-through Poppler and visually inspected. The macOS debug app built, started to a
-live Dart VM service, and exited cleanly; automation could not foreground its
-window (`open` returned 1). The protected `.mtstate` checksum remained exact.
-
-## Rules for follow-up work
-
-- Do not restore `SongChart`, semantic tables, MusicXML, or semantic feature
-  branches. Legacy readers may only archive/skip opaque payloads.
-- Do not tune OCR, row detection, transform, image-processing, bar-repacking,
-  or PDF layout while doing structural cleanup.
-- Extend behavior-level tests before moving behavior-sensitive code.
-- Keep presentation responsibilities (canvas/dialogs/navigation) separate from
-  application sessions.
-- Application services must not import infrastructure implementations.
-- Run focused tests after each extraction, then one complete suite and strict
-  analysis at the final gate.
-
-## Verification commands
+## Development commands
 
 ```zsh
-git status --short
-git diff --check
+flutter pub get
 flutter analyze
 flutter test --reporter compact
-shasum -a 256 music-tabbler-library.mtstate
 ./dev.command
 ```
 
-Use the development launcher only for smoke testing; do not package a release.
+On Windows, use `dev.bat` for a development launch.
 
-## Deliberately deferred
+## Change rules
 
-- Native Android shared-PDF verification awaits an available JDK/device.
-- Analysis canvas, row list, toolbar, and inspector rendering are split from
-  review coordination. Windows goldens now protect representative Gig viewport
-  composition, the open Gig setlist drawer, analysis waiting/failure cards, and
-  the unlocked Gig toolbar, and the complete analysis review layout. The Gig
-  setlist drawer, stage surface, zoom controls, and command bar are isolated
-  from route/session coordination. Extend the relevant visual baseline before
-  each remaining presentation extraction; avoid a mechanical shuffle that only
-  relocates complexity.
-- Gig annotation persistence, deck patching, and one-step undo now live in
-  `GigAnnotationSession`; stroke capture and dialogs remain presentation work.
-- The canonical cached performance-deck builder exposes local cache diagnostics
-  for hits, misses, evictions, failures, pending work, retained deck structure,
-  and estimated image bytes. Its three-entry LRU policy and output are
-  unchanged.
-- `LocalLibrary` remains the atomic SQL façade while ordered schema migration
-  and content-addressed asset handling live in focused infrastructure helpers.
+- Preserve visual input and manual editing as reliable fallbacks.
+- Keep recognition output editable and visibly unverified until accepted.
+- Never modify user libraries or portable state files during tests.
+- Keep source provenance out of rendered charts and PDFs.
+- Add migration tests before changing persisted schemas or archive formats.
+- Do not tune OCR, row detection, image processing, transformation, bar
+  repacking, or PDF layout as a side effect of structural cleanup.
+- Use focused tests while iterating, followed by the full suite and strict
+  analysis before publishing changes.
 
-Historical Apple, Windows, release, and fixture validation documents remain in
-`docs/` as archived evidence. Their semantic-era statements describe those
-historical checkpoints, not the current product architecture.
+## Remaining platform validation
+
+- Validate Android shared-PDF intake, lifecycle, stylus, and keep-awake behavior
+  on physical hardware.
+- Validate iOS file sharing, lifecycle, and performance behavior on physical
+  hardware with a signed development build.
+- Add a reviewed Unicode PDF font and rendered multilingual fixtures.
