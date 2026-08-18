@@ -15,6 +15,7 @@ class SongBundleService implements SongBundleTransfer {
   SongBundleService(
     this.library, {
     this.codec = const PortableContainerCodec(),
+    this.readPickedFileIdentifier,
   });
 
   static const kind = 'music-tabbler-song';
@@ -22,6 +23,7 @@ class SongBundleService implements SongBundleTransfer {
 
   final PortableLibraryStore library;
   final PortableContainerCodec codec;
+  final PlatformFileIdentifierReader? readPickedFileIdentifier;
 
   @override
   Future<Uint8List> exportSongBytes(String chartVariantId) async {
@@ -290,7 +292,10 @@ class SongBundleService implements SongBundleTransfer {
     );
     if (selected == null) return null;
     final file = selected.files.single;
-    final bytes = file.bytes ?? await file.xFile.readAsBytes();
+    final bytes = await readPickedFileBytes(
+      file,
+      readIdentifier: readPickedFileIdentifier,
+    );
     return importSongBytes(bytes);
   }
 

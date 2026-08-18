@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:music_tabbler/application/portable_file_picker.dart';
 import 'package:music_tabbler/infrastructure/incoming_pdf_receiver.dart';
 
 void main() {
@@ -35,5 +36,41 @@ void main() {
     final receiver = MethodChannelIncomingPdfReceiver(channel: channel);
 
     expect(await receiver.takePendingPdf(), isNull);
+  });
+
+  test('reports malformed shared PDF data without a null error', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async => {'bytes': null});
+    final receiver = MethodChannelIncomingPdfReceiver(channel: channel);
+
+    expect(
+      receiver.takePendingPdf,
+      throwsA(
+        isA<PlatformFileReadException>().having(
+          (error) => error.message,
+          'message',
+          'Android returned no readable data for the shared PDF.',
+        ),
+      ),
+    );
+  });
+
+  test('replaces a null native error message with actionable text', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async {
+          throw PlatformException(code: 'read_failed');
+        });
+    final receiver = MethodChannelIncomingPdfReceiver(channel: channel);
+
+    expect(
+      receiver.takePendingPdf,
+      throwsA(
+        isA<PlatformFileReadException>().having(
+          (error) => error.message,
+          'message',
+          'Android could not read the shared PDF.',
+        ),
+      ),
+    );
   });
 }

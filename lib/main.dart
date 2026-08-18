@@ -16,6 +16,7 @@ import 'infrastructure/device_preferences_store.dart';
 import 'infrastructure/external_url_opener.dart';
 import 'infrastructure/performance_mode_controller.dart';
 import 'infrastructure/incoming_pdf_receiver.dart';
+import 'infrastructure/platform_file_identifier_reader.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,8 +30,17 @@ Future<void> main() async {
     final chartPdfExporter = VisualChartPdfExporter(library);
     final performanceDeckBuilder = CachedPerformanceDeckBuilder(library);
     final setlistPdfExporter = SetlistPdfExportService(performanceDeckBuilder);
-    final songBundles = SongBundleService(library);
-    final libraryState = LibraryStateService(library);
+    final platformFileReader = Platform.isAndroid
+        ? const MethodChannelPlatformFileIdentifierReader().read
+        : null;
+    final songBundles = SongBundleService(
+      library,
+      readPickedFileIdentifier: platformFileReader,
+    );
+    final libraryState = LibraryStateService(
+      library,
+      readPickedFileIdentifier: platformFileReader,
+    );
     runApp(
       MusicTabblerApp(
         initialPreferences: initialPreferences,
@@ -38,7 +48,10 @@ Future<void> main() async {
           library: library,
           songVariants: library,
           setlists: library,
-          importer: VisualImportService(library),
+          importer: VisualImportService(
+            library,
+            readPickedFileIdentifier: platformFileReader,
+          ),
           exporter: chartPdfExporter,
           setlistExporter: setlistPdfExporter,
           performanceDeckBuilder: performanceDeckBuilder,

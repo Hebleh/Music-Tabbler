@@ -13,6 +13,7 @@ class MainActivity : FlutterActivity() {
     private val channelName = "music_tabbler/performance_mode"
     private val externalUrlChannelName = "music_tabbler/external_url"
     private val incomingPdfChannelName = "music_tabbler/incoming_pdf"
+    private val platformFileChannelName = "music_tabbler/platform_file"
     private var incomingPdfChannel: MethodChannel? = null
 
     override fun onNewIntent(intent: Intent) {
@@ -78,6 +79,40 @@ class MainActivity : FlutterActivity() {
                 result.error("open_failed", error.message, null)
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            platformFileChannelName,
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "readBytes") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            val identifier = call.arguments as? String
+            val uri = identifier?.let(Uri::parse)
+            if (uri == null || (uri.scheme != "content" && uri.scheme != "file")) {
+                result.error(
+                    "invalid_identifier",
+                    "The selected file has no readable Android content URI.",
+                    null,
+                )
+                return@setMethodCallHandler
+            }
+            try {
+                result.success(
+                    readUriBytes(
+                        uri,
+                        128 * 1024 * 1024,
+                        "Selected files are limited to 128 MB.",
+                    ),
+                )
+            } catch (error: Exception) {
+                result.error(
+                    "read_failed",
+                    error.message ?: "Android could not read the selected file.",
+                    null,
+                )
+            }
+        }
         incomingPdfChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             incomingPdfChannelName,
@@ -98,21 +133,11 @@ class MainActivity : FlutterActivity() {
                     return@setMethodCallHandler
                 }
                 try {
-                    val bytes = contentResolver.openInputStream(uri)?.use { input ->
-                        val output = java.io.ByteArrayOutputStream()
-                        val buffer = ByteArray(64 * 1024)
-                        var total = 0
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            total += count
-                            if (total > 100 * 1024 * 1024) {
-                                throw IllegalArgumentException("Shared PDFs are limited to 100 MB.")
-                            }
-                            output.write(buffer, 0, count)
-                        }
-                        output.toByteArray()
-                    } ?: throw IllegalArgumentException("The shared PDF could not be opened.")
+                    val bytes = readUriBytes(
+                        uri,
+                        100 * 1024 * 1024,
+                        "Shared PDFs are limited to 100 MB.",
+                    )
                     setIntent(Intent(Intent.ACTION_MAIN))
                     result.success(
                         mapOf(
@@ -121,7 +146,11 @@ class MainActivity : FlutterActivity() {
                         ),
                     )
                 } catch (error: Exception) {
-                    result.error("read_failed", error.message, null)
+                    result.error(
+                        "read_failed",
+                        error.message ?: "Android could not read the shared PDF.",
+                        null,
+                    )
                 }
             }
         }
@@ -141,4 +170,19 @@ class MainActivity : FlutterActivity() {
         }
         return uri.lastPathSegment
     }
+
+    private fun readUriBytes(uri: Uri, maxBytes: Int, sizeMessage: String): ByteArray =
+        contentResolver.openInputStream(uri)?.use { input ->
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            var total = 0
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count
+                if (total > maxBytes) throw IllegalArgumentException(sizeMessage)
+                output.write(buffer, 0, count)
+            }
+            output.toByteArray()
+        } ?: throw IllegalArgumentException("The selected file could not be opened.")
 }

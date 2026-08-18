@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:pdfrx_engine/pdfrx_engine.dart';
 
 import '../domain/visual_chart_models.dart';
+import 'portable_file_picker.dart';
 import 'service_contracts.dart';
 import 'windows_clipboard_reader.dart';
 
@@ -14,10 +15,12 @@ class VisualImportService implements VisualImporter {
   VisualImportService(
     this.library, {
     this.clipboardReader = const WindowsClipboardReader(),
+    this.readPickedFileIdentifier,
   });
 
   final ChartLibrary library;
   final WindowsClipboardReader clipboardReader;
+  final PlatformFileIdentifierReader? readPickedFileIdentifier;
   bool _pdfInitialized = false;
 
   @override
@@ -177,10 +180,7 @@ class VisualImportService implements VisualImporter {
   }
 
   Future<Uint8List> _readPlatformFile(PlatformFile file) async {
-    if (file.path case final path?) {
-      return File(path).readAsBytes();
-    }
-    return file.xFile.readAsBytes();
+    return readPickedFileBytes(file, readIdentifier: readPickedFileIdentifier);
   }
 
   String _cleanExtension(String value) {

@@ -16,6 +16,7 @@ class LibraryStateService implements LibraryStateTransfer {
   LibraryStateService(
     this.library, {
     this.codec = const PortableContainerCodec(),
+    this.readPickedFileIdentifier,
   });
 
   static const kind = 'music-tabbler-state';
@@ -24,6 +25,7 @@ class LibraryStateService implements LibraryStateTransfer {
 
   final PortableLibraryStore library;
   final PortableContainerCodec codec;
+  final PlatformFileIdentifierReader? readPickedFileIdentifier;
 
   @override
   Future<Uint8List> exportStateBytes() async {
@@ -398,7 +400,7 @@ class LibraryStateService implements LibraryStateTransfer {
     if (selected == null) return null;
     final file = selected.files.single;
     return importStateBytes(
-      file.bytes ?? await file.xFile.readAsBytes(),
+      await readPickedFileBytes(file, readIdentifier: readPickedFileIdentifier),
       mode: mode,
     );
   }

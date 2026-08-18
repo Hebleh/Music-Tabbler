@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../application/portable_file_picker.dart';
 import '../application/service_contracts.dart';
 
 class MethodChannelIncomingPdfReceiver implements IncomingPdfReceiver {
@@ -27,8 +28,19 @@ class MethodChannelIncomingPdfReceiver implements IncomingPdfReceiver {
         'takePendingPdf',
       );
       if (value == null) return null;
-      final bytes = value['bytes'];
-      if (bytes is! Uint8List || bytes.isEmpty) return null;
+      final rawBytes = value['bytes'];
+      final bytes = switch (rawBytes) {
+        Uint8List value => value,
+        List<int> value => Uint8List.fromList(value),
+        _ => throw const PlatformFileReadException(
+          'Android returned no readable data for the shared PDF.',
+        ),
+      };
+      if (bytes.isEmpty) {
+        throw const PlatformFileReadException(
+          'The shared PDF is empty and cannot be imported.',
+        );
+      }
       final fileName = value['fileName'];
       return IncomingPdf(
         bytes: bytes,
@@ -38,6 +50,10 @@ class MethodChannelIncomingPdfReceiver implements IncomingPdfReceiver {
       );
     } on MissingPluginException {
       return null;
+    } on PlatformException catch (error) {
+      throw PlatformFileReadException(
+        error.message ?? 'Android could not read the shared PDF.',
+      );
     }
   }
 }
