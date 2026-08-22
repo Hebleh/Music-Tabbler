@@ -1,5 +1,6 @@
 package com.gerri.music_tabbler
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -14,13 +15,55 @@ class MainActivity : FlutterActivity() {
     private val externalUrlChannelName = "music_tabbler/external_url"
     private val incomingPdfChannelName = "music_tabbler/incoming_pdf"
     private val platformFileChannelName = "music_tabbler/platform_file"
+    private val portableFileChannelName = "music_tabbler/portable_file"
     private var incomingPdfChannel: MethodChannel? = null
+    private var pendingPortableSaveResult: MethodChannel.Result? = null
+    private var pendingPortableSaveBytes: ByteArray? = null
+
+    companion object {
+        private const val PORTABLE_SAVE_REQUEST_CODE = 41032
+        private const val MAX_PORTABLE_FILE_BYTES = 128 * 1024 * 1024
+    }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (isPdfShare(intent)) {
             incomingPdfChannel?.invokeMethod("sharedPdfAvailable", null)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != PORTABLE_SAVE_REQUEST_CODE) {
+            super.onActivityResult(requestCode, resultCode, data)
+            return
+        }
+        val result = pendingPortableSaveResult
+        val bytes = pendingPortableSaveBytes
+        pendingPortableSaveResult = null
+        pendingPortableSaveBytes = null
+        if (result == null) return
+        if (resultCode != Activity.RESULT_OK) {
+            result.success(null)
+            return
+        }
+        val uri = data?.data
+        if (uri == null || bytes == null) {
+            result.error("save_failed", "Android did not return a writable document.", null)
+            return
+        }
+        try {
+            contentResolver.openOutputStream(uri, "w")?.use { output ->
+                output.write(bytes)
+                output.flush()
+            } ?: throw IllegalArgumentException("The selected document could not be opened.")
+            result.success(uri.toString())
+        } catch (error: Exception) {
+            result.error(
+                "save_failed",
+                error.message ?: "Android could not save the portable file.",
+                null,
+            )
         }
     }
 
@@ -109,6 +152,50 @@ class MainActivity : FlutterActivity() {
                 result.error(
                     "read_failed",
                     error.message ?: "Android could not read the selected file.",
+                    null,
+                )
+            }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            portableFileChannelName,
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "saveFile") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            if (pendingPortableSaveResult != null) {
+                result.error("save_in_progress", "Another portable file is already being saved.", null)
+                return@setMethodCallHandler
+            }
+            val arguments = call.arguments as? Map<*, *>
+            val fileName = arguments?.get("fileName") as? String
+            val bytes = arguments?.get("bytes") as? ByteArray
+            if (fileName.isNullOrBlank() || bytes == null) {
+                result.error("invalid_argument", "saveFile expects a name and bytes.", null)
+                return@setMethodCallHandler
+            }
+            if (bytes.isEmpty() || bytes.size > MAX_PORTABLE_FILE_BYTES) {
+                result.error("invalid_size", "Portable files must be between 1 byte and 128 MB.", null)
+                return@setMethodCallHandler
+            }
+            pendingPortableSaveResult = result
+            pendingPortableSaveBytes = bytes
+            try {
+                startActivityForResult(
+                    Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/octet-stream"
+                        putExtra(Intent.EXTRA_TITLE, fileName)
+                    },
+                    PORTABLE_SAVE_REQUEST_CODE,
+                )
+            } catch (error: Exception) {
+                pendingPortableSaveResult = null
+                pendingPortableSaveBytes = null
+                result.error(
+                    "save_failed",
+                    error.message ?: "Android could not open a document saver.",
                     null,
                 )
             }

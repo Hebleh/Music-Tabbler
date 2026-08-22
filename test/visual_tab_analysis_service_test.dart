@@ -532,6 +532,51 @@ void main() {
     },
   );
 
+  test('unavailable positioned PDF text falls back to raster review', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_positioned_fallback_',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    await File(
+      '${directory.path}${Platform.pathSeparator}strip.png',
+    ).writeAsBytes(
+      _tabFixture(
+        background: img.ColorRgb8(255, 255, 255),
+        foreground: img.ColorRgb8(0, 0, 0),
+      ),
+    );
+    await File(
+      '${directory.path}${Platform.pathSeparator}corrupt_source.pdf',
+    ).writeAsBytes(const [0, 1, 2, 3]);
+    final service = VisualTabAnalysisService(
+      library: _AnalysisLibrary(directory.path),
+      textRecognition: _CountingTextRecognition(),
+    );
+
+    final result = await service.analyze(
+      const VisualStrip(
+        id: 'strip',
+        assetHash: 'strip',
+        assetExtension: 'png',
+        pixelWidth: 600,
+        pixelHeight: 240,
+        sourceAssetHash: 'corrupt_source',
+        sourcePage: 1,
+      ),
+      sourceStringCount: 4,
+    );
+
+    expect(result.sourceType, VisualTabSourceType.rasterOcr);
+    expect(result.systems, hasLength(2));
+    expect(
+      result.warnings,
+      contains(
+        'The positioned PDF text layer was unavailable on this device. '
+        'Raster analysis was used instead.',
+      ),
+    );
+  });
+
   test('raster OCR is cropped and run once per detected tab system', () async {
     final directory = await Directory.systemTemp.createTemp(
       'music_tabbler_raster_analysis_',
@@ -566,6 +611,61 @@ void main() {
     expect(result.systems, hasLength(2));
     expect(recognition.callCount, 2);
   });
+
+  test(
+    'native OCR failure keeps geometry available for manual review',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'music_tabbler_raster_ocr_failure_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final image = img.decodePng(
+        _tabFixture(
+          background: img.ColorRgb8(255, 255, 255),
+          foreground: img.ColorRgb8(0, 0, 0),
+        ),
+      )!;
+      img.drawString(
+        image,
+        '7',
+        font: img.arial14,
+        x: 100,
+        y: 52,
+        color: img.ColorRgb8(0, 0, 0),
+      );
+      await File(
+        '${directory.path}${Platform.pathSeparator}strip.png',
+      ).writeAsBytes(img.encodePng(image));
+      final service = VisualTabAnalysisService(
+        library: _AnalysisLibrary(directory.path),
+        textRecognition: const _FailingPreparedTextRecognition(),
+      );
+
+      final result = await service.analyze(
+        const VisualStrip(
+          id: 'strip',
+          assetHash: 'strip',
+          assetExtension: 'png',
+          pixelWidth: 600,
+          pixelHeight: 240,
+        ),
+        sourceStringCount: 4,
+        preferPositionedPdf: false,
+      );
+
+      expect(result.sourceType, VisualTabSourceType.rasterOcr);
+      expect(result.systems, hasLength(2));
+      expect(result.enabledFretTokenCount, 0);
+      expect(
+        result.warnings,
+        contains(
+          'Local raster OCR was unavailable on this device. The detected '
+          'string geometry remains editable; use Add note for missed frets '
+          'and dead notes.',
+        ),
+      );
+    },
+  );
 
   test('prepared raster OCR maps isolated glyphs back to strings', () async {
     final directory = await Directory.systemTemp.createTemp(
@@ -1216,6 +1316,19 @@ class _PreparedCountingTextRecognition
     preparedCallCount += 1;
     return const MetadataSuggestion();
   }
+}
+
+class _FailingPreparedTextRecognition
+    implements TextRecognitionService, PreparedTextRecognitionService {
+  const _FailingPreparedTextRecognition();
+
+  @override
+  Future<MetadataSuggestion> recognize(VisualStrip strip) async =>
+      throw StateError('native OCR unavailable');
+
+  @override
+  Future<MetadataSuggestion> recognizePreparedImage(Uint8List bytes) async =>
+      throw StateError('native OCR unavailable');
 }
 
 class _NativeOverrideRecognition

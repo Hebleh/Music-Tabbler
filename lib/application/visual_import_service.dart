@@ -11,16 +11,26 @@ import 'portable_file_picker.dart';
 import 'service_contracts.dart';
 import 'windows_clipboard_reader.dart';
 
+typedef PdfEngineInitializer = Future<void> Function(String cachePath);
+typedef PdfCacheRootPathProvider = String Function();
+
 class VisualImportService implements VisualImporter {
   VisualImportService(
     this.library, {
     this.clipboardReader = const WindowsClipboardReader(),
     this.readPickedFileIdentifier,
-  });
+    PdfEngineInitializer? initializePdfEngine,
+    PdfCacheRootPathProvider? pdfCacheRootPathProvider,
+  }) : _initializePdfEngine =
+           initializePdfEngine ?? _initializeDefaultPdfEngine,
+       _pdfCacheRootPathProvider =
+           pdfCacheRootPathProvider ?? _defaultPdfCacheRootPath;
 
   final ChartLibrary library;
   final WindowsClipboardReader clipboardReader;
   final PlatformFileIdentifierReader? readPickedFileIdentifier;
+  final PdfEngineInitializer _initializePdfEngine;
+  final PdfCacheRootPathProvider _pdfCacheRootPathProvider;
   bool _pdfInitialized = false;
 
   @override
@@ -135,7 +145,12 @@ class VisualImportService implements VisualImporter {
 
   Future<List<VisualStrip>> importPdf(List<int> bytes) async {
     if (!_pdfInitialized) {
-      await pdfrxInitialize();
+      final cachePath = p.join(
+        _pdfCacheRootPathProvider(),
+        'music_tabbler_pdfrx',
+      );
+      await Directory(cachePath).create(recursive: true);
+      await _initializePdfEngine(cachePath);
       _pdfInitialized = true;
     }
     final original = await library.storeAsset(bytes, 'pdf');
@@ -201,3 +216,8 @@ class VisualImportService implements VisualImporter {
     }.contains(p.extension(path).toLowerCase());
   }
 }
+
+Future<void> _initializeDefaultPdfEngine(String cachePath) =>
+    pdfrxInitialize(tmpPath: cachePath);
+
+String _defaultPdfCacheRootPath() => Directory.systemTemp.path;

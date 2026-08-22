@@ -6,6 +6,12 @@ import 'package:file_picker/file_picker.dart';
 typedef PlatformFileIdentifierReader =
     Future<Uint8List> Function(String identifier);
 
+typedef PortableFileSaver =
+    Future<String?> Function({
+      required String fileName,
+      required Uint8List bytes,
+    });
+
 class PlatformFileReadException implements Exception {
   const PlatformFileReadException(this.message);
 

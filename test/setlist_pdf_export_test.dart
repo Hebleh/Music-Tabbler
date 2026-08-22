@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:music_tabbler/application/pdf_export_service.dart';
@@ -13,6 +14,58 @@ import 'package:music_tabbler/domain/visual_chart_models.dart';
 import 'package:music_tabbler/infrastructure/local_library.dart';
 
 void main() {
+  test(
+    'mobile setlist export passes rendered PDF bytes to the picker',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'music_tabbler_mobile_setlist_pdf_',
+      );
+      final library = await LocalLibrary.forTesting(directory);
+      addTearDown(() {
+        library.close();
+        directory.deleteSync(recursive: true);
+      });
+      final now = DateTime.utc(2026, 8, 23);
+      final setlist = LibrarySetlist(
+        id: 'mobile-gig',
+        name: 'Mobile gig',
+        createdAt: now,
+        updatedAt: now,
+        entries: const [
+          LibrarySetlistEntry.placeholder(
+            id: 'placeholder',
+            title: 'Guest song',
+          ),
+        ],
+      );
+      Uint8List? pickedBytes;
+      final exporter = SetlistPdfExportService(
+        CachedPerformanceDeckBuilder(library),
+        usesByteBasedSave: () => true,
+        saveFile:
+            ({
+              required String dialogTitle,
+              required String fileName,
+              required FileType type,
+              required List<String> allowedExtensions,
+              Uint8List? bytes,
+            }) async {
+              pickedBytes = bytes;
+              return '/document/Mobile gig.pdf';
+            },
+      );
+
+      final result = await exporter.exportSetlistWithPicker(
+        setlist,
+        density: VisualExportDensity.original,
+      );
+
+      expect(result, '/document/Mobile gig.pdf');
+      expect(pickedBytes, isNotNull);
+      expect(String.fromCharCodes(pickedBytes!.take(5)), '%PDF-');
+    },
+  );
+
   test(
     'combined setlist PDF preserves duplicates and renders placeholders',
     () async {

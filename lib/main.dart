@@ -17,6 +17,7 @@ import 'infrastructure/external_url_opener.dart';
 import 'infrastructure/performance_mode_controller.dart';
 import 'infrastructure/incoming_pdf_receiver.dart';
 import 'infrastructure/platform_file_identifier_reader.dart';
+import 'infrastructure/portable_file_saver.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,13 +34,18 @@ Future<void> main() async {
     final platformFileReader = Platform.isAndroid
         ? const MethodChannelPlatformFileIdentifierReader().read
         : null;
+    final portableFileSaver = Platform.isAndroid
+        ? const MethodChannelPortableFileSaver().save
+        : null;
     final songBundles = SongBundleService(
       library,
       readPickedFileIdentifier: platformFileReader,
+      savePortableFile: portableFileSaver,
     );
     final libraryState = LibraryStateService(
       library,
       readPickedFileIdentifier: platformFileReader,
+      savePortableFile: portableFileSaver,
     );
     runApp(
       MusicTabblerApp(

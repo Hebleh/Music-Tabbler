@@ -15,6 +15,33 @@ import 'service_contracts.dart';
 import 'visual_image_processor.dart';
 import 'visual_annotation_renderer.dart';
 
+typedef PdfSaveFilePicker =
+    Future<String?> Function({
+      required String dialogTitle,
+      required String fileName,
+      required FileType type,
+      required List<String> allowedExtensions,
+      Uint8List? bytes,
+    });
+
+typedef ByteBasedPdfSavePlatform = bool Function();
+
+Future<String?> _pickPdfSaveFile({
+  required String dialogTitle,
+  required String fileName,
+  required FileType type,
+  required List<String> allowedExtensions,
+  Uint8List? bytes,
+}) => FilePicker.platform.saveFile(
+  dialogTitle: dialogTitle,
+  fileName: fileName,
+  type: type,
+  allowedExtensions: allowedExtensions,
+  bytes: bytes,
+);
+
+bool _usesByteBasedPdfSave() => Platform.isAndroid || Platform.isIOS;
+
 class PlannedStrip {
   const PlannedStrip({
     required this.index,
@@ -421,11 +448,16 @@ class VisualChartPdfExporter implements ChartPdfExporter {
     this.library, {
     this.processor = const VisualImageProcessor(),
     this.layout = const A4StripLayout(),
-  });
+    PdfSaveFilePicker? saveFile,
+    ByteBasedPdfSavePlatform? usesByteBasedSave,
+  }) : _saveFile = saveFile ?? _pickPdfSaveFile,
+       _usesByteBasedSave = usesByteBasedSave ?? _usesByteBasedPdfSave;
 
   final ChartLibrary library;
   final VisualImageProcessor processor;
   final A4StripLayout layout;
+  final PdfSaveFilePicker _saveFile;
+  final ByteBasedPdfSavePlatform _usesByteBasedSave;
 
   @override
   Future<Uint8List> exportBytes(VisualChartDraft draft) async {
@@ -494,13 +526,17 @@ class VisualChartPdfExporter implements ChartPdfExporter {
     final safeTitle = draft.title.trim().isEmpty
         ? 'music-tabbler-chart'
         : draft.title.trim().replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
-    final destination = await FilePicker.platform.saveFile(
+    final useByteBasedSave = _usesByteBasedSave();
+    final bytes = useByteBasedSave ? await exportBytes(draft) : null;
+    final destination = await _saveFile(
       dialogTitle: 'Export A4 chart',
       fileName: '$safeTitle.pdf',
       type: FileType.custom,
       allowedExtensions: const ['pdf'],
+      bytes: bytes,
     );
     if (destination == null) return null;
+    if (useByteBasedSave) return destination;
     final path = destination.toLowerCase().endsWith('.pdf')
         ? destination
         : '$destination.pdf';
@@ -510,13 +546,18 @@ class VisualChartPdfExporter implements ChartPdfExporter {
 }
 
 class SetlistPdfExportService implements SetlistPdfExporter {
-  const SetlistPdfExportService(
+  SetlistPdfExportService(
     this.deckBuilder, {
     this.fileWriter = const StagedPdfFileWriter(),
-  });
+    PdfSaveFilePicker? saveFile,
+    ByteBasedPdfSavePlatform? usesByteBasedSave,
+  }) : _saveFile = saveFile ?? _pickPdfSaveFile,
+       _usesByteBasedSave = usesByteBasedSave ?? _usesByteBasedPdfSave;
 
   final PerformanceDeckBuilder deckBuilder;
   final StagedPdfFileWriter fileWriter;
+  final PdfSaveFilePicker _saveFile;
+  final ByteBasedPdfSavePlatform _usesByteBasedSave;
 
   @override
   Future<Uint8List> exportSetlistBytes(
@@ -544,18 +585,24 @@ class SetlistPdfExportService implements SetlistPdfExporter {
     required VisualExportDensity density,
   }) async {
     final safeName = _safePdfName(setlist.name, fallback: 'music-tabbler-set');
-    final destination = await FilePicker.platform.saveFile(
+    final useByteBasedSave = _usesByteBasedSave();
+    final bytes = useByteBasedSave
+        ? await exportSetlistBytes(setlist, density: density)
+        : null;
+    final destination = await _saveFile(
       dialogTitle: 'Export setlist as A4 PDF',
       fileName: '$safeName.pdf',
       type: FileType.custom,
       allowedExtensions: const ['pdf'],
+      bytes: bytes,
     );
     if (destination == null) return null;
+    if (useByteBasedSave) return destination;
     final path = destination.toLowerCase().endsWith('.pdf')
         ? destination
         : '$destination.pdf';
-    final bytes = await exportSetlistBytes(setlist, density: density);
-    await fileWriter.write(path, bytes);
+    final desktopBytes = await exportSetlistBytes(setlist, density: density);
+    await fileWriter.write(path, desktopBytes);
     return path;
   }
 }

@@ -16,6 +16,7 @@ class SongBundleService implements SongBundleTransfer {
     this.library, {
     this.codec = const PortableContainerCodec(),
     this.readPickedFileIdentifier,
+    this.savePortableFile,
   });
 
   static const kind = 'music-tabbler-song';
@@ -24,6 +25,7 @@ class SongBundleService implements SongBundleTransfer {
   final PortableLibraryStore library;
   final PortableContainerCodec codec;
   final PlatformFileIdentifierReader? readPickedFileIdentifier;
+  final PortableFileSaver? savePortableFile;
 
   @override
   Future<Uint8List> exportSongBytes(String chartVariantId) async {
@@ -270,6 +272,10 @@ class SongBundleService implements SongBundleTransfer {
         ? 'music-tabbler-song'
         : draft.title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
     final bytes = await exportSongBytes(chartVariantId);
+    final portableSaver = savePortableFile;
+    if (portableSaver != null) {
+      return portableSaver(fileName: '$safeName.mtsong', bytes: bytes);
+    }
     return FilePicker.platform.saveFile(
       dialogTitle: 'Export portable song',
       fileName: '$safeName.mtsong',

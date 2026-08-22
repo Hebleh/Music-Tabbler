@@ -96,6 +96,140 @@ void main() {
         returnsNormally,
       );
     });
+
+    test('routes standard four-string bass into BEADG with unused low B', () {
+      const sourceMidis = [40, 45, 50, 55];
+      const targetMidis = [35, 40, 45, 50, 55];
+      final routes = [
+        for (var source = 0; source < sourceMidis.length; source += 1)
+          VisualStringRoute(
+            sourceString: source,
+            targetString: source + 1,
+            fretOffset: calculateVisualRouteFretOffset(
+              sourceOpenMidi: sourceMidis[source],
+              sourceCapo: 0,
+              desiredPitchChange: 0,
+              targetOpenMidi: targetMidis[source + 1],
+              targetCapo: 0,
+            ),
+          ),
+      ];
+
+      final configuration = VisualTabTransformConfiguration(
+        sourceLabels: const ['E', 'A', 'D', 'G'],
+        sourceOpenMidis: sourceMidis,
+        sourceCapo: 0,
+        targetLabels: const ['B', 'E', 'A', 'D', 'G'],
+        targetOpenMidis: targetMidis,
+        targetCapo: 0,
+        globalPitchChange: 0,
+        routes: routes,
+      );
+
+      expect(configuration.unusedTargetStrings, [0]);
+      expect(routes.map((route) => route.fretOffset), everyElement(0));
+    });
+
+    test('preserves pitch for a non-preset drop-C route with capos', () {
+      const sourceMidis = [36, 43, 48, 53]; // C G C F
+      const targetMidis = [35, 40, 45, 50, 55]; // B E A D G
+      const sourceCapo = 1;
+      const targetCapo = 3;
+      const pitchChange = 2;
+      final routes = [
+        for (var source = 0; source < sourceMidis.length; source += 1)
+          VisualStringRoute(
+            sourceString: source,
+            targetString: source,
+            fretOffset: calculateVisualRouteFretOffset(
+              sourceOpenMidi: sourceMidis[source],
+              sourceCapo: sourceCapo,
+              desiredPitchChange: pitchChange,
+              targetOpenMidi: targetMidis[source],
+              targetCapo: targetCapo,
+            ),
+          ),
+      ];
+
+      final configuration = VisualTabTransformConfiguration(
+        sourceLabels: const ['C', 'G', 'C', 'F'],
+        sourceOpenMidis: sourceMidis,
+        sourceCapo: sourceCapo,
+        targetLabels: const ['B', 'E', 'A', 'D', 'G'],
+        targetOpenMidis: targetMidis,
+        targetCapo: targetCapo,
+        globalPitchChange: pitchChange,
+        routes: routes,
+      );
+
+      expect(configuration.unusedTargetStrings, [4]);
+      for (final sourceFret in [0, 5, 12, 19]) {
+        for (final route in routes) {
+          final sourcePitch =
+              sourceMidis[route.sourceString] +
+              sourceCapo +
+              sourceFret +
+              configuration.pitchChangeForSourceString(route.sourceString);
+          final targetPitch =
+              targetMidis[route.targetString] +
+              targetCapo +
+              sourceFret +
+              route.effectiveOffset;
+          expect(targetPitch, sourcePitch);
+        }
+      }
+    });
+
+    test(
+      'applies a selected-string pitch change without moving other strings',
+      () {
+        const openMidis = [40, 45, 50, 55];
+        final routes = [
+          for (var source = 0; source < openMidis.length; source += 1)
+            VisualStringRoute(
+              sourceString: source,
+              targetString: source,
+              fretOffset: calculateVisualRouteFretOffset(
+                sourceOpenMidi: openMidis[source],
+                sourceCapo: 0,
+                desiredPitchChange: source == 0 ? 3 : 0,
+                targetOpenMidi: openMidis[source],
+                targetCapo: 0,
+              ),
+            ),
+        ];
+        final configuration = VisualTabTransformConfiguration(
+          sourceLabels: const ['E', 'A', 'D', 'G'],
+          sourceOpenMidis: openMidis,
+          sourceCapo: 0,
+          targetLabels: const ['E', 'A', 'D', 'G'],
+          targetOpenMidis: openMidis,
+          targetCapo: 0,
+          globalPitchChange: 0,
+          selectedStringPitchChanges: const {0: 3},
+          routes: routes,
+        );
+
+        expect(configuration.pitchChangeForSourceString(0), 3);
+        expect(configuration.pitchChangeForSourceString(1), 0);
+        expect(routes.map((route) => route.fretOffset), [3, 0, 0, 0]);
+      },
+    );
+
+    test('rejects a target with fewer strings than the source', () {
+      expect(
+        () => validateMonotonicVisualRoutes(
+          const [
+            VisualStringRoute(sourceString: 0, targetString: 0, fretOffset: 0),
+            VisualStringRoute(sourceString: 1, targetString: 1, fretOffset: 0),
+            VisualStringRoute(sourceString: 2, targetString: 2, fretOffset: 0),
+          ],
+          sourceStringCount: 4,
+          targetStringCount: 3,
+        ),
+        throwsFormatException,
+      );
+    });
   });
 
   test('analysis round-trips reviewed tokens', () {

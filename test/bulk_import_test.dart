@@ -1,11 +1,46 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:music_tabbler/application/visual_import_service.dart';
 import 'package:music_tabbler/infrastructure/local_library.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
+  test('PDF initialization receives an existing explicit cache path', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'music-tabbler-pdf-cache-',
+    );
+    final library = await LocalLibrary.forTesting(
+      Directory(p.join(root.path, 'library')),
+    );
+    addTearDown(() {
+      library.close();
+      root.deleteSync(recursive: true);
+    });
+    String? initializedPath;
+    final importer = VisualImportService(
+      library,
+      pdfCacheRootPathProvider: () => p.join(root.path, 'cache-root'),
+      initializePdfEngine: (cachePath) async {
+        initializedPath = cachePath;
+        expect(Directory(cachePath).existsSync(), isTrue);
+        throw const _PdfInitializationProbe();
+      },
+    );
+
+    await expectLater(
+      importer.importPdfBytes(Uint8List.fromList(const [37, 80, 68, 70])),
+      throwsA(isA<_PdfInitializationProbe>()),
+    );
+
+    expect(
+      initializedPath,
+      p.join(root.path, 'cache-root', 'music_tabbler_pdfrx'),
+    );
+  });
+
   test('folder intake imports supported screenshots in path order', () async {
     final root = await Directory.systemTemp.createTemp('music-tabbler-drop-');
     addTearDown(() => root.delete(recursive: true));
@@ -31,4 +66,8 @@ void main() {
     expect(strips, hasLength(2));
     expect(strips.every((strip) => strip.pixelWidth == 20), isTrue);
   });
+}
+
+class _PdfInitializationProbe implements Exception {
+  const _PdfInitializationProbe();
 }

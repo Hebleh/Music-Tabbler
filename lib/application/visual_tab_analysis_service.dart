@@ -99,49 +99,75 @@ class VisualTabAnalysisService implements VisualTabAnalyzer {
       strip,
       expectedStringCount: sourceStringCount,
     );
+    var positionedPdfUnavailable = false;
 
     if (preferPositionedPdf &&
         !deskewed &&
         strip.sourceAssetHash != null &&
         strip.sourcePage != null) {
-      final positioned = await _loadPositionedPdfCandidates(strip);
-      final result = buildVisualTabAnalysis(
-        stripId: strip.id,
-        sourceType: VisualTabSourceType.positionedPdf,
-        geometry: geometry,
-        candidates: positioned,
-      );
-      if (result.systems.isNotEmpty && result.enabledFretTokenCount > 0) {
-        final minimumUsefulTokens = math.max(4, result.systems.length * 2);
-        if (result.enabledFretTokenCount < minimumUsefulTokens) {
-          return result.copyWith(
-            warnings: [
-              ...result.warnings,
-              'The positioned PDF contains too little usable fret text. '
-                  'Use Raster / OCR in review for this row.',
-            ],
-          );
+      try {
+        final positioned = await _loadPositionedPdfCandidates(strip);
+        final result = buildVisualTabAnalysis(
+          stripId: strip.id,
+          sourceType: VisualTabSourceType.positionedPdf,
+          geometry: geometry,
+          candidates: positioned,
+        );
+        if (result.systems.isNotEmpty && result.enabledFretTokenCount > 0) {
+          final minimumUsefulTokens = math.max(4, result.systems.length * 2);
+          if (result.enabledFretTokenCount < minimumUsefulTokens) {
+            return result.copyWith(
+              warnings: [
+                ...result.warnings,
+                'The positioned PDF contains too little usable fret text. '
+                    'Use Raster / OCR in review for this row.',
+              ],
+            );
+          }
+          return result;
         }
-        return result;
+        return result.copyWith(
+          warnings: [
+            ...result.warnings,
+            'The positioned PDF contains no usable fret text for this row. '
+                'Use Raster / OCR in review if the row contains tablature.',
+          ],
+        );
+      } catch (_) {
+        // Some Android PDF engines can render the page but cannot expose its
+        // positioned text layer. Continue through the raster path rather than
+        // failing the entire review row with a native null error.
+        positionedPdfUnavailable = true;
       }
-      return result.copyWith(
-        warnings: [
-          ...result.warnings,
-          'The positioned PDF contains no usable fret text for this row. '
-              'Use Raster / OCR in review if the row contains tablature.',
-        ],
-      );
     }
 
-    final rasterCandidates = await _recognizeRasterCandidates(
-      strip,
-      geometry: geometry,
-      deskewed: deskewed,
-    );
-    final positionedCandidates =
-        !deskewed && strip.sourceAssetHash != null && strip.sourcePage != null
-        ? await _loadPositionedPdfCandidates(strip)
-        : const <VisualTabTextCandidate>[];
+    List<VisualTabTextCandidate> rasterCandidates;
+    var rasterOcrUnavailable = false;
+    try {
+      rasterCandidates = await _recognizeRasterCandidates(
+        strip,
+        geometry: geometry,
+        deskewed: deskewed,
+      );
+    } catch (_) {
+      // Android's on-device OCR can be temporarily unavailable (for example,
+      // while its native model is absent). Keep the deterministic geometry and
+      // any positioned-PDF candidates so review can continue with Add note.
+      // A native OCR failure must not turn the whole row into an unusable null
+      // error or discard manual correction capability.
+      rasterCandidates = const [];
+      rasterOcrUnavailable = true;
+    }
+    var positionedCandidates = const <VisualTabTextCandidate>[];
+    if (!deskewed &&
+        strip.sourceAssetHash != null &&
+        strip.sourcePage != null) {
+      try {
+        positionedCandidates = await _loadPositionedPdfCandidates(strip);
+      } catch (_) {
+        positionedPdfUnavailable = true;
+      }
+    }
     final candidates = mergeVisualTabCandidates(
       positioned: positionedCandidates,
       raster: rasterCandidates,
@@ -152,12 +178,24 @@ class VisualTabAnalysisService implements VisualTabAnalyzer {
       geometry: geometry,
       candidates: candidates,
     );
-    if (positionedCandidates.isEmpty) return result;
+    if (positionedCandidates.isEmpty &&
+        !rasterOcrUnavailable &&
+        !positionedPdfUnavailable) {
+      return result;
+    }
     return result.copyWith(
       warnings: [
         ...result.warnings,
-        'Raster OCR was supplemented with positioned PDF text for measure '
-            'labels and other selectable PDF text.',
+        if (rasterOcrUnavailable)
+          'Local raster OCR was unavailable on this device. The detected '
+              'string geometry remains editable; use Add note for missed '
+              'frets and dead notes.',
+        if (positionedPdfUnavailable)
+          'The positioned PDF text layer was unavailable on this device. '
+              'Raster analysis was used instead.',
+        if (positionedCandidates.isNotEmpty)
+          'Raster OCR was supplemented with positioned PDF text for measure '
+              'labels and other selectable PDF text.',
       ],
     );
   }

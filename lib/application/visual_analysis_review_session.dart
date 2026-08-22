@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import '../domain/visual_chart_models.dart';
 import '../domain/visual_tab_transform_models.dart';
 import 'visual_tab_analysis_service.dart';
@@ -84,7 +86,13 @@ class VisualAnalysisReviewSession {
       _analyses[index] = result;
       _rowStates[index] = VisualAnalysisRowState.completed;
       if (currentAnalysis == null) _currentIndex = index;
-    } catch (error) {
+    } catch (error, stackTrace) {
+      developer.log(
+        'Visual analysis failed for row ${index + 1}.',
+        name: 'music_tabbler.visual_analysis',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _rowStates[index] = VisualAnalysisRowState.failed;
       _rowErrors[index] = error;
     }

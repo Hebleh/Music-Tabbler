@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:music_tabbler/application/pdf_export_service.dart';
@@ -186,6 +187,59 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );
+
+  test('mobile chart export passes rendered PDF bytes to the picker', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'music_tabbler_mobile_pdf_',
+    );
+    final library = await LocalLibrary.forTesting(directory);
+    addTearDown(() {
+      library.close();
+      directory.deleteSync(recursive: true);
+    });
+    final source = img.Image(width: 300, height: 80);
+    img.fill(source, color: img.ColorRgb8(255, 255, 255));
+    final stored = await library.storeAsset(img.encodePng(source), 'png');
+    final now = DateTime.utc(2026, 8, 23);
+    final draft = VisualChartDraft(
+      id: 'mobile-export',
+      title: 'Mobile export',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      strips: [
+        VisualStrip(
+          id: 'strip',
+          assetHash: stored.hash,
+          assetExtension: stored.extension,
+          pixelWidth: 300,
+          pixelHeight: 80,
+        ),
+      ],
+    );
+    Uint8List? pickedBytes;
+    final exporter = VisualChartPdfExporter(
+      library,
+      usesByteBasedSave: () => true,
+      saveFile:
+          ({
+            required String dialogTitle,
+            required String fileName,
+            required FileType type,
+            required List<String> allowedExtensions,
+            Uint8List? bytes,
+          }) async {
+            pickedBytes = bytes;
+            return '/document/Mobile export.pdf';
+          },
+    );
+
+    final result = await exporter.exportWithPicker(draft);
+
+    expect(result, '/document/Mobile export.pdf');
+    expect(pickedBytes, isNotNull);
+    expect(String.fromCharCodes(pickedBytes!.take(5)), '%PDF-');
+  });
 }
 
 Future<Uint8List> _syntheticInput() async {
