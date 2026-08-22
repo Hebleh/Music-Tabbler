@@ -5,6 +5,10 @@ import 'dart:io';
 import 'package:pdfrx_engine/pdfrx_engine.dart';
 
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
+  // Flutter's PDF initializer normally obtains this through path_provider.
+  // Widget/unit tests do not register that host plugin, so provide the same
+  // process-local cache boundary explicitly before a PDF service is exercised.
+  Pdfrx.cacheDirectoryPath ??= Directory.systemTemp.path;
   if (Platform.isMacOS && Platform.environment.containsKey('FLUTTER_TEST')) {
     final hookOutput = Directory(
       '.dart_tool/hooks_runner/shared/pdfium_dart/build',

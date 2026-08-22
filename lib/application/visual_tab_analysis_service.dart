@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
-import 'package:pdfrx_engine/pdfrx_engine.dart';
+import 'package:pdfrx/pdfrx.dart';
 
 import '../domain/visual_chart_models.dart';
 import '../domain/visual_tab_transform_models.dart';
@@ -313,7 +313,7 @@ class VisualTabAnalysisService implements VisualTabAnalyzer {
     int sourcePage,
   ) async {
     if (!_pdfInitialized) {
-      await pdfrxInitialize();
+      await pdfrxFlutterInitialize();
       _pdfInitialized = true;
     }
     final path = library.assetPath(sourceAssetHash, 'pdf');
@@ -368,7 +368,7 @@ class VisualTabAnalysisService implements VisualTabAnalyzer {
     final path = library.assetPath(sourceAssetHash, 'pdf');
     if (!await File(path).exists()) return const [];
     if (!_pdfInitialized) {
-      await pdfrxInitialize();
+      await pdfrxFlutterInitialize();
       _pdfInitialized = true;
     }
     final document = await PdfDocument.openFile(path);

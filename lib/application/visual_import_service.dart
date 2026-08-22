@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
-import 'package:pdfrx_engine/pdfrx_engine.dart';
+import 'package:pdfrx/pdfrx.dart';
 
 import '../domain/visual_chart_models.dart';
 import 'service_contracts.dart';
@@ -26,6 +26,7 @@ class VisualImportService implements VisualImporter {
       allowMultiple: true,
       type: FileType.custom,
       allowedExtensions: const ['png', 'jpg', 'jpeg'],
+      withData: Platform.isAndroid,
     );
     if (result == null) throw const ImportCancelled();
     final strips = <VisualStrip>[];
@@ -41,6 +42,7 @@ class VisualImportService implements VisualImporter {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['pdf'],
+      withData: Platform.isAndroid,
     );
     if (result == null) throw const ImportCancelled();
     final file = result.files.single;
@@ -132,7 +134,7 @@ class VisualImportService implements VisualImporter {
 
   Future<List<VisualStrip>> importPdf(List<int> bytes) async {
     if (!_pdfInitialized) {
-      await pdfrxInitialize();
+      await pdfrxFlutterInitialize();
       _pdfInitialized = true;
     }
     final original = await library.storeAsset(bytes, 'pdf');
@@ -176,12 +178,8 @@ class VisualImportService implements VisualImporter {
     return strips;
   }
 
-  Future<Uint8List> _readPlatformFile(PlatformFile file) async {
-    if (file.path case final path?) {
-      return File(path).readAsBytes();
-    }
-    return file.xFile.readAsBytes();
-  }
+  Future<Uint8List> _readPlatformFile(PlatformFile file) =>
+      readPlatformFileBytes(file);
 
   String _cleanExtension(String value) {
     final extension = value.toLowerCase().replaceFirst('.', '');
@@ -200,4 +198,32 @@ class VisualImportService implements VisualImporter {
       '.pdf',
     }.contains(p.extension(path).toLowerCase());
   }
+}
+
+/// Reads a picker result without assuming Android produced a cached file path.
+///
+/// Android document providers may return content-backed files with bytes but no
+/// local path. `PlatformFile.xFile` force-unwraps that path on native platforms,
+/// so using it as a fallback turns a valid selection into an opaque null-check
+/// exception.
+Future<Uint8List> readPlatformFileBytes(PlatformFile file) async {
+  final bytes = file.bytes;
+  if (bytes != null && bytes.isNotEmpty) return bytes;
+
+  final path = file.path;
+  if (path != null && path.isNotEmpty) return File(path).readAsBytes();
+
+  final stream = file.readStream;
+  if (stream != null) {
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in stream) {
+      builder.add(chunk);
+    }
+    return builder.takeBytes();
+  }
+
+  throw VisualImportException(
+    'The selected file "${file.name}" has no readable data. '
+    'Save it locally and select it again.',
+  );
 }
