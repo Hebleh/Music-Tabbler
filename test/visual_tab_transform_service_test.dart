@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -353,6 +354,157 @@ void main() {
       }
     },
   );
+
+  test('infers true staff bounds when analysis has no bar lines', () async {
+    final fixture = _fourStringFixture();
+    final asset = await library.storeAsset(fixture, 'png');
+    final now = DateTime.utc(2026, 8, 22);
+    final draft = VisualChartDraft(
+      id: 'inferred-staff-bounds',
+      title: 'Inferred staff bounds',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      strips: [
+        VisualStrip(
+          id: 'source-strip',
+          assetHash: asset.hash,
+          assetExtension: 'png',
+          pixelWidth: 600,
+          pixelHeight: 120,
+        ),
+      ],
+    );
+    final source = _analysis(tokenText: '5', tokenString: 0);
+    final analysis = source.copyWith(
+      systems: [source.systems.single.copyWith(barLines: const [])],
+    );
+
+    final transformed = await VisualTabTransformService(library).apply(
+      draft: draft,
+      analyses: [analysis],
+      configuration: _dropDToFiveStringConfiguration(),
+    );
+    final outputBytes = await File(
+      library.assetPath(
+        transformed.strips.single.assetHash,
+        transformed.strips.single.assetExtension,
+      ),
+    ).readAsBytes();
+    final output = img.decodePng(outputBytes)!;
+    final rows = _longHorizontalInkRows(outputBytes);
+
+    expect(rows, hasLength(5));
+    final addedStringY = rows[3];
+    expect(
+      _isDark(output.getPixel(5, addedStringY)),
+      isFalse,
+      reason: 'The added string must not extend into the left page margin.',
+    );
+    expect(
+      _isDark(output.getPixel(output.width - 6, addedStringY)),
+      isFalse,
+      reason: 'The added string must not extend into the right page margin.',
+    );
+    expect(_isDark(output.getPixel(20, addedStringY)), isTrue);
+    expect(_isDark(output.getPixel(580, addedStringY)), isTrue);
+  });
+
+  test('moves a seam-crossing sustain curve as one component', () async {
+    final fixture = _fourStringFixtureWithSeamCurve();
+    final asset = await library.storeAsset(fixture, 'png');
+    final now = DateTime.utc(2026, 8, 22);
+    final draft = VisualChartDraft(
+      id: 'coherent-sustain-curve',
+      title: 'Coherent sustain curve',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      strips: [
+        VisualStrip(
+          id: 'source-strip',
+          assetHash: asset.hash,
+          assetExtension: 'png',
+          pixelWidth: 600,
+          pixelHeight: 120,
+        ),
+      ],
+    );
+
+    final transformed = await VisualTabTransformService(library).apply(
+      draft: draft,
+      analyses: [
+        _analysis(
+          tokenText: '5',
+          tokenString: 0,
+          riskSide: VisualConnectedComponentSide.lower,
+        ),
+      ],
+      configuration: _dropDToFiveStringConfiguration(),
+    );
+    final outputBytes = await File(
+      library.assetPath(
+        transformed.strips.single.assetHash,
+        transformed.strips.single.assetExtension,
+      ),
+    ).readAsBytes();
+    expect(
+      _bluePixelsInRect(
+        outputBytes,
+        left: 250,
+        top: 45,
+        right: 370,
+        bottom: 100,
+      ),
+      greaterThan(150),
+      reason: 'The complete reviewed curve must remain visible.',
+    );
+    expect(
+      _blueConnectedComponents(outputBytes),
+      1,
+      reason: 'The inserted string must not split the sustain into two arcs.',
+    );
+  });
+
+  test('preserves sustain ink beside a replaced parenthesized fret', () async {
+    final fixture = _fourStringFixtureWithAdjacentSustainCurve();
+    final asset = await library.storeAsset(fixture, 'png');
+    final now = DateTime.utc(2026, 8, 22);
+    final draft = VisualChartDraft(
+      id: 'adjacent-sustain-curve',
+      title: 'Adjacent sustain curve',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      strips: [
+        VisualStrip(
+          id: 'source-strip',
+          assetHash: asset.hash,
+          assetExtension: 'png',
+          pixelWidth: 600,
+          pixelHeight: 120,
+        ),
+      ],
+    );
+
+    final transformed = await VisualTabTransformService(library).apply(
+      draft: draft,
+      analyses: [_analysis(tokenText: '(0)', tokenString: 0)],
+      configuration: _dropDToFiveStringConfiguration(),
+    );
+    final outputBytes = await File(
+      library.assetPath(
+        transformed.strips.single.assetHash,
+        transformed.strips.single.assetExtension,
+      ),
+    ).readAsBytes();
+
+    expect(
+      _greySustainPixels(outputBytes),
+      greaterThanOrEqualTo(125),
+      reason: 'Replacing (0) with (3) must not erase the adjacent tie curve.',
+    );
+  });
 
   test('infers a seam component attached only to the lower string', () async {
     final fixture = _fourStringFixture();
@@ -920,6 +1072,28 @@ Uint8List _fourStringFixtureWithNarrowSustain() {
   return Uint8List.fromList(img.encodePng(image));
 }
 
+Uint8List _fourStringFixtureWithSeamCurve() {
+  final image = img.decodePng(_fourStringFixture())!;
+  for (var x = 265; x <= 355; x += 1) {
+    final progress = (x - 265) / 90;
+    final y = (58 + progress * 9).round();
+    image.setPixel(x, y, img.ColorRgb8(15, 70, 230));
+    image.setPixel(x, y + 1, img.ColorRgb8(15, 70, 230));
+  }
+  return Uint8List.fromList(img.encodePng(image));
+}
+
+Uint8List _fourStringFixtureWithAdjacentSustainCurve() {
+  final image = img.decodePng(_fourStringFixture())!;
+  for (var x = 175; x <= 245; x += 1) {
+    final progress = (x - 175) / 70;
+    final y = (74 + math.sin(progress * math.pi) * 8).round();
+    image.setPixel(x, y, img.ColorRgb8(55, 55, 55));
+    image.setPixel(x, y + 1, img.ColorRgb8(55, 55, 55));
+  }
+  return Uint8List.fromList(img.encodePng(image));
+}
+
 List<int> _longHorizontalInkRows(Uint8List bytes) {
   final image = img.decodePng(bytes)!;
   final rows = <int>[];
@@ -968,6 +1142,82 @@ int _redPixelsInRect(
     for (var x = left; x < right.clamp(0, image.width); x += 1) {
       final pixel = image.getPixel(x, y);
       if (pixel.r > 150 && pixel.g < 80 && pixel.b < 80) count += 1;
+    }
+  }
+  return count;
+}
+
+int _bluePixelsInRect(
+  Uint8List bytes, {
+  required int left,
+  required int top,
+  required int right,
+  required int bottom,
+}) {
+  final image = img.decodePng(bytes)!;
+  var count = 0;
+  for (var y = top; y < bottom.clamp(0, image.height); y += 1) {
+    for (var x = left; x < right.clamp(0, image.width); x += 1) {
+      final pixel = image.getPixel(x, y);
+      if (pixel.b > 150 && pixel.r < 80 && pixel.g < 130) count += 1;
+    }
+  }
+  return count;
+}
+
+int _blueConnectedComponents(Uint8List bytes) {
+  final image = img.decodePng(bytes)!;
+  final blue = <int>{};
+  for (var y = 0; y < image.height; y += 1) {
+    for (var x = 0; x < image.width; x += 1) {
+      final pixel = image.getPixel(x, y);
+      if (pixel.b <= 150 || pixel.r >= 80 || pixel.g >= 130) continue;
+      blue.add(y * image.width + x);
+    }
+  }
+  var components = 0;
+  while (blue.isNotEmpty) {
+    components += 1;
+    final pending = <int>[blue.first];
+    blue.remove(pending.single);
+    while (pending.isNotEmpty) {
+      final value = pending.removeLast();
+      final x = value % image.width;
+      final y = value ~/ image.width;
+      for (var dy = -1; dy <= 1; dy += 1) {
+        for (var dx = -1; dx <= 1; dx += 1) {
+          if (dx == 0 && dy == 0) continue;
+          final nextX = x + dx;
+          final nextY = y + dy;
+          if (nextX < 0 ||
+              nextX >= image.width ||
+              nextY < 0 ||
+              nextY >= image.height) {
+            continue;
+          }
+          final next = nextY * image.width + nextX;
+          if (blue.remove(next)) pending.add(next);
+        }
+      }
+    }
+  }
+  return components;
+}
+
+int _greySustainPixels(Uint8List bytes) {
+  final image = img.decodePng(bytes)!;
+  var count = 0;
+  for (var y = 0; y < image.height; y += 1) {
+    for (var x = 0; x < image.width; x += 1) {
+      final pixel = image.getPixel(x, y);
+      if (pixel.r >= 50 &&
+          pixel.r <= 60 &&
+          pixel.g >= 50 &&
+          pixel.g <= 60 &&
+          pixel.b >= 50 &&
+          pixel.b <= 60) {
+        count += 1;
+      }
     }
   }
   return count;

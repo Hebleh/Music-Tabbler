@@ -309,22 +309,35 @@ List<Map<String, Object?>> _renderVisualTabSystems(
     for (var index = 0; index < analysis.systems.length; index += 1)
       _renderSystem(
         cropped,
-        _systemWithSafeVerticalGuard(analysis.systems, index),
+        _systemWithSafeGuard(
+          analysis.systems,
+          index,
+          imageWidth: cropped.width,
+          imageHeight: cropped.height,
+        ),
         configuration,
         relabelTuning: relabelFirstSystem && index == 0,
       ),
   ];
 }
 
-VisualTabSystem _systemWithSafeVerticalGuard(
+VisualTabSystem _systemWithSafeGuard(
   List<VisualTabSystem> systems,
-  int index,
-) {
+  int index, {
+  required int imageWidth,
+  required int imageHeight,
+}) {
   final system = systems[index];
   if (system.stringLines.length < 2) return system;
   final spacing = _medianSpacing(system.stringLines);
   final topGuard = (spacing * 2.25).clamp(0.006, 0.04);
   final bottomGuard = (spacing * 1.5).clamp(0.004, 0.03);
+  final spacingPixels = spacing * imageHeight;
+  final horizontalGuard =
+      (math.max(8.0, spacingPixels * 0.85) / math.max(1, imageWidth)).clamp(
+        0.003,
+        0.025,
+      );
   final previousBottom = index == 0 ? 0.0 : systems[index - 1].rect.bottom;
   final nextTop = index + 1 == systems.length
       ? 1.0
@@ -334,9 +347,9 @@ VisualTabSystem _systemWithSafeVerticalGuard(
   if (bottom <= top) return system;
   return system.copyWith(
     rect: NormalizedRect(
-      system.rect.left,
+      math.max(0.0, system.rect.left - horizontalGuard),
       top,
-      system.rect.right,
+      math.min(1.0, system.rect.right + horizontalGuard),
       bottom,
     ).clamp(),
   );
@@ -442,6 +455,7 @@ Map<String, Object?> _renderSystem(
           risk,
           system.rect,
           insertionBandPixels,
+          sourceLines,
         );
       }
     }
@@ -470,8 +484,9 @@ Map<String, Object?> _renderSystem(
   final foreground = _luminance(background) < 128
       ? img.ColorRgb8(245, 245, 245)
       : img.ColorRgb8(18, 18, 18);
+  (int, int)? detectedStaffBounds;
   if (unusedTopToBottom.isNotEmpty) {
-    final staffXs =
+    final reportedStaffXs =
         system.barLines
             .where(
               (position) =>
@@ -487,8 +502,17 @@ Map<String, Object?> _renderSystem(
             )
             .toList(growable: false)
           ..sort();
-    final staffLeft = staffXs.isEmpty ? 0 : staffXs.first;
-    final staffRight = staffXs.isEmpty ? output.width - 1 : staffXs.last;
+    detectedStaffBounds = _detectStaffHorizontalBounds(
+      output,
+      targetLines,
+      background,
+    );
+    final staffLeft =
+        detectedStaffBounds?.$1 ??
+        (reportedStaffXs.isEmpty ? 0 : reportedStaffXs.first);
+    final staffRight =
+        detectedStaffBounds?.$2 ??
+        (reportedStaffXs.isEmpty ? output.width - 1 : reportedStaffXs.last);
     for (final position in unusedTopToBottom) {
       final newLineY = targetLines[position];
       img.drawLine(
@@ -524,6 +548,7 @@ Map<String, Object?> _renderSystem(
       configuration.targetLabels.reversed.toList(growable: false),
       system.barLines,
       systemRect: system.rect,
+      detectedStaffLeft: detectedStaffBounds?.$1,
       background: background,
       foreground: foreground,
     );
@@ -703,23 +728,33 @@ void _replaceTuningLabels(
   List<String> topToBottomLabels,
   List<double> barLines, {
   required NormalizedRect systemRect,
+  int? detectedStaffLeft,
   required img.Color background,
   required img.Color foreground,
 }) {
   if (targetLines.length != topToBottomLabels.length || targetLines.isEmpty) {
     return;
   }
-  final firstStaffX = barLines
-      .where(
-        (position) => position > systemRect.left && position < systemRect.right,
-      )
-      .map(
-        (position) =>
-            ((position - systemRect.left) / systemRect.width * image.width)
-                .round(),
-      )
-      .fold<int>(math.max(24, (image.width * 0.12).round()), math.min)
-      .clamp(16, math.max(16, image.width ~/ 3));
+  final firstStaffX =
+      (detectedStaffLeft ??
+              barLines
+                  .where(
+                    (position) =>
+                        position > systemRect.left &&
+                        position < systemRect.right,
+                  )
+                  .map(
+                    (position) =>
+                        ((position - systemRect.left) /
+                                systemRect.width *
+                                image.width)
+                            .round(),
+                  )
+                  .fold<int>(
+                    math.max(24, (image.width * 0.12).round()),
+                    math.min,
+                  ))
+          .clamp(16, math.max(16, image.width ~/ 3));
   final spacing = _medianSpacing(targetLines);
   final font = spacing >= 24 ? img.arial24 : img.arial14;
   final clearPadding = math.max(3, (spacing * 0.62).ceil());
@@ -770,12 +805,13 @@ void _moveConnectedNotationComponent(
   VisualConnectedNotationRisk risk,
   NormalizedRect systemRect,
   int insertionPixels,
+  List<double> sourceLines,
 ) {
-  final left =
+  var left =
       ((risk.rect.left - systemRect.left) / systemRect.width * source.width)
           .floor()
           .clamp(0, source.width - 1);
-  final right =
+  var right =
       ((risk.rect.right - systemRect.left) / systemRect.width * source.width)
           .ceil()
           .clamp(left + 1, source.width);
@@ -787,22 +823,155 @@ void _moveConnectedNotationComponent(
       ((risk.rect.bottom - systemRect.top) / systemRect.height * source.height)
           .ceil()
           .clamp(top + 1, source.height);
-  final targetTop = risk.side == VisualConnectedComponentSide.lower
-      ? top + insertionPixels
-      : top;
-  img.compositeImage(
-    output,
-    source,
-    dstX: left,
-    dstY: targetTop,
-    dstW: right - left,
-    dstH: bottom - top,
-    srcX: left,
-    srcY: top,
-    srcW: right - left,
-    srcH: bottom - top,
-    blend: img.BlendMode.direct,
-  );
+
+  // The analyzer reports the part of a tie/slide that proves it crosses the
+  // insertion seam. Follow its off-staff ink a short distance so the complete
+  // visible connector moves together rather than leaving a clipped tail at
+  // either edge of the reported rectangle.
+  if (risk.gapIndex >= 0 && risk.gapIndex + 1 < sourceLines.length) {
+    final background = _backgroundColor(source);
+    final backgroundLuminance = _luminance(background);
+    final gapTop = sourceLines[risk.gapIndex].round().clamp(
+      0,
+      source.height - 1,
+    );
+    final gapBottom = sourceLines[risk.gapIndex + 1].round().clamp(
+      gapTop + 1,
+      source.height,
+    );
+    final maximumExpansion = math.max(12, insertionPixels * 4);
+
+    bool hasConnectorInk(int x) {
+      for (var y = gapTop + 2; y < gapBottom - 1; y += 1) {
+        if ((_luminance(source.getPixel(x, y)) - backgroundLuminance).abs() >=
+            18) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    var emptyColumns = 0;
+    final minimumX = math.max(0, left - maximumExpansion);
+    for (var x = left - 1; x >= minimumX; x -= 1) {
+      if (hasConnectorInk(x)) {
+        left = x;
+        emptyColumns = 0;
+      } else if (++emptyColumns > 3) {
+        break;
+      }
+    }
+    emptyColumns = 0;
+    final maximumX = math.min(source.width - 1, right + maximumExpansion);
+    for (var x = right; x <= maximumX; x += 1) {
+      if (hasConnectorInk(x)) {
+        right = x + 1;
+        emptyColumns = 0;
+      } else if (++emptyColumns > 3) {
+        break;
+      }
+    }
+  }
+
+  final background = _backgroundColor(source);
+  final backgroundLuminance = _luminance(background);
+  final seam = risk.gapIndex >= 0 && risk.gapIndex + 1 < sourceLines.length
+      ? (sourceLines[risk.gapIndex] + sourceLines[risk.gapIndex + 1]) / 2
+      : source.height / 2;
+
+  bool isStaffPixel(int y) => sourceLines.any((line) => (line - y).abs() <= 1);
+
+  // Move only the connector's off-staff ink. Copying or clearing its complete
+  // rectangular bounds also moves staff lines and bar pixels, while merely
+  // inserting the blank band leaves the two halves of a tie on opposite sides
+  // of the seam. Clearing both possible footprints and then painting each
+  // source-ink pixel once keeps the curve coherent without touching the staff.
+  for (var y = top; y < bottom; y += 1) {
+    if (isStaffPixel(y)) continue;
+    for (var x = left; x < right; x += 1) {
+      final pixel = source.getPixel(x, y);
+      if ((_luminance(pixel) - backgroundLuminance).abs() < 12) continue;
+      final insertedY = y >= seam ? y + insertionPixels : y;
+      final targetY = risk.side == VisualConnectedComponentSide.lower
+          ? y + insertionPixels
+          : y;
+      output.setPixel(x, insertedY, background);
+      if (insertedY != y && y < output.height) {
+        output.setPixel(x, y, background);
+      }
+      if (targetY >= 0 && targetY < output.height) {
+        output.setPixel(
+          x,
+          targetY,
+          img.ColorRgba8(
+            pixel.r.toInt(),
+            pixel.g.toInt(),
+            pixel.b.toInt(),
+            pixel.a.toInt(),
+          ),
+        );
+      }
+    }
+  }
+}
+
+(int, int)? _detectStaffHorizontalBounds(
+  img.Image image,
+  List<double> stringLines,
+  img.Color background,
+) {
+  if (stringLines.length < 2 || image.width < 2) return null;
+  final backgroundLuminance = _luminance(background);
+  final requiredLines = math.max(2, (stringLines.length * 0.6).ceil());
+  final gapTolerance = math.max(3, (_medianSpacing(stringLines) * 0.9).round());
+
+  bool hasStaffInk(int x) {
+    var hitLines = 0;
+    for (final line in stringLines) {
+      final centerY = line.round().clamp(0, image.height - 1);
+      var hit = false;
+      for (var dy = -1; dy <= 1; dy += 1) {
+        final y = (centerY + dy).clamp(0, image.height - 1);
+        if ((_luminance(image.getPixel(x, y)) - backgroundLuminance).abs() >=
+            18) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit && ++hitLines >= requiredLines) return true;
+    }
+    return false;
+  }
+
+  int? activeStart;
+  int? lastInk;
+  int? bestLeft;
+  int? bestRight;
+
+  void keepBest() {
+    if (activeStart == null || lastInk == null) return;
+    if (bestLeft == null || lastInk - activeStart > bestRight! - bestLeft!) {
+      bestLeft = activeStart;
+      bestRight = lastInk;
+    }
+  }
+
+  for (var x = 0; x < image.width; x += 1) {
+    if (hasStaffInk(x)) {
+      activeStart ??= x;
+      lastInk = x;
+      continue;
+    }
+    if (activeStart != null && lastInk != null && x - lastInk > gapTolerance) {
+      keepBest();
+      activeStart = null;
+      lastInk = null;
+    }
+  }
+  keepBest();
+  if (bestLeft == null || bestRight == null) return null;
+  if (bestRight! - bestLeft! < image.width * 0.25) return null;
+  return (bestLeft!, bestRight!);
 }
 
 void _replaceToken(
@@ -849,14 +1018,6 @@ void _replaceToken(
   final y1 = (top.floor() - 3).clamp(0, image.height - 1);
   final x2 = (right.ceil() + 3).clamp(x1 + 1, image.width);
   final y2 = (bottom.ceil() + 3).clamp(y1 + 1, image.height);
-  img.fillRect(
-    image,
-    x1: x1,
-    y1: y1,
-    x2: x2 - 1,
-    y2: y2 - 1,
-    color: background,
-  );
   final glyph = _scaledFretGlyph(
     replacement,
     targetHeight: (staffSpacing * 1.08).round().clamp(11, 44),
@@ -896,6 +1057,47 @@ void _replaceToken(
   final clearBottom = (targetLineY + clearHalfHeight).ceil().clamp(
     0,
     image.height - 1,
+  );
+  final protectedNotation =
+      <({int x, int y, int red, int green, int blue, int alpha})>[];
+  final backgroundLuminance = _luminance(background);
+  final protectedLeft = math.min(x1, clearLeft);
+  final protectedRight = math.max(x2 - 1, clearRight);
+  final protectedTop = math.min(y1, clearTop);
+  final protectedBottom = math.max(y2 - 1, clearBottom);
+  final glyphHalfWidth = glyph.width / 2 + 2;
+  final notationDistance = math.max(2.0, staffSpacing * 0.18);
+  // Keep tie/slur ink that passes immediately beside a fret. The stale glyph
+  // still gets cleared in full, but horizontally connected notation outside
+  // the replacement glyph's own footprint is restored afterwards. This is
+  // deliberately pixel-local: it cannot bring back an old digit or
+  // parenthesis underneath the newly rendered value.
+  for (var y = protectedTop; y <= protectedBottom; y += 1) {
+    if (y <= targetLineY + notationDistance) continue;
+    for (var x = protectedLeft; x <= protectedRight; x += 1) {
+      if ((x - centerX).abs() <= glyphHalfWidth) continue;
+      final pixel = image.getPixel(x, y);
+      if ((_luminance(pixel) - backgroundLuminance).abs() < 18) continue;
+      final maximumChannel = math.max(pixel.r, math.max(pixel.g, pixel.b));
+      final minimumChannel = math.min(pixel.r, math.min(pixel.g, pixel.b));
+      if (maximumChannel - minimumChannel > 48) continue;
+      protectedNotation.add((
+        x: x,
+        y: y,
+        red: pixel.r.toInt(),
+        green: pixel.g.toInt(),
+        blue: pixel.b.toInt(),
+        alpha: pixel.a.toInt(),
+      ));
+    }
+  }
+  img.fillRect(
+    image,
+    x1: x1,
+    y1: y1,
+    x2: x2 - 1,
+    y2: y2 - 1,
+    color: background,
   );
   if (insertionSeams.length == 1 &&
       insertionSeams.single > 0 &&
@@ -949,6 +1151,13 @@ void _replaceToken(
     dstY: drawY,
     blend: img.BlendMode.direct,
   );
+  for (final pixel in protectedNotation) {
+    image.setPixel(
+      pixel.x,
+      pixel.y,
+      img.ColorRgba8(pixel.red, pixel.green, pixel.blue, pixel.alpha),
+    );
+  }
 }
 
 double _mapInsertedPixelY(
