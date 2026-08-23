@@ -33,6 +33,18 @@ class VisualTabTransformService {
         'repair a blocked row or explicitly keep it unchanged.',
       );
     }
+    final transformableTokenCount = analyses
+        .where((analysis) => !analysis.keepUnchanged)
+        .fold<int>(
+          0,
+          (total, analysis) => total + analysis.enabledFretTokenCount,
+        );
+    if (transformableTokenCount == 0) {
+      throw const FormatException(
+        'No reviewed fret or dead-note tokens are available to transform. '
+        'Run Raster / OCR all rows or add the missed notes before applying.',
+      );
+    }
     final sustainResolution = _resolveSustainFretsAcrossRows(
       baseStrips,
       analysesByStrip,

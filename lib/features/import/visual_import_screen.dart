@@ -56,6 +56,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   late final FocusNode _shortcutFocusNode;
   final ScrollController _editorScrollController = ScrollController();
   bool _busy = false;
+  String? _busyMessage;
   bool _dragging = false;
   bool _syncingMetadata = false;
   Object? _autosaveError;
@@ -126,10 +127,7 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
       library: widget.services.library,
       textRecognition: widget.services.textRecognition,
     );
-    final sourceStringCount = await _chooseSourceStringCount(
-      strips.first,
-      analyzer,
-    );
+    final sourceStringCount = await _chooseSourceStringCount(strips, analyzer);
     if (sourceStringCount == null || !mounted) return;
     final result = await _reviewStripsAtStringCount(
       strips,
@@ -176,26 +174,98 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
     List<VisualTabAnalysis> analyses,
     VisualTabTransformConfiguration configuration,
   ) async {
-    setState(() => _busy = true);
+    final transformableRows = analyses
+        .where(
+          (analysis) =>
+              !analysis.keepUnchanged && analysis.enabledFretTokenCount > 0,
+        )
+        .length;
+    final unchangedRows = analyses.length - transformableRows;
+    if (unchangedRows > 0) {
+      final continuePartial = await _confirmPartialVisualTransform(
+        totalRows: analyses.length,
+        transformableRows: transformableRows,
+        unchangedRows: unchangedRows,
+      );
+      if (continuePartial != true || !mounted) return;
+    }
+    setState(() {
+      _busy = true;
+      _busyMessage =
+          'Applying the reviewed visual transform to ${analyses.length} row(s)…';
+    });
     try {
       final transformed = await VisualTabTransformService(
         widget.services.library,
       ).apply(draft: _draft, analyses: analyses, configuration: configuration);
       if (!mounted) return;
       _commitDraft(transformed);
+      final transformedTokenCount = analyses
+          .where((analysis) => !analysis.keepUnchanged)
+          .fold<int>(
+            0,
+            (total, analysis) => total + analysis.enabledFretTokenCount,
+          );
+      final unchangedRows = analyses
+          .where((analysis) => analysis.keepUnchanged)
+          .length;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Transformed ${analyses.fold<int>(0, (total, item) => total + item.enabledFretTokenCount)} '
-            'reviewed fret/dead-note token(s). Ctrl+Z restores the prior chart.',
+            'Transformed $transformedTokenCount reviewed fret/dead-note '
+            'token(s)${unchangedRows == 0 ? "" : "; kept $unchangedRows row(s) unchanged"}. '
+            'Ctrl+Z restores the prior chart.',
           ),
         ),
       );
     } catch (error) {
       _showError(error);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyMessage = null;
+        });
+      }
     }
+  }
+
+  Future<bool?> _confirmPartialVisualTransform({
+    required int totalRows,
+    required int transformableRows,
+    required int unchangedRows,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          transformableRows == 0
+              ? 'No rows can be transformed yet'
+              : '$unchangedRows row(s) will remain unchanged',
+        ),
+        content: Text(
+          transformableRows == 0
+              ? 'The review did not contain any enabled fret or X tokens. '
+                    'Return to review, rerun Raster / OCR, or use Add note for '
+                    'missed notes before applying a transpose.'
+              : 'Only $transformableRows of $totalRows row(s) contain enabled '
+                    'fret or X tokens. Applying now will transform those rows '
+                    'and leave the other $unchangedRows visually unchanged. '
+                    'Return to review if that is not intentional.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Return to review'),
+          ),
+          if (transformableRows > 0)
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Apply partial transform'),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _editOrRemoveVisualTransform() async {
@@ -302,12 +372,12 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
   }
 
   Future<int?> _chooseSourceStringCount(
-    VisualStrip firstStrip,
+    List<VisualStrip> strips,
     VisualTabAnalysisService analyzer,
   ) {
     return showVisualSourceStringCountDialog(
       context: context,
-      guess: analyzer.guessSourceStringCount(firstStrip),
+      guess: analyzer.guessSourceStringCountAcross(strips),
     );
   }
 
@@ -698,6 +768,35 @@ class _VisualImportScreenState extends State<VisualImportScreen> {
                             child: Text(
                               'Drop images, PDFs, or screenshot folders',
                               style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_busyMessage case final message?)
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: Colors.black.withValues(alpha: 0.48),
+                    child: Center(
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 420),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox.square(
+                                  dimension: 28,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Flexible(child: Text(message)),
+                              ],
                             ),
                           ),
                         ),
@@ -1704,7 +1803,7 @@ class _RasterStringCountPreview extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           SizedBox(width: 10),
-          Expanded(child: Text('Raster preview: scanning Row 1…')),
+          Expanded(child: Text('Raster preview: sampling chart rows…')),
         ],
       );
     }
@@ -1713,12 +1812,12 @@ class _RasterStringCountPreview extends StatelessWidget {
     final count = value.stringCount;
     final confidence = (value.geometryConfidence * 100).round();
     final headline = count == null
-        ? 'Raster preview did not find a tab system in Row 1'
+        ? 'Raster preview did not find a tab system in the sampled rows'
         : ready
         ? 'Raster preview: $count strings detected'
         : 'Raster preview: check the $count-string guess';
     final details = count == null
-        ? value.warning ?? 'Check the Row 1 crop before analysis.'
+        ? value.warning ?? 'Check the source row crops before analysis.'
         : '$confidence% line-spacing confidence · '
               '${value.detectedBarLines} bar line(s) detected'
               '${value.warning == null ? '' : '\n${value.warning}'}';

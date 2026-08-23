@@ -77,6 +77,39 @@ void main() {
       }
     });
 
+    test('count-agnostic geometry keeps the complete overlapping staff', () {
+      final geometry = detectVisualTabGeometryAnyStringCount(
+        _stringSystemFixture(stringCount: 5),
+        crop: const NormalizedRect.full(),
+      );
+
+      expect(geometry.systems, hasLength(1));
+      expect(geometry.systems.single.stringLines, hasLength(5));
+    });
+
+    test('string-count consensus rejects one clean partial-staff guess', () {
+      final guess = chooseVisualTabStringCountConsensus(const [
+        VisualTabStringCountGuess(
+          stringCount: 2,
+          geometryConfidence: 1,
+          detectedBarLines: 8,
+        ),
+        VisualTabStringCountGuess(
+          stringCount: 4,
+          geometryConfidence: 0.96,
+          detectedBarLines: 6,
+        ),
+        VisualTabStringCountGuess(
+          stringCount: 4,
+          geometryConfidence: 0.94,
+          detectedBarLines: 6,
+        ),
+      ]);
+
+      expect(guess.stringCount, 4);
+      expect(guess.warning, contains('Sampled rows disagreed'));
+    });
+
     test(
       'raster readiness preview guesses the first row string count',
       () async {
@@ -243,6 +276,108 @@ void main() {
       );
     });
 
+    test('single surviving opening-signature fragment is structural', () {
+      final image = img.decodePng(_stringSystemFixture(stringCount: 4))!;
+      // Compact Android renders can leave only the upper half of a large time
+      // signature after staff-line removal. It must not become a seam review.
+      img.drawString(
+        image,
+        '4',
+        font: img.arial48,
+        x: 70,
+        y: 34,
+        color: img.ColorRgb8(0, 0, 0),
+      );
+
+      final geometry = detectVisualTabGeometry(
+        Uint8List.fromList(img.encodePng(image)),
+        crop: const NormalizedRect.full(),
+        expectedStringCount: 4,
+      );
+
+      expect(geometry.systems, hasLength(1));
+      expect(geometry.systems.single.openingSignatureRects, isNotEmpty);
+      expect(geometry.systems.single.connectedNotationRisks, isEmpty);
+    });
+
+    test('opening signature remains structural when it hides the first bar', () {
+      final image = img.decodePng(_stringSystemFixture(stringCount: 4))!;
+      // Match compact Android crops where the time signature overwrites the
+      // left staff bar so the next measure boundary is the first detected bar.
+      img.drawLine(
+        image,
+        x1: 30,
+        y1: 48,
+        x2: 30,
+        y2: 100,
+        color: img.ColorRgb8(255, 255, 255),
+        thickness: 5,
+      );
+      img.drawString(
+        image,
+        '4',
+        font: img.arial48,
+        x: 70,
+        y: 34,
+        color: img.ColorRgb8(0, 0, 0),
+      );
+
+      final geometry = detectVisualTabGeometry(
+        Uint8List.fromList(img.encodePng(image)),
+        crop: const NormalizedRect.full(),
+        expectedStringCount: 4,
+      );
+
+      expect(geometry.systems, hasLength(1));
+      expect(geometry.systems.single.barLines.first, greaterThan(0.40));
+      expect(geometry.systems.single.connectedNotationRisks, isEmpty);
+    });
+
+    test('time-signature strokes mistaken for bars stay structural', () {
+      final image = img.decodePng(_stringSystemFixture(stringCount: 4))!;
+      img.drawLine(
+        image,
+        x1: 30,
+        y1: 48,
+        x2: 30,
+        y2: 100,
+        color: img.ColorRgb8(255, 255, 255),
+        thickness: 5,
+      );
+      for (final x in [15, 37, 85]) {
+        img.drawLine(
+          image,
+          x1: x,
+          y1: 50,
+          x2: x,
+          y2: 98,
+          color: img.ColorRgb8(0, 0, 0),
+          thickness: 1,
+        );
+      }
+      img.drawString(
+        image,
+        '4',
+        font: img.arial48,
+        x: 70,
+        y: 34,
+        color: img.ColorRgb8(0, 0, 0),
+      );
+
+      final geometry = detectVisualTabGeometry(
+        Uint8List.fromList(img.encodePng(image)),
+        crop: const NormalizedRect.full(),
+        expectedStringCount: 4,
+      );
+
+      expect(geometry.systems, hasLength(1));
+      expect(
+        geometry.systems.single.barLines.where((bar) => bar < 0.15).length,
+        greaterThanOrEqualTo(3),
+      );
+      expect(geometry.systems.single.connectedNotationRisks, isEmpty);
+    });
+
     test('two-note opening sustains are not treated as a time signature', () {
       const lines = [0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55];
       const geometry = VisualTabGeometry(
@@ -324,7 +459,46 @@ void main() {
     expect(fret.stringIndex, 1);
     expect(measure.kind, VisualTabTokenKind.measureNumber);
     expect(measure.stringIndex, isNull);
+    expect(measure.requiresReview, isFalse);
+    expect(result.unresolvedReviewCount, 0);
     expect(deadNote.kind, VisualTabTokenKind.deadNote);
+  });
+
+  test('positioned PDF opening signatures are excluded from review', () {
+    const lines = [0.35, 0.45, 0.55, 0.65];
+    const geometry = VisualTabGeometry(
+      systems: [
+        VisualTabSystemGeometry(
+          rect: NormalizedRect(0.05, 0.20, 0.95, 0.72),
+          stringLines: lines,
+          barLines: [0.10, 0.50, 0.90],
+          openingSignatureRects: [NormalizedRect(0.08, 0.30, 0.14, 0.62)],
+        ),
+      ],
+    );
+    final result = buildVisualTabAnalysis(
+      stripId: 'positioned-signature',
+      sourceType: VisualTabSourceType.positionedPdf,
+      geometry: geometry,
+      candidates: const [
+        VisualTabTextCandidate(
+          text: '4',
+          rect: NormalizedRect(0.09, 0.32, 0.13, 0.43),
+        ),
+        VisualTabTextCandidate(
+          text: '4',
+          rect: NormalizedRect(0.09, 0.50, 0.13, 0.61),
+        ),
+        VisualTabTextCandidate(
+          text: '0',
+          rect: NormalizedRect(0.24, 0.61, 0.27, 0.68),
+        ),
+      ],
+    );
+
+    expect(result.systems.single.tokens.map((token) => token.text), ['0']);
+    expect(result.enabledFretTokenCount, 1);
+    expect(result.unresolvedReviewCount, 0);
   });
 
   test('never classifies out-of-range measure labels as frets', () {
@@ -372,6 +546,43 @@ void main() {
       (token) => token.isFretLike,
     );
     expect(frets.map((token) => token.text), ['0']);
+  });
+
+  test('ambiguous stacked time-signature digits are still ignored', () {
+    const signatureTop = NormalizedRect(0.09, 0.31, 0.11, 0.39);
+    const signatureBottom = NormalizedRect(0.09, 0.51, 0.11, 0.59);
+    const geometry = VisualTabGeometry(
+      systems: [
+        VisualTabSystemGeometry(
+          rect: NormalizedRect(0.05, 0.2, 0.95, 0.8),
+          stringLines: [0.35, 0.45, 0.55, 0.65],
+          barLines: [0.10, 0.50, 0.90],
+          connectedNotationRisks: [
+            VisualConnectedNotationRisk(
+              id: 'signature-overlap',
+              rect: signatureTop,
+              gapIndex: 0,
+            ),
+          ],
+        ),
+      ],
+    );
+    final result = buildVisualTabAnalysis(
+      stripId: 'ambiguous-signature',
+      sourceType: VisualTabSourceType.rasterOcr,
+      geometry: geometry,
+      candidates: const [
+        VisualTabTextCandidate(text: '4', rect: signatureTop),
+        VisualTabTextCandidate(text: '4', rect: signatureBottom),
+        VisualTabTextCandidate(
+          text: '0',
+          rect: NormalizedRect(0.24, 0.62, 0.27, 0.68),
+        ),
+      ],
+    );
+
+    expect(result.systems.single.tokens.map((token) => token.text), ['0']);
+    expect(result.unresolvedReviewCount, 1);
   });
 
   test('large stacked time signatures are ignored for every string count', () {
@@ -613,7 +824,7 @@ void main() {
   });
 
   test(
-    'native OCR failure keeps geometry available for manual review',
+    'native OCR failure preserves deterministic glyph recognition',
     () async {
       final directory = await Directory.systemTemp.createTemp(
         'music_tabbler_raster_ocr_failure_',
@@ -655,13 +866,15 @@ void main() {
 
       expect(result.sourceType, VisualTabSourceType.rasterOcr);
       expect(result.systems, hasLength(2));
-      expect(result.enabledFretTokenCount, 0);
+      expect(result.enabledFretTokenCount, greaterThanOrEqualTo(1));
       expect(
         result.warnings,
-        contains(
-          'Local raster OCR was unavailable on this device. The detected '
-          'string geometry remains editable; use Add note for missed frets '
-          'and dead notes.',
+        isNot(
+          contains(
+            'Local raster OCR was unavailable on this device. The detected '
+            'string geometry remains editable; use Add note for missed frets '
+            'and dead notes.',
+          ),
         ),
       );
     },

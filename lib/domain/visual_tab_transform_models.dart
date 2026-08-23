@@ -84,6 +84,15 @@ class VisualTabToken {
   bool get isFretLike =>
       kind == VisualTabTokenKind.fret || kind == VisualTabTokenKind.deadNote;
 
+  /// True only when this token needs a musical review decision.
+  ///
+  /// Measure numbers are deliberately stringless structural metadata. They
+  /// must not inflate the unresolved count or block a transform.
+  bool get requiresReview =>
+      enabled &&
+      (kind == VisualTabTokenKind.ambiguous ||
+          (isFretLike && stringIndex == null));
+
   VisualTabToken copyWith({
     String? text,
     NormalizedRect? rect,
@@ -248,6 +257,18 @@ class VisualTabAnalysis {
         total +
         system.tokens
             .where((token) => token.enabled && token.isFretLike)
+            .length,
+  );
+
+  int get unresolvedReviewCount => systems.fold(
+    0,
+    (total, system) =>
+        total +
+        system.tokens.where((token) => token.requiresReview).length +
+        system.connectedNotationRisks
+            .where(
+              (risk) => risk.side == VisualConnectedComponentSide.unresolved,
+            )
             .length,
   );
 

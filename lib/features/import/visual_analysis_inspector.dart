@@ -66,6 +66,20 @@ class VisualAnalysisInspector extends StatelessWidget {
                       '${system.connectedNotationRisks.length} seam risk(s)',
                     ),
                   ),
+                  if (system.tokens.any(
+                    (token) => token.kind == VisualTabTokenKind.measureNumber,
+                  ))
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.tag_outlined),
+                      title: Text(
+                        '${system.tokens.where((token) => token.kind == VisualTabTokenKind.measureNumber).length} '
+                        'measure label(s) ignored',
+                      ),
+                      subtitle: const Text(
+                        'Structural labels do not need a string assignment.',
+                      ),
+                    ),
                   if (system.connectedNotationRisks.isNotEmpty)
                     const ListTile(
                       dense: true,
@@ -150,29 +164,30 @@ class VisualAnalysisInspector extends StatelessWidget {
                       ),
                     ),
                   for (final token in system.tokens)
-                    CheckboxListTile(
-                      dense: true,
-                      value: selectedTokenIds.contains(token.id),
-                      onChanged: (_) => onToggleToken(token.id),
-                      secondary: Icon(
-                        token.enabled
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                      ),
-                      title: Text(
-                        token.text,
-                        style: TextStyle(
-                          decoration: token.enabled
-                              ? null
-                              : TextDecoration.lineThrough,
+                    if (token.kind != VisualTabTokenKind.measureNumber)
+                      CheckboxListTile(
+                        dense: true,
+                        value: selectedTokenIds.contains(token.id),
+                        onChanged: (_) => onToggleToken(token.id),
+                        secondary: Icon(
+                          token.enabled
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                        title: Text(
+                          token.text,
+                          style: TextStyle(
+                            decoration: token.enabled
+                                ? null
+                                : TextDecoration.lineThrough,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${token.origin == VisualTabTokenOrigin.manual ? "manual \u00B7 " : ""}'
+                          '${token.kind.name} \u00B7 '
+                          '${token.stringIndex == null ? "no string" : "string ${token.stringIndex! + 1}"}',
                         ),
                       ),
-                      subtitle: Text(
-                        '${token.origin == VisualTabTokenOrigin.manual ? "manual \u00B7 " : ""}'
-                        '${token.kind.name} \u00B7 '
-                        '${token.stringIndex == null ? "no string" : "string ${token.stringIndex! + 1}"}',
-                      ),
-                    ),
                 ],
               ],
             ],

@@ -37,6 +37,65 @@ class VisualTabStringCountGuess {
       detectedBarLines >= 2;
 }
 
+/// Combines several row-level geometry previews without allowing one unusually
+/// clean partial staff to override the rest of a chart.
+VisualTabStringCountGuess chooseVisualTabStringCountConsensus(
+  Iterable<VisualTabStringCountGuess> guesses,
+) {
+  final usable = guesses
+      .where((guess) => guess.stringCount != null)
+      .toList(growable: false);
+  if (usable.isEmpty) {
+    return const VisualTabStringCountGuess(
+      stringCount: null,
+      geometryConfidence: 0,
+      detectedBarLines: 0,
+      warning:
+          'Raster preview could not find a tab system in the sampled rows.',
+    );
+  }
+  final scores = <int, double>{};
+  for (final guess in usable) {
+    final evidence = guess.detectedBarLines.clamp(1, 8);
+    scores.update(
+      guess.stringCount!,
+      (score) => score + guess.geometryConfidence * evidence,
+      ifAbsent: () => guess.geometryConfidence * evidence,
+    );
+  }
+  final ranked = scores.entries.toList(growable: false)
+    ..sort((left, right) {
+      final score = right.value.compareTo(left.value);
+      return score != 0 ? score : right.key.compareTo(left.key);
+    });
+  final winner = ranked.first.key;
+  final matching = usable
+      .where((guess) => guess.stringCount == winner)
+      .toList(growable: false);
+  final confidence =
+      matching.fold<double>(
+        0,
+        (total, guess) => total + guess.geometryConfidence,
+      ) /
+      matching.length;
+  final bars = matching.fold<int>(
+    0,
+    (best, guess) => math.max(best, guess.detectedBarLines),
+  );
+  final disagreed = usable.any((guess) => guess.stringCount != winner);
+  return VisualTabStringCountGuess(
+    stringCount: winner,
+    geometryConfidence: confidence,
+    detectedBarLines: bars,
+    warning: disagreed
+        ? 'Sampled rows disagreed; $winner strings had the strongest repeated '
+              'staff evidence. Confirm the source tuning before continuing.'
+        : usable.length > 1
+        ? 'Confirmed from ${usable.length} sampled rows.'
+        : usable.single.warning,
+  );
+}
+
 class VisualTabAnalysisService implements VisualTabAnalyzer {
   VisualTabAnalysisService({
     required this.library,
@@ -83,6 +142,35 @@ class VisualTabAnalysisService implements VisualTabAnalyzer {
         warning: 'Raster preview could not read Row 1.',
       );
     }
+  }
+
+  /// Samples the chart rather than trusting Row 1, which can contain a time
+  /// signature, pickup, or cropped outer strings that resemble a two-line tab.
+  Future<VisualTabStringCountGuess> guessSourceStringCountAcross(
+    List<VisualStrip> strips,
+  ) async {
+    if (strips.isEmpty) {
+      return const VisualTabStringCountGuess(
+        stringCount: null,
+        geometryConfidence: 0,
+        detectedBarLines: 0,
+        warning: 'There are no source rows to preview.',
+      );
+    }
+    const maximumSamples = 7;
+    final indexes = <int>{};
+    final sampleCount = math.min(maximumSamples, strips.length);
+    for (var sample = 0; sample < sampleCount; sample += 1) {
+      final index = sampleCount == 1
+          ? 0
+          : (sample * (strips.length - 1) / (sampleCount - 1)).round();
+      indexes.add(index);
+    }
+    final guesses = <VisualTabStringCountGuess>[];
+    for (final index in indexes) {
+      guesses.add(await guessSourceStringCount(strips[index]));
+    }
+    return chooseVisualTabStringCountConsensus(guesses);
   }
 
   @override
@@ -640,27 +728,36 @@ Future<MetadataSuggestion> _recognizeTabGlyphCandidates(
       blend: img.BlendMode.direct,
     );
   }
-  final recognized = await recognizer.recognizePreparedImage(
-    Uint8List.fromList(img.encodePng(sheet, level: 2)),
-  );
   final regions = <RecognizedTextRegion>[];
   final nativeLabels = <int, ({String label, double confidence})>{};
-  for (final region in recognized.regions) {
-    final centerX = (region.rect.left + region.rect.right) / 2;
-    final centerY = (region.rect.top + region.rect.bottom) / 2;
-    final column = (centerX * columns).floor().clamp(0, columns - 1);
-    final row = (centerY * rows).floor().clamp(0, rows - 1);
-    final index = row * columns + column;
-    if (index >= candidates.length || nativeLabels.containsKey(index)) continue;
-    final match = RegExp(
-      r'\(\d{1,2}\)|\d{1,2}|[xX]',
-    ).firstMatch(region.text.trim());
-    if (match == null) continue;
-    nativeLabels[index] = (
-      label: match.group(0)!,
-      confidence: region.confidence,
+  try {
+    final recognized = await recognizer.recognizePreparedImage(
+      Uint8List.fromList(img.encodePng(sheet, level: 2)),
     );
+    for (final region in recognized.regions) {
+      final centerX = (region.rect.left + region.rect.right) / 2;
+      final centerY = (region.rect.top + region.rect.bottom) / 2;
+      final column = (centerX * columns).floor().clamp(0, columns - 1);
+      final row = (centerY * rows).floor().clamp(0, rows - 1);
+      final index = row * columns + column;
+      if (index >= candidates.length || nativeLabels.containsKey(index)) {
+        continue;
+      }
+      final match = RegExp(
+        r'\(\d{1,2}\)|\d{1,2}|[xX]',
+      ).firstMatch(region.text.trim());
+      if (match == null) continue;
+      nativeLabels[index] = (
+        label: match.group(0)!,
+        confidence: region.confidence,
+      );
+    }
+  } catch (_) {
+    // Native OCR is supplementary. The deterministic classifier below must
+    // remain available on Android when ML Kit is unavailable or rejects one
+    // prepared sheet.
   }
+
   final rawClassifications = <({String label, double confidence})?>[
     for (final candidate in candidates)
       _classifyParenthesizedRasterGlyph(candidate.image) ??
@@ -1877,11 +1974,19 @@ VisualTabAnalysis buildVisualTabAnalysis({
           nearestString = index;
         }
       }
-      final kind = classifyVisualTabToken(
+      var kind = classifyVisualTabToken(
         candidate.text,
         signedDistance: centerY - detected.stringLines[nearestString],
         stringSpacing: spacing,
       );
+      final numericLabel = RegExp(
+        r'^(?:\(\d+\)|\d+)$',
+      ).hasMatch(candidate.text.trim());
+      if (numericLabel &&
+          nearestString == 0 &&
+          centerY < detected.stringLines.first - spacing * 0.30) {
+        kind = VisualTabTokenKind.measureNumber;
+      }
       final assignedString =
           kind == VisualTabTokenKind.fret || kind == VisualTabTokenKind.deadNote
           ? detected.stringLines.length - 1 - nearestString
@@ -1905,11 +2010,10 @@ VisualTabAnalysis buildVisualTabAnalysis({
       );
       assignedCandidateIndexes.add(candidateIndex);
     }
-    if (sourceType == VisualTabSourceType.rasterOcr &&
-        detected.openingSignatureRects.isNotEmpty) {
+    if (detected.openingSignatureRects.isNotEmpty) {
       tokens.removeWhere(
         (token) =>
-            token.isFretLike &&
+            RegExp(r'^\d$').hasMatch(token.text) &&
             detected.openingSignatureRects.any(
               (rect) => _candidateRectsOverlap(rect, token.rect),
             ),
@@ -1936,7 +2040,12 @@ VisualTabAnalysis buildVisualTabAnalysis({
       final timeSignatureIndexes = <int>{};
       for (var index = 0; index < tokens.length; index += 1) {
         final token = tokens[index];
-        if (!token.isFretLike || !RegExp(r'^\d$').hasMatch(token.text)) {
+        // Opening time-signature digits can already have been downgraded to
+        // ambiguous when their large glyph overlaps a connected-notation
+        // proposal. They are still structural ink, not reviewable frets, so
+        // classify this geometry from every single-digit token rather than
+        // only from tokens that remain fret-like.
+        if (!RegExp(r'^\d$').hasMatch(token.text)) {
           continue;
         }
         final centerX = (token.rect.left + token.rect.right) / 2;
@@ -1955,15 +2064,21 @@ VisualTabAnalysis buildVisualTabAnalysis({
         if (!nearOpening) continue;
         final isStackedTimeSignature = tokens.any((other) {
           if (identical(other, token) ||
-              !other.isFretLike ||
-              other.text != token.text ||
-              other.stringIndex == token.stringIndex) {
+              !RegExp(r'^\d$').hasMatch(other.text) ||
+              other.text != token.text) {
             return false;
           }
           final otherCenterX = (other.rect.left + other.rect.right) / 2;
+          final centerY = (token.rect.top + token.rect.bottom) / 2;
+          final otherCenterY = (other.rect.top + other.rect.bottom) / 2;
           final peerIsLarge = other.rect.height >= spacing * 1.05;
+          final verticalDistance = (otherCenterY - centerY).abs();
           return (directNearOpening || peerIsLarge) &&
-              (otherCenterX - centerX).abs() <= spacing * 0.20;
+              (otherCenterX - centerX).abs() <= spacing * 0.20 &&
+              (verticalDistance >= spacing * 1.25 ||
+                  (largeGlyph &&
+                      peerIsLarge &&
+                      verticalDistance >= spacing * 0.75));
         });
         if (!isStackedTimeSignature) continue;
         timeSignatureIndexes.add(index);
@@ -2316,9 +2431,15 @@ VisualTabGeometry _detectVisualTabGeometryFromImage(
     );
     final connectedNotationRisks = rawConnectedNotationRisks
         .where(
-          (risk) => !openingSignatureRects.any(
-            (signature) => _candidateRectsOverlap(signature, risk.rect),
-          ),
+          (risk) =>
+              !openingSignatureRects.any(
+                (signature) => _candidateRectsOverlap(signature, risk.rect),
+              ) &&
+              !_isOpeningStructuralSeamRisk(
+                risk,
+                barLines: normalizedBarLines,
+                stringSpacing: spacingPixels / image.width,
+              ),
         )
         .toList(growable: false);
     systems.add(
@@ -2361,11 +2482,13 @@ List<List<double>> _findSupportedStringLineGroups(
         )
           ..._findEquallySpacedGroups(rows, count, imageHeight),
       ]..sort((left, right) {
-        final confidence = _spacingConfidence(
-          right,
-        ).compareTo(_spacingConfidence(left));
-        if (confidence != 0) return confidence;
-        return right.length.compareTo(left.length);
+        // Every subset of a complete evenly spaced staff is itself perfectly
+        // spaced. Prefer the complete overlapping family first; otherwise a
+        // four-string row is routinely reduced to a high-confidence two-line
+        // subset, disabling both transform routing and Gig bar repacking.
+        final length = right.length.compareTo(left.length);
+        if (length != 0) return length;
+        return _spacingConfidence(right).compareTo(_spacingConfidence(left));
       });
   final accepted = <List<double>>[];
   for (final candidate in candidates) {
@@ -2576,13 +2699,17 @@ List<NormalizedRect> _detectOpeningSignatureRects(
     }
   }
 
-  final minimumCoveredStrings = math.min(4, stringCount);
+  // Removing the staff lines splits a large 4/4 glyph into fragments. On
+  // compact Android renders only one upper or lower fragment may survive the
+  // component filters. Multiple aligned fragments are preferred. A single
+  // wide fragment is accepted only immediately beside the opening bar and
+  // when it intersects a physical seam risk, which keeps ordinary fret digits
+  // and later connected notation out of this structural exception.
   final signatures = <NormalizedRect>[];
   for (final column in columns) {
     final coveredStrings = column
         .map((candidate) => candidate.lineIndex)
         .toSet();
-    if (coveredStrings.length < minimumCoveredStrings) continue;
     final left = column
         .map((candidate) => candidate.rect.left)
         .reduce(math.min);
@@ -2590,9 +2717,20 @@ List<NormalizedRect> _detectOpeningSignatureRects(
         .map((candidate) => candidate.rect.right)
         .reduce(math.max);
     final centerX = (left + right) / 2;
+    final firstBar = barLines.first;
+    final singleFragmentOpening =
+        coveredStrings.length == 1 &&
+        centerX <= firstBar + stringSpacing * 4 &&
+        right - left >= stringSpacing * 0.75;
+    final minimumCoveredStrings = math.min(2, stringCount);
+    if (coveredStrings.length < minimumCoveredStrings &&
+        !singleFragmentOpening) {
+      continue;
+    }
     final intersectsPhysicalSeam = connectedNotationRisks.any((risk) {
       final riskCenter = (risk.rect.left + risk.rect.right) / 2;
-      return (riskCenter - centerX).abs() <= stringSpacing * 1.5;
+      return (riskCenter - centerX).abs() <=
+          stringSpacing * (singleFragmentOpening ? 1.0 : 1.5);
     });
     if (!intersectsPhysicalSeam) continue;
     signatures.add(
@@ -2612,6 +2750,43 @@ bool _isOpeningSignatureX(double x, List<double> barLines, double spacing) {
   final firstBar = barLines.first;
   final nextBar = barLines.length > 1 ? barLines[1] : firstBar + spacing * 8;
   return x >= firstBar - spacing && x <= firstBar + (nextBar - firstBar) * 0.45;
+}
+
+bool _isOpeningStructuralSeamRisk(
+  VisualConnectedNotationRisk risk, {
+  required List<double> barLines,
+  required double stringSpacing,
+}) {
+  if (barLines.isEmpty || stringSpacing <= 0) return false;
+  final firstBar = barLines.first;
+  final nextBar = barLines.length > 1
+      ? barLines[1]
+      : firstBar + stringSpacing * 10;
+  final firstMeasureWidth = math.max(stringSpacing, nextBar - firstBar);
+  final openingWidth = math.min(firstMeasureWidth * 0.28, stringSpacing * 4.5);
+  final centerX = (risk.rect.left + risk.rect.right) / 2;
+  final besideDetectedOpeningBar =
+      centerX >= firstBar - stringSpacing &&
+      centerX <= firstBar + openingWidth;
+
+  // A large 4/4 glyph can obscure the left staff bar completely. In that
+  // case `_detectBarLines` starts at the next measure boundary and the normal
+  // opening-bar window cannot identify the signature. Keep this fallback
+  // deliberately narrow: the component must be in the first few string
+  // spacings of the crop and materially precede the first detected bar.
+  final beforeMissingOpeningBar =
+      centerX <= stringSpacing * 8 &&
+      firstBar - centerX >= stringSpacing * 3;
+  final openingArtifactBars = barLines
+      .where((bar) => bar <= stringSpacing * 8)
+      .length;
+  final signatureCreatedFalseBars =
+      centerX <= stringSpacing * 8 &&
+      openingArtifactBars >= 3 &&
+      barLines.any((bar) => bar - centerX >= stringSpacing * 6);
+  return besideDetectedOpeningBar ||
+      beforeMissingOpeningBar ||
+      signatureCreatedFalseBars;
 }
 
 List<List<double>> _findEquallySpacedGroups(

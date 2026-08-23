@@ -855,6 +855,49 @@ void main() {
     },
   );
 
+  test('rejects a transform when every reviewed row is unchanged', () async {
+    final fixture = _fourStringFixture();
+    final asset = await library.storeAsset(fixture, 'png');
+    final now = DateTime.utc(2026, 8, 23);
+    final draft = VisualChartDraft(
+      id: 'no-transformable-notes',
+      title: 'No transformable notes',
+      artist: '',
+      createdAt: now,
+      updatedAt: now,
+      strips: [
+        VisualStrip(
+          id: 'source-strip',
+          assetHash: asset.hash,
+          assetExtension: 'png',
+          pixelWidth: 600,
+          pixelHeight: 120,
+        ),
+      ],
+    );
+
+    expect(
+      () => VisualTabTransformService(library).apply(
+        draft: draft,
+        analyses: const [
+          VisualTabAnalysis(
+            stripId: 'source-strip',
+            sourceType: VisualTabSourceType.rasterOcr,
+            keepUnchanged: true,
+          ),
+        ],
+        configuration: _dropDToFiveStringConfiguration(),
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('No reviewed fret or dead-note tokens'),
+        ),
+      ),
+    );
+  });
+
   test('preserves a source row explicitly reviewed as unchanged', () async {
     final fixture = _fourStringFixture();
     final asset = await library.storeAsset(fixture, 'png');

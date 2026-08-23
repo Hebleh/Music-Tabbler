@@ -50,15 +50,18 @@ List<PerformanceDeckElement> _splitElementIntoBars(
     geometry.barLines,
     minimumGap: 0.025,
   );
-  // Row detection intentionally crops immediately outside the opening and
-  // closing bar lines. Treat those detected outer lines as the crop endpoints
-  // and keep only the lines between them as split points. Without canonical
-  // endpoints, an edge-aligned three-bar row retained only its two internal
-  // lines and was incorrectly left whole in Gig mode.
-  if (detectedBoundaries.length < 3) return [element];
-  final boundaries = [
+  if (detectedBoundaries.length < 2) return [element];
+  // A row crop normally includes its opening and closing bars, but imported
+  // rows can trim either one. Promote a detected line to an outer endpoint
+  // only when it is actually near that edge; otherwise retain it as a real
+  // split point. This avoids silently combining the first or last two bars.
+  final boundaries = <double>[
     0.0,
-    ...detectedBoundaries.sublist(1, detectedBoundaries.length - 1),
+    for (var index = 0; index < detectedBoundaries.length; index += 1)
+      if (!((index == 0 && detectedBoundaries[index] <= 0.12) ||
+          (index == detectedBoundaries.length - 1 &&
+              detectedBoundaries[index] >= 0.88)))
+        detectedBoundaries[index],
     1.0,
   ];
   if (boundaries.length < 3) return [element];
@@ -82,9 +85,29 @@ VisualTabSystemGeometry? _bestSingleSystemGeometry(Uint8List bytes) {
     bytes,
     crop: const NormalizedRect.full(),
   );
-  if (geometry.systems.length != 1) return null;
-  final candidate = geometry.systems.single;
-  return candidate.barLines.length >= 3 ? candidate : null;
+  final candidates = geometry.systems
+      .where((candidate) => candidate.barLines.length >= 2)
+      .toList(growable: false);
+  if (candidates.isEmpty) return null;
+  // Processed chart rows should contain one system, but rhythm beams and
+  // anti-aliased transforms can create a second low-confidence line group.
+  // Rejecting the entire image in that case disabled bar reflow for real
+  // Songsterr rows. Prefer the system with the strongest bar evidence.
+  return candidates.reduce((best, candidate) {
+    final barComparison = candidate.barLines.length.compareTo(
+      best.barLines.length,
+    );
+    if (barComparison != 0) return barComparison > 0 ? candidate : best;
+    final confidenceComparison = candidate.confidence.compareTo(
+      best.confidence,
+    );
+    if (confidenceComparison != 0) {
+      return confidenceComparison > 0 ? candidate : best;
+    }
+    return candidate.stringLines.length > best.stringLines.length
+        ? candidate
+        : best;
+  });
 }
 
 List<double> _cleanBarBoundaries(

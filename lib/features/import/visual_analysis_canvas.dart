@@ -190,60 +190,62 @@ class VisualAnalysisCanvasState extends State<VisualAnalysisCanvas> {
                       ),
                       for (final system in widget.analysis.systems)
                         for (final token in system.tokens)
-                          Positioned(
-                            left: token.rect.left * constraints.maxWidth,
-                            top: token.rect.top * constraints.maxHeight,
-                            width: token.rect.width * constraints.maxWidth,
-                            height: token.rect.height * constraints.maxHeight,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onTap: widget.addingNote
-                                  ? null
-                                  : () => widget.onTokenTap(token.id),
-                              onPanStart:
-                                  !widget.addingNote &&
-                                      token.origin ==
-                                          VisualTabTokenOrigin.manual
-                                  ? (_) {
-                                      setState(
-                                        () => _draggingTokenId = token.id,
-                                      );
-                                      widget.onManualDragStart(token.id);
-                                    }
-                                  : null,
-                              onPanUpdate:
-                                  !widget.addingNote &&
-                                      token.origin ==
-                                          VisualTabTokenOrigin.manual
-                                  ? (details) => widget.onManualDragUpdate(
-                                      token.id,
-                                      Offset(
-                                        details.delta.dx / constraints.maxWidth,
-                                        details.delta.dy /
-                                            constraints.maxHeight,
-                                      ),
-                                    )
-                                  : null,
-                              onPanEnd:
-                                  !widget.addingNote &&
-                                      token.origin ==
-                                          VisualTabTokenOrigin.manual
-                                  ? (_) {
-                                      setState(() => _draggingTokenId = null);
-                                      widget.onManualDragEnd(token.id);
-                                    }
-                                  : null,
-                              onPanCancel:
-                                  !widget.addingNote &&
-                                      token.origin ==
-                                          VisualTabTokenOrigin.manual
-                                  ? () {
-                                      setState(() => _draggingTokenId = null);
-                                      widget.onManualDragCancel(token.id);
-                                    }
-                                  : null,
+                          if (token.kind != VisualTabTokenKind.measureNumber)
+                            Positioned(
+                              left: token.rect.left * constraints.maxWidth,
+                              top: token.rect.top * constraints.maxHeight,
+                              width: token.rect.width * constraints.maxWidth,
+                              height: token.rect.height * constraints.maxHeight,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: widget.addingNote
+                                    ? null
+                                    : () => widget.onTokenTap(token.id),
+                                onPanStart:
+                                    !widget.addingNote &&
+                                        token.origin ==
+                                            VisualTabTokenOrigin.manual
+                                    ? (_) {
+                                        setState(
+                                          () => _draggingTokenId = token.id,
+                                        );
+                                        widget.onManualDragStart(token.id);
+                                      }
+                                    : null,
+                                onPanUpdate:
+                                    !widget.addingNote &&
+                                        token.origin ==
+                                            VisualTabTokenOrigin.manual
+                                    ? (details) => widget.onManualDragUpdate(
+                                        token.id,
+                                        Offset(
+                                          details.delta.dx /
+                                              constraints.maxWidth,
+                                          details.delta.dy /
+                                              constraints.maxHeight,
+                                        ),
+                                      )
+                                    : null,
+                                onPanEnd:
+                                    !widget.addingNote &&
+                                        token.origin ==
+                                            VisualTabTokenOrigin.manual
+                                    ? (_) {
+                                        setState(() => _draggingTokenId = null);
+                                        widget.onManualDragEnd(token.id);
+                                      }
+                                    : null,
+                                onPanCancel:
+                                    !widget.addingNote &&
+                                        token.origin ==
+                                            VisualTabTokenOrigin.manual
+                                    ? () {
+                                        setState(() => _draggingTokenId = null);
+                                        widget.onManualDragCancel(token.id);
+                                      }
+                                    : null,
+                              ),
                             ),
-                          ),
                     ],
                   ),
                 ),
@@ -363,6 +365,7 @@ class _AnalysisOverlayPainter extends CustomPainter {
         );
       }
       for (final token in system.tokens) {
+        if (token.kind == VisualTabTokenKind.measureNumber) continue;
         final selected = selectedTokenIds.contains(token.id);
         final active = selected || draggingTokenId == token.id;
         if (token.origin == VisualTabTokenOrigin.manual &&

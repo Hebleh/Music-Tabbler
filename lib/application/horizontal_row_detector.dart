@@ -365,6 +365,8 @@ class HorizontalRowDetector {
         inkRight = mathMax(inkRight, x);
       }
     }
+    final staffInkLeft = inkLeft;
+    final staffInkRight = inkRight;
     final topGuard = (image.height * 0.035).round().clamp(4, 90);
     final bottomGuard = (image.height * 0.045).round().clamp(6, 110);
     final bottomNotationPadding = (image.height * 0.003).round().clamp(4, 8);
@@ -382,8 +384,18 @@ class HorizontalRowDetector {
         .toInt();
     // Include strong notation outside the staff band itself, notably the
     // leading edge of cross-row ties and parenthesized sustain glyphs.
+    final notationSideAllowance = (24 / image.width).clamp(
+      6 / image.width,
+      0.02,
+    );
+    final notationLeft = (staffInkLeft - notationSideAllowance * image.width)
+        .floor()
+        .clamp(left, right - 1);
+    final notationRight = (staffInkRight + notationSideAllowance * image.width)
+        .ceil()
+        .clamp(notationLeft + 1, right);
     for (var y = tightenedTop; y < tightenedBottom; y += 1) {
-      for (var x = left; x < right; x += stepX) {
+      for (var x = notationLeft; x < notationRight; x += stepX) {
         final distance = (_luminance(image.getPixel(x, y)) - background).abs();
         if (distance < 16) continue;
         inkLeft = mathMin(inkLeft, x);

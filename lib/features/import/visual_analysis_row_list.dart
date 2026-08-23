@@ -65,25 +65,7 @@ class VisualAnalysisRowList extends StatelessWidget {
           );
         }
         final confidence = _analysisConfidence(analysis);
-        final ambiguities = analysis.systems.fold<int>(
-          0,
-          (total, system) =>
-              total +
-              system.tokens
-                  .where(
-                    (token) =>
-                        token.enabled &&
-                        (token.kind == VisualTabTokenKind.ambiguous ||
-                            token.stringIndex == null),
-                  )
-                  .length +
-              system.connectedNotationRisks
-                  .where(
-                    (risk) =>
-                        risk.side == VisualConnectedComponentSide.unresolved,
-                  )
-                  .length,
-        );
+        final ambiguities = analysis.unresolvedReviewCount;
         return Card(
           key: ValueKey('analysis-row-$index'),
           margin: const EdgeInsets.only(bottom: 12),

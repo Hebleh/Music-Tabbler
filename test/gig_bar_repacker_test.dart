@@ -116,6 +116,56 @@ void main() {
     expect(repackGigDeckIntoBars(source).pages.single.elements, hasLength(3));
   });
 
+  test('preserves real split points when outer bar lines were cropped', () {
+    final element = PerformanceDeckElement(
+      kind: PerformanceElementKind.strip,
+      entryIndex: 0,
+      entryId: 'song',
+      width: 600,
+      height: 180,
+      imageBytes: _threeBarRow(includeOuterBars: false),
+    );
+    final source = PerformanceDeck(
+      setlistId: 'set',
+      setlistName: 'Gig',
+      density: VisualExportDensity.stageReadable,
+      pageWidth: 840,
+      pageHeight: 595,
+      margin: 5,
+      gap: 4,
+      pages: [
+        PerformanceDeckPage(id: 'page', index: 0, elements: [element]),
+      ],
+    );
+
+    expect(repackGigDeckIntoBars(source).pages.single.elements, hasLength(3));
+  });
+
+  test('uses the strongest system when rhythm ink creates a decoy', () {
+    final element = PerformanceDeckElement(
+      kind: PerformanceElementKind.strip,
+      entryIndex: 0,
+      entryId: 'song',
+      width: 600,
+      height: 180,
+      imageBytes: _threeBarRow(addDecoySystem: true),
+    );
+    final source = PerformanceDeck(
+      setlistId: 'set',
+      setlistName: 'Gig',
+      density: VisualExportDensity.stageReadable,
+      pageWidth: 840,
+      pageHeight: 595,
+      margin: 5,
+      gap: 4,
+      pages: [
+        PerformanceDeckPage(id: 'page', index: 0, elements: [element]),
+      ],
+    );
+
+    expect(repackGigDeckIntoBars(source).pages.single.elements, hasLength(3));
+  });
+
   test('splits supported string counts with one count-agnostic rule', () {
     for (final stringCount in [2, 4, 7, 8, 12]) {
       final element = PerformanceDeckElement(
@@ -148,7 +198,12 @@ void main() {
   });
 }
 
-Uint8List _threeBarRow({bool edgeAligned = false, int stringCount = 4}) {
+Uint8List _threeBarRow({
+  bool edgeAligned = false,
+  int stringCount = 4,
+  bool includeOuterBars = true,
+  bool addDecoySystem = false,
+}) {
   final image = img.Image(width: 600, height: 180);
   img.fill(image, color: img.ColorRgb8(255, 255, 255));
   const top = 24;
@@ -165,10 +220,10 @@ Uint8List _threeBarRow({bool edgeAligned = false, int stringCount = 4}) {
     );
   }
   for (final x in [
-    if (edgeAligned) 1 else 20,
+    if (includeOuterBars) (edgeAligned ? 1 : 20),
     210,
     400,
-    if (edgeAligned) 598 else 580,
+    if (includeOuterBars) (edgeAligned ? 598 : 580),
   ]) {
     img.drawLine(
       image,
@@ -178,6 +233,28 @@ Uint8List _threeBarRow({bool edgeAligned = false, int stringCount = 4}) {
       y2: top + spacing * (stringCount - 1),
       color: img.ColorRgb8(0, 0, 0),
     );
+  }
+  if (addDecoySystem) {
+    for (final y in [120, 132]) {
+      img.drawLine(
+        image,
+        x1: 80,
+        y1: y,
+        x2: 520,
+        y2: y,
+        color: img.ColorRgb8(0, 0, 0),
+      );
+    }
+    for (final x in [80, 520]) {
+      img.drawLine(
+        image,
+        x1: x,
+        y1: 120,
+        x2: x,
+        y2: 132,
+        color: img.ColorRgb8(0, 0, 0),
+      );
+    }
   }
   return Uint8List.fromList(img.encodePng(image));
 }

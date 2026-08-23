@@ -548,6 +548,47 @@ void main() {
     );
   });
 
+  test('page-aware side crops ignore distant page-side labels', () {
+    final source = img.Image(width: 1000, height: 760);
+    img.fill(source, color: img.ColorRgb8(250, 250, 250));
+    for (final top in [120, 340, 560]) {
+      for (var line = 0; line < 4; line += 1) {
+        img.fillRect(
+          source,
+          x1: 100,
+          y1: top + line * 12,
+          x2: 900,
+          y2: top + line * 12 + 1,
+          color: img.ColorRgb8(25, 25, 25),
+        );
+      }
+      img.fillRect(
+        source,
+        x1: 8,
+        y1: top + 55,
+        x2: 35,
+        y2: top + 65,
+        color: img.ColorRgb8(25, 25, 25),
+      );
+      img.fillRect(
+        source,
+        x1: 965,
+        y1: top + 55,
+        x2: 992,
+        y2: top + 65,
+        color: img.ColorRgb8(25, 25, 25),
+      );
+    }
+
+    final proposal = const HorizontalRowDetector().detectPageAware(
+      Uint8List.fromList(img.encodePng(source)),
+    );
+
+    expect(proposal.rows, hasLength(3));
+    expect(proposal.masterLeft * source.width, inInclusiveRange(80, 100));
+    expect(proposal.masterRight * source.width, inInclusiveRange(900, 920));
+  });
+
   test('stage density refuses an unprepared portrait page', () {
     final source = img.Image(width: 600, height: 900);
     img.fill(source, color: img.ColorRgb8(250, 250, 250));
