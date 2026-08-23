@@ -17,6 +17,7 @@ import 'package:music_tabbler/domain/library_models.dart';
 import 'package:music_tabbler/domain/device_preferences.dart';
 import 'package:music_tabbler/domain/visual_tab_transform_models.dart';
 import 'package:music_tabbler/features/import/visual_tab_analysis_dialog.dart';
+import 'package:music_tabbler/features/import/visual_analysis_canvas.dart';
 import 'package:music_tabbler/features/import/visual_import_screen.dart';
 
 part 'widget_visual_workflow_test.part.dart';

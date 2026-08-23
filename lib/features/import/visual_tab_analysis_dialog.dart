@@ -659,6 +659,7 @@ class _VisualTabAnalysisReviewScreenState
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<VisualManualNoteType>(
+                key: const ValueKey('manual-note-type-input'),
                 initialValue: mode,
                 autofocus: false,
                 decoration: const InputDecoration(labelText: 'Note type'),
@@ -696,6 +697,7 @@ class _VisualTabAnalysisReviewScreenState
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<int>(
+                key: const ValueKey('manual-note-string-input'),
                 initialValue: stringIndex,
                 decoration: const InputDecoration(
                   labelText: 'Source string (low to high)',

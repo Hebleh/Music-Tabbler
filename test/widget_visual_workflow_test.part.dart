@@ -176,7 +176,7 @@ void _registerVisualWorkflowTests() {
     },
   );
 
-  testWidgets('draw missing token opens the editor from one canvas tap', (
+  testWidgets('add note opens the manual editor from a canvas placement', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 900);
@@ -187,7 +187,19 @@ void _registerVisualWorkflowTests() {
     final previewDirectory = Directory.systemTemp.createTempSync(
       'analysis-guide-preview-',
     );
-    addTearDown(() => previewDirectory.deleteSync(recursive: true));
+    addTearDown(() async {
+      imageCache.clear();
+      imageCache.clearLiveImages();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (previewDirectory.existsSync()) {
+        try {
+          previewDirectory.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Windows can retain the decoded test image until the test isolate
+          // releases its final handle. A later system-temp cleanup is safe.
+        }
+      }
+    });
     final preview = File('${previewDirectory.path}/preview.png')
       ..writeAsBytesSync(
         base64Decode(
@@ -195,7 +207,7 @@ void _registerVisualWorkflowTests() {
         ),
       );
     final library = _FakeLibrary(analysisAssetPath: preview.path);
-    final analyzer = _DelayedThirdVisualTabAnalyzer(library);
+    final analyzer = _RecordingVisualTabAnalyzer(library);
     var parentUndoCount = 0;
     await tester.pumpWidget(
       MaterialApp(
@@ -221,20 +233,6 @@ void _registerVisualWorkflowTests() {
                         pixelWidth: 400,
                         pixelHeight: 100,
                       ),
-                      VisualStrip(
-                        id: 'tap-row-b',
-                        assetHash: 'missing-preview-b',
-                        assetExtension: 'png',
-                        pixelWidth: 400,
-                        pixelHeight: 100,
-                      ),
-                      VisualStrip(
-                        id: 'tap-row-c',
-                        assetHash: 'missing-preview-c',
-                        assetExtension: 'png',
-                        pixelWidth: 400,
-                        pixelHeight: 100,
-                      ),
                     ],
                     sourceStringCount: 4,
                   ),
@@ -255,52 +253,53 @@ void _registerVisualWorkflowTests() {
       () => Future<void>.delayed(const Duration(seconds: 1)),
     );
     await tester.pump();
-    await tester.tap(find.text('Draw missing token'));
+    final addNoteToggle = find.byKey(const ValueKey('add-manual-note'));
+    await tester.tap(addNoteToggle);
+    for (var index = 0; index < 4; index += 1) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(tester.widget<FilterChip>(addNoteToggle).selected, isTrue);
+    final drawSurface = find.byType(VisualAnalysisCanvas).first;
+    tester
+        .widget<VisualAnalysisCanvas>(drawSurface)
+        .onAddNote(const Offset(0.5, 0.6));
     await tester.pump();
-    final drawSurface = find.byKey(
-      const ValueKey('analysis-draw-surface-tap-row-b'),
+
+    expect(find.widgetWithText(AlertDialog, 'Add note'), findsOneWidget);
+    expect(find.text('Note type'), findsOneWidget);
+    expect(find.text('Source string (low to high)'), findsOneWidget);
+    expect(
+      tester
+          .widget<DropdownButtonFormField<int>>(
+            find.byKey(const ValueKey('manual-note-string-input')),
+          )
+          .initialValue,
+      1,
     );
-    final drawBounds = tester.getRect(drawSurface);
-    await tester.tapAt(
-      Offset(drawBounds.center.dx, drawBounds.top + drawBounds.height * 0.6),
+
+    await tester.enterText(
+      find.byKey(const ValueKey('manual-fret-input')),
+      '7',
     );
-    await tester.pump();
-
-    expect(find.text('Review detected token'), findsOneWidget);
-
-    expect(find.text('String 2 (low to high)'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextFormField).first, '7');
-    await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Review detected token'), findsNothing);
+    expect(find.text('Edit manual note'), findsNothing);
     expect(find.text('7'), findsWidgets);
-    expect(find.text('fret · string 2'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('analysis-string-guide-tap-row-b')),
-      findsOneWidget,
-    );
-
+    expect(find.text('manual · fret · string 2'), findsOneWidget);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.keyZ);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.keyZ);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
     expect(parentUndoCount, 0);
-    expect(find.text('fret · string 2'), findsNothing);
-    expect(
-      find.byKey(const ValueKey('analysis-string-guide-tap-row-b')),
-      findsNothing,
-    );
-
-    await tester.tap(find.text('Draw missing token'));
+    expect(find.text('manual · fret · string 2'), findsNothing);
+    // Add mode is intentionally sticky until toggled off or Escape is pressed.
+    tester
+        .widget<VisualAnalysisCanvas>(drawSurface)
+        .onAddNote(const Offset(0.5, 0.6));
     await tester.pump();
-    await tester.tapAt(
-      Offset(drawBounds.center.dx, drawBounds.top + drawBounds.height * 0.6),
-    );
-    await tester.pump();
-    expect(find.text('Review detected token'), findsOneWidget);
+    expect(find.text('Add note'), findsWidgets);
 
     await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
     await tester.pump();

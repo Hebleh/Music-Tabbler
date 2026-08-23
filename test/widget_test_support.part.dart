@@ -380,26 +380,6 @@ class _RecordingVisualTabAnalyzer extends VisualTabAnalysisService {
   }
 }
 
-class _DelayedThirdVisualTabAnalyzer extends _RecordingVisualTabAnalyzer {
-  _DelayedThirdVisualTabAnalyzer(super.library);
-
-  @override
-  Future<VisualTabAnalysis> analyze(
-    VisualStrip strip, {
-    required int sourceStringCount,
-    bool preferPositionedPdf = true,
-  }) async {
-    if (strip.id == 'tap-row-c') {
-      await Future<void>.delayed(const Duration(seconds: 2));
-    }
-    return super.analyze(
-      strip,
-      sourceStringCount: sourceStringCount,
-      preferPositionedPdf: preferPositionedPdf,
-    );
-  }
-}
-
 class _BlockedVisualTabAnalyzer extends _RecordingVisualTabAnalyzer {
   _BlockedVisualTabAnalyzer(super.library);
 
