@@ -548,6 +548,113 @@ void main() {
     expect(frets.map((token) => token.text), ['0']);
   });
 
+  test('mid-song mixed time-signature digits are not frets', () {
+    const geometry = VisualTabGeometry(
+      systems: [
+        VisualTabSystemGeometry(
+          rect: NormalizedRect(0.05, 0.2, 0.95, 0.8),
+          stringLines: [0.35, 0.45, 0.55, 0.65],
+          barLines: [0.10, 0.50, 0.90],
+        ),
+      ],
+    );
+    final result = buildVisualTabAnalysis(
+      stripId: 'mid-song-3-4',
+      sourceType: VisualTabSourceType.rasterOcr,
+      geometry: geometry,
+      candidates: const [
+        VisualTabTextCandidate(
+          text: '3',
+          rect: NormalizedRect(0.485, 0.30, 0.515, 0.42),
+        ),
+        VisualTabTextCandidate(
+          text: '4',
+          rect: NormalizedRect(0.485, 0.50, 0.515, 0.62),
+        ),
+        VisualTabTextCandidate(
+          text: '2',
+          rect: NormalizedRect(0.62, 0.62, 0.65, 0.68),
+        ),
+      ],
+    );
+
+    expect(result.systems.single.tokens.map((token) => token.text), ['2']);
+    expect(result.unresolvedReviewCount, 0);
+  });
+
+  test('ordinary stacked frets near a bar remain reviewable notes', () {
+    const geometry = VisualTabGeometry(
+      systems: [
+        VisualTabSystemGeometry(
+          rect: NormalizedRect(0.05, 0.2, 0.95, 0.8),
+          stringLines: [0.35, 0.45, 0.55, 0.65],
+          barLines: [0.10, 0.50, 0.90],
+        ),
+      ],
+    );
+    final result = buildVisualTabAnalysis(
+      stripId: 'mid-song-chord',
+      sourceType: VisualTabSourceType.rasterOcr,
+      geometry: geometry,
+      candidates: const [
+        VisualTabTextCandidate(
+          text: '3',
+          rect: NormalizedRect(0.505, 0.43, 0.525, 0.47),
+        ),
+        VisualTabTextCandidate(
+          text: '4',
+          rect: NormalizedRect(0.505, 0.53, 0.525, 0.57),
+        ),
+      ],
+    );
+
+    expect(result.systems.single.tokens.map((token) => token.text), ['3', '4']);
+  });
+
+  test('hammer-on endpoints touching a connector remain fret tokens', () {
+    const connector = NormalizedRect(0.43, 0.315, 0.58, 0.455);
+    const geometry = VisualTabGeometry(
+      systems: [
+        VisualTabSystemGeometry(
+          rect: NormalizedRect(0.05, 0.20, 0.95, 0.80),
+          stringLines: [0.35, 0.45, 0.55, 0.65],
+          barLines: [0.10, 0.70, 0.90],
+          connectedNotationRisks: [
+            VisualConnectedNotationRisk(
+              id: 'hammer-on-connector',
+              rect: connector,
+              gapIndex: 0,
+            ),
+          ],
+        ),
+      ],
+    );
+    final result = buildVisualTabAnalysis(
+      stripId: 'hammer-on',
+      sourceType: VisualTabSourceType.rasterOcr,
+      geometry: geometry,
+      candidates: const [
+        VisualTabTextCandidate(
+          text: '2',
+          rect: NormalizedRect(0.435, 0.335, 0.455, 0.365),
+        ),
+        VisualTabTextCandidate(
+          text: '4',
+          rect: NormalizedRect(0.555, 0.335, 0.575, 0.365),
+        ),
+      ],
+    );
+
+    final tokens = result.systems.single.tokens;
+    expect(tokens.map((token) => token.text), ['2', '4']);
+    expect(
+      tokens.every((token) => token.kind == VisualTabTokenKind.fret),
+      true,
+    );
+    expect(tokens.every((token) => token.enabled), true);
+    expect(tokens.every((token) => token.stringIndex == 3), true);
+  });
+
   test('ambiguous stacked time-signature digits are still ignored', () {
     const signatureTop = NormalizedRect(0.09, 0.31, 0.11, 0.39);
     const signatureBottom = NormalizedRect(0.09, 0.51, 0.11, 0.59);
@@ -923,10 +1030,61 @@ void main() {
     expect(result.enabledFretTokenCount, greaterThanOrEqualTo(1));
   });
 
+  test(
+    'prepared raster OCR splits a large chart into bounded sheets',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'music_tabbler_batched_raster_analysis_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final image = img.decodePng(
+        _tabFixture(
+          background: img.ColorRgb8(255, 255, 255),
+          foreground: img.ColorRgb8(0, 0, 0),
+        ),
+      )!;
+      for (var index = 0; index < 16; index += 1) {
+        img.drawString(
+          image,
+          '7',
+          font: img.arial14,
+          x: 35 + index * 34,
+          y: 52,
+          color: img.ColorRgb8(0, 0, 0),
+        );
+      }
+      await File(
+        '${directory.path}${Platform.pathSeparator}strip.png',
+      ).writeAsBytes(img.encodePng(image));
+      final recognition = _PreparedCountingTextRecognition();
+      final service = VisualTabAnalysisService(
+        library: _AnalysisLibrary(directory.path),
+        textRecognition: recognition,
+      );
+
+      final result = await service.analyze(
+        const VisualStrip(
+          id: 'strip',
+          assetHash: 'strip',
+          assetExtension: 'png',
+          pixelWidth: 600,
+          pixelHeight: 240,
+        ),
+        sourceStringCount: 4,
+        preferPositionedPdf: false,
+      );
+
+      expect(result.enabledFretTokenCount, greaterThanOrEqualTo(13));
+      expect(recognition.preparedCallCount, greaterThanOrEqualTo(2));
+    },
+  );
+
   test('Songsterr open-string glyph is not promoted to fret eight', () {
     final glyphBytes = base64Decode(_songsterrZeroGlyph);
 
     expect(correctVisualTabRasterZeroEight('8', glyphBytes), '0');
+    expect(correctVisualTabRasterZeroEight('6', glyphBytes), '0');
+    expect(correctVisualTabRasterZeroEight('9', glyphBytes), '0');
     expect(correctVisualTabRasterZeroEight('7', glyphBytes), '7');
   });
 
@@ -1290,6 +1448,83 @@ void main() {
     expect(frets.map((token) => token.text), ['1', '(1)', '1']);
   });
 
+  test('parenthesized sustain label follows its preceding fret', () {
+    const geometry = VisualTabGeometry(
+      systems: [
+        VisualTabSystemGeometry(
+          rect: NormalizedRect(0, 0.2, 1, 0.8),
+          stringLines: [0.35, 0.45, 0.55, 0.65],
+          barLines: [0.05, 0.50, 0.95],
+        ),
+      ],
+    );
+    final result = buildVisualTabAnalysis(
+      stripId: 'correct-sustain-label',
+      sourceType: VisualTabSourceType.rasterOcr,
+      geometry: geometry,
+      candidates: const [
+        VisualTabTextCandidate(
+          text: '0',
+          rect: NormalizedRect(0.38, 0.42, 0.40, 0.48),
+          confidence: 0.90,
+        ),
+        VisualTabTextCandidate(
+          text: '(3)',
+          rect: NormalizedRect(0.46, 0.41, 0.50, 0.49),
+          confidence: 0.72,
+        ),
+      ],
+    );
+
+    expect(
+      result.systems.single.tokens
+          .where((token) => token.enabled && token.isFretLike)
+          .map((token) => token.text),
+      ['0', '(0)'],
+    );
+  });
+
+  test('duplicate neighboring glyphs infer one middle-string sustain', () {
+    const geometry = VisualTabGeometry(
+      systems: [
+        VisualTabSystemGeometry(
+          rect: NormalizedRect(0, 0.2, 1, 0.8),
+          stringLines: [0.35, 0.45, 0.55, 0.65],
+          barLines: [0.05, 0.50, 0.95],
+        ),
+      ],
+    );
+    final result = buildVisualTabAnalysis(
+      stripId: 'bracketed-sustain',
+      sourceType: VisualTabSourceType.rasterOcr,
+      geometry: geometry,
+      candidates: const [
+        VisualTabTextCandidate(
+          text: '0',
+          rect: NormalizedRect(0.38, 0.42, 0.40, 0.48),
+          confidence: 0.90,
+        ),
+        VisualTabTextCandidate(
+          text: '11',
+          rect: NormalizedRect(0.46, 0.32, 0.49, 0.39),
+          confidence: 0.74,
+        ),
+        VisualTabTextCandidate(
+          text: '11',
+          rect: NormalizedRect(0.46, 0.51, 0.49, 0.58),
+          confidence: 0.74,
+        ),
+      ],
+    );
+
+    final frets = result.systems.single.tokens
+        .where((token) => token.enabled && token.isFretLike)
+        .toList();
+    expect(frets.map((token) => token.text), ['0', '(0)']);
+    expect(frets.last.stringIndex, 2);
+    expect(frets.last.sourceGlyphMatchesToken, isFalse);
+  });
+
   test('reported slide-adjacent fret remains enabled', () async {
     final directory = await Directory.systemTemp.createTemp(
       'music_tabbler_slide_adjacent_fret_',
@@ -1488,6 +1723,85 @@ void main() {
             )
             .join(' | '),
       );
+    },
+  );
+
+  test(
+    'compact four-string staff preserves distinct 0 9 and 12 glyphs',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'music_tabbler_compact_bass_staff_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final source = img.Image(width: 2412, height: 364);
+      img.fill(source, color: img.ColorRgb8(255, 255, 255));
+      const lines = [140, 176, 212, 248];
+      for (final y in lines) {
+        img.drawLine(
+          source,
+          x1: 40,
+          y1: y,
+          x2: 2360,
+          y2: y,
+          color: img.ColorRgb8(0, 0, 0),
+        );
+      }
+      for (final x in [40, 800, 1600, 2360]) {
+        img.drawLine(
+          source,
+          x1: x,
+          y1: lines.first,
+          x2: x,
+          y2: lines.last,
+          color: img.ColorRgb8(0, 0, 0),
+        );
+      }
+      for (final (value, x) in [
+        ('0', 240),
+        ('12', 600),
+        ('9', 1200),
+        ('5', 1800),
+      ]) {
+        img.drawString(
+          source,
+          value,
+          font: img.arial48,
+          x: x,
+          y: lines.last - 24,
+          color: img.ColorRgb8(0, 0, 0),
+        );
+      }
+      final image = img.copyResize(
+        source,
+        width: 1206,
+        height: 182,
+        interpolation: img.Interpolation.cubic,
+      );
+      await File(
+        '${directory.path}${Platform.pathSeparator}strip.png',
+      ).writeAsBytes(img.encodePng(image));
+      final service = VisualTabAnalysisService(
+        library: _AnalysisLibrary(directory.path),
+        textRecognition: _PreparedCountingTextRecognition(),
+      );
+      final result = await service.analyze(
+        const VisualStrip(
+          id: 'strip',
+          assetHash: 'strip',
+          assetExtension: 'png',
+          pixelWidth: 1206,
+          pixelHeight: 182,
+        ),
+        sourceStringCount: 4,
+        preferPositionedPdf: false,
+      );
+      final lowStringLabels = result.systems
+          .expand((system) => system.tokens)
+          .where((token) => token.enabled && token.stringIndex == 0)
+          .map((token) => token.text)
+          .toList();
+
+      expect(lowStringLabels, containsAll(['0', '12', '9', '5']));
     },
   );
 }

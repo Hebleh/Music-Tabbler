@@ -86,11 +86,12 @@ class HorizontalRowDetector {
     final outerRight = rights.last
         .clamp(medianRight, medianRight + maximumInkExpansion)
         .toDouble();
-    // The staff-band bounds already include the complete outer ink. Cross-row
-    // sustain hooks can meet either outermost detected pixel, so retain a
-    // small safety edge on both sides without restoring page-width gutters.
-    final leftPadding = 8 / image.width;
-    final rightPadding = 8 / image.width;
+    // The staff-band bounds already include the complete outer ink, including
+    // nearby sustain hooks admitted by [maximumInkExpansion]. Keep only an
+    // anti-aliasing edge here. The former eight-pixel pad was visible as a
+    // repeated blank gutter on tightly cropped Songsterr rows.
+    final leftPadding = 2 / image.width;
+    final rightPadding = 2 / image.width;
     final masterLeft = (outerLeft - leftPadding)
         .clamp(sourceRect.left, sourceRect.right - 0.02)
         .toDouble();

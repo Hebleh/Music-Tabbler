@@ -530,21 +530,19 @@ void main() {
     expect(proposal.rows, hasLength(3));
     expect(
       proposal.masterLeft * source.width,
-      lessThanOrEqualTo(60.01),
+      inInclusiveRange(64, 67),
       reason:
-          'A cross-row sustain needs an eight-pixel left safety edge so its '
-          'anti-aliased hook is not clipped.',
+          'The cross-row sustain must survive with only a two-pixel '
+          'anti-aliasing edge.',
     );
-    expect(proposal.masterRight * source.width, inInclusiveRange(909, 912));
+    expect(proposal.masterRight * source.width, inInclusiveRange(903, 906));
     expect(
       proposal.rows.every(
         (row) =>
-            row.right * source.width >= 909 && row.right * source.width <= 912,
+            row.right * source.width >= 903 && row.right * source.width <= 906,
       ),
       isTrue,
-      reason:
-          'The final bar line and a cross-row sustain hook need a minimal '
-          'right safety edge.',
+      reason: 'The final bar line needs only a minimal anti-aliasing edge.',
     );
   });
 
@@ -585,8 +583,8 @@ void main() {
     );
 
     expect(proposal.rows, hasLength(3));
-    expect(proposal.masterLeft * source.width, inInclusiveRange(80, 100));
-    expect(proposal.masterRight * source.width, inInclusiveRange(900, 920));
+    expect(proposal.masterLeft * source.width, inInclusiveRange(90, 102));
+    expect(proposal.masterRight * source.width, inInclusiveRange(900, 908));
   });
 
   test('stage density refuses an unprepared portrait page', () {

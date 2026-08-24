@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -237,7 +238,7 @@ class VisualTabAnalysisService implements VisualTabAnalyzer {
         geometry: geometry,
         deskewed: deskewed,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
       // Android's on-device OCR can be temporarily unavailable (for example,
       // while its native model is absent). Keep the deterministic geometry and
       // any positioned-PDF candidates so review can continue with Add note.
@@ -245,6 +246,12 @@ class VisualTabAnalysisService implements VisualTabAnalyzer {
       // error or discard manual correction capability.
       rasterCandidates = const [];
       rasterOcrUnavailable = true;
+      developer.log(
+        'Visual tab raster recognition failed for strip ${strip.id}.',
+        name: 'music_tabbler.visual_tab_analysis',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
     var positionedCandidates = const <VisualTabTextCandidate>[];
     if (!deskewed &&
@@ -691,71 +698,83 @@ Future<MetadataSuggestion> _recognizeTabGlyphCandidates(
   // adjacent fret tiles into a single text region. The former six-column
   // sheet often read `12 9 9 9 9 5 5` as only a few regions, then mapped each
   // combined region back to one tile and silently lost the other notes.
-  const columns = 1;
   const tileWidth = 128;
   const tileHeight = 96;
   const glyphExtent = 64;
-  final rows = (candidates.length / columns).ceil();
-  final sheet = img.Image(
-    width: columns * tileWidth,
-    height: rows * tileHeight,
-  );
-  img.fill(sheet, color: img.ColorRgb8(255, 255, 255));
-  for (var index = 0; index < candidates.length; index += 1) {
-    final candidate = candidates[index];
-    final scale = math.min(
-      glyphExtent / math.max(1, candidate.image.width),
-      glyphExtent / math.max(1, candidate.image.height),
-    );
-    final width = math.max(1, (candidate.image.width * scale).round());
-    final height = math.max(1, (candidate.image.height * scale).round());
-    final glyph = img.copyResize(
-      candidate.image,
-      width: width,
-      height: height,
-      // Cubic enlargement gives the native OCR engine continuous curves.
-      // Nearest-neighbour magnified the two-pixel staff-line cut into a large
-      // blocky notch, which made the Songsterr 9 glyph look like a 7.
-      interpolation: img.Interpolation.cubic,
-    );
-    final column = index % columns;
-    final row = index ~/ columns;
-    img.compositeImage(
-      sheet,
-      glyph,
-      dstX: column * tileWidth + (tileWidth - width) ~/ 2,
-      dstY: row * tileHeight + (tileHeight - height) ~/ 2,
-      blend: img.BlendMode.direct,
-    );
-  }
   final regions = <RecognizedTextRegion>[];
   final nativeLabels = <int, ({String label, double confidence})>{};
-  try {
-    final recognized = await recognizer.recognizePreparedImage(
-      Uint8List.fromList(img.encodePng(sheet, level: 2)),
+  // ML Kit and some Windows OCR engines reject or under-read very tall images.
+  // Keep each prepared sheet bounded so one large chart cannot disable native
+  // recognition for every row. A failed batch is isolated; deterministic
+  // classification below still runs for all candidates.
+  const maximumTilesPerNativeSheet = 12;
+  for (
+    var batchStart = 0;
+    batchStart < candidates.length;
+    batchStart += maximumTilesPerNativeSheet
+  ) {
+    final batchEnd = math.min(
+      candidates.length,
+      batchStart + maximumTilesPerNativeSheet,
     );
-    for (final region in recognized.regions) {
-      final centerX = (region.rect.left + region.rect.right) / 2;
-      final centerY = (region.rect.top + region.rect.bottom) / 2;
-      final column = (centerX * columns).floor().clamp(0, columns - 1);
-      final row = (centerY * rows).floor().clamp(0, rows - 1);
-      final index = row * columns + column;
-      if (index >= candidates.length || nativeLabels.containsKey(index)) {
-        continue;
-      }
-      final match = RegExp(
-        r'\(\d{1,2}\)|\d{1,2}|[xX]',
-      ).firstMatch(region.text.trim());
-      if (match == null) continue;
-      nativeLabels[index] = (
-        label: match.group(0)!,
-        confidence: region.confidence,
+    final batchLength = batchEnd - batchStart;
+    final sheet = img.Image(width: tileWidth, height: batchLength * tileHeight);
+    img.fill(sheet, color: img.ColorRgb8(255, 255, 255));
+    for (var localIndex = 0; localIndex < batchLength; localIndex += 1) {
+      final candidate = candidates[batchStart + localIndex];
+      final scale = math.min(
+        glyphExtent / math.max(1, candidate.image.width),
+        glyphExtent / math.max(1, candidate.image.height),
+      );
+      final width = math.max(1, (candidate.image.width * scale).round());
+      final height = math.max(1, (candidate.image.height * scale).round());
+      final glyph = img.copyResize(
+        candidate.image,
+        width: width,
+        height: height,
+        // Cubic enlargement gives the native OCR engine continuous curves.
+        // Nearest-neighbour magnified the two-pixel staff-line cut into a large
+        // blocky notch, which made the Songsterr 9 glyph look like a 7.
+        interpolation: img.Interpolation.cubic,
+      );
+      img.compositeImage(
+        sheet,
+        glyph,
+        dstX: (tileWidth - width) ~/ 2,
+        dstY: localIndex * tileHeight + (tileHeight - height) ~/ 2,
+        blend: img.BlendMode.direct,
       );
     }
-  } catch (_) {
-    // Native OCR is supplementary. The deterministic classifier below must
-    // remain available on Android when ML Kit is unavailable or rejects one
-    // prepared sheet.
+    try {
+      final recognized = await recognizer.recognizePreparedImage(
+        Uint8List.fromList(img.encodePng(sheet, level: 2)),
+      );
+      for (final region in recognized.regions) {
+        final centerY = (region.rect.top + region.rect.bottom) / 2;
+        final localIndex = (centerY * batchLength).floor().clamp(
+          0,
+          batchLength - 1,
+        );
+        final candidateIndex = batchStart + localIndex;
+        if (nativeLabels.containsKey(candidateIndex)) continue;
+        final match = RegExp(
+          r'\(\d{1,2}\)|\d{1,2}|[xX]',
+        ).firstMatch(region.text.trim());
+        if (match == null) continue;
+        nativeLabels[candidateIndex] = (
+          label: match.group(0)!,
+          confidence: region.confidence,
+        );
+      }
+    } catch (error, stackTrace) {
+      developer.log(
+        'Native raster OCR batch ${batchStart ~/ maximumTilesPerNativeSheet + 1} '
+        'failed for candidates $batchStart-${batchEnd - 1}.',
+        name: 'music_tabbler.visual_tab_analysis',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   final rawClassifications = <({String label, double confidence})?>[
@@ -863,6 +882,12 @@ List<({String label, double confidence})?> _stabilizeRepeatedRasterGlyphs(
         var bestSimilarity = 0.0;
         final currentGlyph = normalized[index];
         if (currentGlyph == null) return current;
+        final connectorTrimmed = _reclassifyRasterGlyphWithoutConnectorTail(
+          candidates,
+          classifications,
+          index,
+        );
+        if (connectorTrimmed != null) return connectorTrimmed;
         for (var peerIndex = 0; peerIndex < candidates.length; peerIndex += 1) {
           if (peerIndex == index) continue;
           final peer = nativeLabels[peerIndex] ?? classifications[peerIndex];
@@ -1020,6 +1045,81 @@ List<({String label, double confidence})?> _stabilizeRepeatedRasterGlyphs(
         );
       }(),
   ];
+}
+
+({String label, double confidence})? _reclassifyRasterGlyphWithoutConnectorTail(
+  List<_RasterGlyphCandidate> candidates,
+  List<({String label, double confidence})?> classifications,
+  int index,
+) {
+  final current = classifications[index];
+  if (current == null ||
+      current.confidence >= 0.62 ||
+      !RegExp(r'^\d$').hasMatch(current.label)) {
+    return null;
+  }
+  final candidate = candidates[index];
+  final reliablePeers = <_RasterGlyphCandidate>[
+    for (var peerIndex = 0; peerIndex < candidates.length; peerIndex += 1)
+      if (peerIndex != index &&
+          candidates[peerIndex].lineIndex == candidate.lineIndex &&
+          classifications[peerIndex] != null &&
+          classifications[peerIndex]!.confidence >= 0.62 &&
+          RegExp(r'^\d$').hasMatch(classifications[peerIndex]!.label))
+        candidates[peerIndex],
+  ];
+  if (reliablePeers.length < 2) return null;
+  final heights = reliablePeers.map((peer) => peer.rect.height).toList()
+    ..sort();
+  final typicalHeight = heights[heights.length ~/ 2];
+  // Thin hammer/slide connectors can add only a few pixels above a compact
+  // Android-rendered fret glyph. Requiring an 8% height excess missed those
+  // endpoints even though their bottoms remain aligned with neighbouring
+  // notes. Four percent still requires the same-line, aligned-bottom peer
+  // evidence below, so ordinary short glyphs are not trimmed speculatively.
+  if (typicalHeight <= 0 || candidate.rect.height < typicalHeight * 1.04) {
+    return null;
+  }
+  final alignedBottomPeers = reliablePeers.where(
+    (peer) =>
+        (peer.rect.bottom - candidate.rect.bottom).abs() <=
+        typicalHeight * 0.18,
+  );
+  if (alignedBottomPeers.length < 2) return null;
+  final excessFraction =
+      ((candidate.rect.height - typicalHeight) / candidate.rect.height).clamp(
+        0.0,
+        0.32,
+      );
+  final trimRows = math.max(
+    1,
+    (candidate.image.height * excessFraction).ceil(),
+  );
+  if (trimRows >= candidate.image.height - 3) return null;
+  final trimmed = img.copyCrop(
+    candidate.image,
+    x: 0,
+    y: trimRows,
+    width: candidate.image.width,
+    height: candidate.image.height - trimRows,
+  );
+  final reclassified =
+      _classifySeparatedRasterDigits(trimmed) ??
+      _classifyNarrowRasterOne(trimmed) ??
+      _classifyRasterGlyph(trimmed);
+  if (reclassified == null || !RegExp(r'^\d$').hasMatch(reclassified.label)) {
+    return null;
+  }
+  if (reclassified.confidence < 0.45 ||
+      (reclassified.label == current.label &&
+          reclassified.confidence < 0.55 &&
+          reclassified.confidence <= current.confidence + 0.12)) {
+    return null;
+  }
+  return (
+    label: reclassified.label,
+    confidence: math.max(0.68, reclassified.confidence),
+  );
 }
 
 bool _rasterCandidatesAreColumnAligned(
@@ -1184,17 +1284,37 @@ List<_RasterGlyphCandidate> _detectRasterGlyphCandidates(
     top + 1,
     source.height,
   );
-  final image = img.copyCrop(
+  var image = img.copyCrop(
     source,
     x: left,
     y: top,
     width: right - left,
     height: bottom - top,
   );
+  final sourceSpacingPixels =
+      _medianSpacing(system.stringLines) * stripCrop.height * source.height;
+  // Imported Android PDF pages can be materially lower resolution than the
+  // desktop 320-dpi analysis render. At roughly 9-12 pixels per string gap,
+  // the lower loop of `9` and the centre opening of `0` collapse enough to
+  // match `8`, while the exact same row classifies correctly after a 2x
+  // enlargement. Upscale only this private analysis crop; normalized token
+  // geometry and the immutable source asset remain unchanged.
+  final shouldUpscaleCompactBassStaff =
+      system.stringLines.length <= 5 &&
+      sourceSpacingPixels >= 15 &&
+      sourceSpacingPixels < 20;
+  final analysisScale = shouldUpscaleCompactBassStaff ? 2 : 1;
+  if (analysisScale > 1) {
+    image = img.copyResize(
+      image,
+      width: image.width * analysisScale,
+      height: image.height * analysisScale,
+      interpolation: img.Interpolation.cubic,
+    );
+  }
   final background = _estimateBackgroundLuminance(image);
   final threshold = math.max(24.0, background < 110 ? 30.0 : 38.0);
-  final spacingPixels =
-      _medianSpacing(system.stringLines) * stripCrop.height * source.height;
+  final spacingPixels = sourceSpacingPixels * analysisScale;
   final halfBand = math.max(3, (spacingPixels * 0.58).round());
   // Keep thin ties/slides from joining a fret to the next note. Multi-digit
   // frets are joined explicitly after their individual ink components have
@@ -1484,7 +1604,7 @@ List<_RasterGlyphTemplate>? _rasterGlyphTemplates;
   final confidence = ((bestScore - 0.35) / 0.45 * 0.72 + margin * 2.2)
       .clamp(0.05, 0.98)
       .toDouble();
-  final correctedLabel = _correctRasterZeroEight(bestLabel, image);
+  final correctedLabel = _correctRasterClosedDigit(bestLabel, image);
   if (correctedLabel != bestLabel) {
     // The compact Songsterr zero is closer to the bundled Arial `8` template
     // than to Arial `0`, especially after the staff line has been removed.
@@ -1557,20 +1677,42 @@ bool _looksLikeVerticalRasterStem(img.Image image) {
 String correctVisualTabRasterZeroEight(String candidate, Uint8List glyphBytes) {
   final image = img.decodeImage(glyphBytes);
   if (image == null) throw const FormatException('Raster glyph is invalid.');
-  return _correctRasterZeroEight(candidate, img.bakeOrientation(image));
+  return _correctRasterClosedDigit(candidate, img.bakeOrientation(image));
 }
 
-String _correctRasterZeroEight(String candidate, img.Image image) =>
-    candidate == '8' && _countEnclosedRasterGlyphHoles(image) < 2
-    ? '0'
-    : candidate;
+String _correctRasterClosedDigit(String candidate, img.Image image) {
+  final holes = _enclosedRasterGlyphHoles(image);
+  if (candidate == '8' && holes.length < 2) return '0';
+  if (candidate != '6' && candidate != '9') return candidate;
+  if (holes.length != 1) return candidate;
+  final inkBounds = _rasterGlyphInkBounds(image);
+  if (inkBounds == null) return candidate;
+  final inkHeight = inkBounds.$4 - inkBounds.$2;
+  if (inkHeight <= 0) return candidate;
+  final hole = holes.single;
+  final holeCenter = ((hole.top + hole.bottom) / 2 - inkBounds.$2) / inkHeight;
+  final holeHeight = (hole.bottom - hole.top) / inkHeight;
+  // Songsterr's compact zero can be closer to a bundled 6 or 9 template after
+  // the tablature line is removed and repaired. Their one enclosed loop is a
+  // stable distinction: zero has a tall, vertically centred counter; 6 and 9
+  // keep a shorter counter in the lower or upper half respectively.
+  return holeCenter >= 0.42 && holeCenter <= 0.58 && holeHeight >= 0.42
+      ? '0'
+      : candidate;
+}
+
+typedef _RasterGlyphHole = ({int left, int top, int right, int bottom});
 
 int _countEnclosedRasterGlyphHoles(img.Image image) {
+  return _enclosedRasterGlyphHoles(image).length;
+}
+
+List<_RasterGlyphHole> _enclosedRasterGlyphHoles(img.Image image) {
   final bounds = _rasterGlyphInkBounds(image);
-  if (bounds == null) return 0;
+  if (bounds == null) return const [];
   final width = bounds.$3 - bounds.$1;
   final height = bounds.$4 - bounds.$2;
-  if (width < 3 || height < 3) return 0;
+  if (width < 3 || height < 3) return const [];
   final background = List<bool>.filled(width * height, false);
   for (var y = 0; y < height; y += 1) {
     for (var x = 0; x < width; x += 1) {
@@ -1579,18 +1721,26 @@ int _countEnclosedRasterGlyphHoles(img.Image image) {
     }
   }
   final visited = List<bool>.filled(background.length, false);
-  var holes = 0;
+  final holes = <_RasterGlyphHole>[];
   for (var start = 0; start < background.length; start += 1) {
     if (!background[start] || visited[start]) continue;
     final queue = <int>[start];
     visited[start] = true;
     var touchesEdge = false;
     var area = 0;
+    var left = width;
+    var top = height;
+    var right = 0;
+    var bottom = 0;
     for (var cursor = 0; cursor < queue.length; cursor += 1) {
       final current = queue[cursor];
       final x = current % width;
       final y = current ~/ width;
       area += 1;
+      left = math.min(left, x);
+      top = math.min(top, y);
+      right = math.max(right, x + 1);
+      bottom = math.max(bottom, y + 1);
       touchesEdge =
           touchesEdge || x == 0 || y == 0 || x == width - 1 || y == height - 1;
       for (final (dx, dy) in const [(1, 0), (-1, 0), (0, 1), (0, -1)]) {
@@ -1605,7 +1755,14 @@ int _countEnclosedRasterGlyphHoles(img.Image image) {
         queue.add(next);
       }
     }
-    if (!touchesEdge && area >= 2) holes += 1;
+    if (!touchesEdge && area >= 2) {
+      holes.add((
+        left: bounds.$1 + left,
+        top: bounds.$2 + top,
+        right: bounds.$1 + right,
+        bottom: bounds.$2 + bottom,
+      ));
+    }
   }
   return holes;
 }
@@ -2029,6 +2186,17 @@ VisualTabAnalysis buildVisualTabAnalysis({
         (risk) => _candidateRectsOverlap(risk.rect, token.rect),
       );
       if (!overlapsConnectedNotation) continue;
+      // A hammer-on, pull-off, slide, or tie legitimately touches the fret at
+      // either endpoint. Do not disable that musical token merely because the
+      // connector also crosses a possible string-insertion seam. Only a
+      // materially oversized single raster glyph is structural-looking enough
+      // to withhold as ambiguous; opening and mid-song time signatures are
+      // removed by their dedicated geometry pass below.
+      final oversizedStructuralGlyph =
+          sourceType == VisualTabSourceType.rasterOcr &&
+          RegExp(r'^\d$').hasMatch(token.text) &&
+          token.rect.height >= spacing * 1.35;
+      if (!oversizedStructuralGlyph) continue;
       tokens[index] = token.copyWith(
         kind: VisualTabTokenKind.ambiguous,
         clearStringIndex: true,
@@ -2036,36 +2204,39 @@ VisualTabAnalysis buildVisualTabAnalysis({
       );
     }
     if (detected.barLines.isNotEmpty) {
-      final firstBar = detected.barLines.first;
       final timeSignatureIndexes = <int>{};
       for (var index = 0; index < tokens.length; index += 1) {
         final token = tokens[index];
-        // Opening time-signature digits can already have been downgraded to
-        // ambiguous when their large glyph overlaps a connected-notation
-        // proposal. They are still structural ink, not reviewable frets, so
-        // classify this geometry from every single-digit token rather than
-        // only from tokens that remain fret-like.
+        // Time-signature digits can already have been downgraded to ambiguous
+        // when their large glyph overlaps a connected-notation proposal. They
+        // are structural ink, not reviewable frets, so classify the geometry
+        // from every single-digit token and at every bar line. Mid-song 3/4
+        // changes deliberately use different upper and lower digits.
         if (!RegExp(r'^\d$').hasMatch(token.text)) {
           continue;
         }
         final centerX = (token.rect.left + token.rect.right) / 2;
-        final nextBar = detected.barLines.length > 1
-            ? detected.barLines[1]
-            : firstBar + spacing * 8;
+        final largeGlyph = token.rect.height >= spacing * 1.05;
+        final openingSizedGlyph = token.rect.height >= spacing * 0.85;
+        final firstBar = detected.barLines.first;
         final directNearOpening =
             centerX <= detected.rect.left + spacing * 0.85 ||
             (centerX - firstBar).abs() <= spacing * 0.25;
-        final largeGlyph = token.rect.height >= spacing * 1.05;
-        final inOpeningSignatureZone =
-            largeGlyph &&
-            centerX >= firstBar - spacing &&
-            centerX <= firstBar + (nextBar - firstBar) * 0.45;
-        final nearOpening = directNearOpening || inOpeningSignatureZone;
-        if (!nearOpening) continue;
+        final nearBar = detected.barLines.any(
+          (bar) => (bar - centerX).abs() <= spacing * 4.0,
+        );
+        if (!directNearOpening && (!largeGlyph || !nearBar)) continue;
+        // Staff-line removal can split one large opening digit into a complete
+        // glyph plus a narrow remnant. The remnant has no stacked peer, but it
+        // is still structural when its height and opening position match the
+        // time-signature column. Ordinary fret digits are materially shorter.
+        if (directNearOpening && openingSizedGlyph) {
+          timeSignatureIndexes.add(index);
+          continue;
+        }
         final isStackedTimeSignature = tokens.any((other) {
           if (identical(other, token) ||
-              !RegExp(r'^\d$').hasMatch(other.text) ||
-              other.text != token.text) {
+              !RegExp(r'^\d$').hasMatch(other.text)) {
             return false;
           }
           final otherCenterX = (other.rect.left + other.rect.right) / 2;
@@ -2074,7 +2245,7 @@ VisualTabAnalysis buildVisualTabAnalysis({
           final peerIsLarge = other.rect.height >= spacing * 1.05;
           final verticalDistance = (otherCenterY - centerY).abs();
           return (directNearOpening || peerIsLarge) &&
-              (otherCenterX - centerX).abs() <= spacing * 0.20 &&
+              (otherCenterX - centerX).abs() <= spacing * 0.5 &&
               (verticalDistance >= spacing * 1.25 ||
                   (largeGlyph &&
                       peerIsLarge &&
@@ -2130,6 +2301,10 @@ void _removeRasterSustainNotationFragments(
   List<VisualTabToken> tokens, {
   required double stringSpacing,
 }) {
+  _inferRasterSustainsFromBracketedDuplicates(
+    tokens,
+    stringSpacing: stringSpacing,
+  );
   final sustains = tokens
       .where(
         (token) =>
@@ -2202,6 +2377,14 @@ void _removeRasterSustainNotationFragments(
       }
     }
     if (anchor == null) continue;
+    final anchorBare = anchor.text.replaceAll(RegExp(r'[()]'), '');
+    final sustainIndex = tokens.indexWhere((token) => token.id == sustain.id);
+    if (sustainIndex >= 0 && RegExp(r'^\d{1,2}$').hasMatch(anchorBare)) {
+      tokens[sustainIndex] = sustain.copyWith(
+        text: '($anchorBare)',
+        confidence: math.max(0.72, sustain.confidence),
+      );
+    }
     final anchorCenterY = (anchor.rect.top + anchor.rect.bottom) / 2;
     final referenceCenterY = (anchorCenterY + sustainCenterY) / 2;
     final maximumNotationConfidence = math.min(
@@ -2221,6 +2404,98 @@ void _removeRasterSustainNotationFragments(
     }
   }
   tokens.removeWhere((token) => removedIds.contains(token.id));
+}
+
+void _inferRasterSustainsFromBracketedDuplicates(
+  List<VisualTabToken> tokens, {
+  required double stringSpacing,
+}) {
+  final removedIds = <String>{};
+  final inferred = <VisualTabToken>[];
+  for (var leftIndex = 0; leftIndex < tokens.length; leftIndex += 1) {
+    final left = tokens[leftIndex];
+    if (removedIds.contains(left.id) ||
+        !left.enabled ||
+        !left.isFretLike ||
+        left.stringIndex == null ||
+        left.text.startsWith('(') ||
+        !RegExp(r'^\d{2}$').hasMatch(left.text)) {
+      continue;
+    }
+    for (
+      var rightIndex = leftIndex + 1;
+      rightIndex < tokens.length;
+      rightIndex += 1
+    ) {
+      final right = tokens[rightIndex];
+      if (removedIds.contains(right.id) ||
+          !right.enabled ||
+          !right.isFretLike ||
+          right.stringIndex == null ||
+          right.text != left.text ||
+          (right.stringIndex! - left.stringIndex!).abs() != 2) {
+        continue;
+      }
+      final horizontalOverlap = math.max(
+        0.0,
+        math.min(left.rect.right, right.rect.right) -
+            math.max(left.rect.left, right.rect.left),
+      );
+      final smallerWidth = math.min(left.rect.width, right.rect.width);
+      if (smallerWidth <= 0 || horizontalOverlap / smallerWidth < 0.75) {
+        continue;
+      }
+      final targetString = (left.stringIndex! + right.stringIndex!) ~/ 2;
+      final pairLeft = math.min(left.rect.left, right.rect.left);
+      final anchors =
+          tokens
+              .where(
+                (token) =>
+                    !removedIds.contains(token.id) &&
+                    token.enabled &&
+                    token.isFretLike &&
+                    token.stringIndex == targetString &&
+                    !token.text.startsWith('(') &&
+                    RegExp(r'^\d{1,2}$').hasMatch(token.text) &&
+                    token.rect.right <= pairLeft - 0.012 &&
+                    pairLeft - token.rect.right <= 0.16,
+              )
+              .toList()
+            ..sort((a, b) => b.rect.right.compareTo(a.rect.right));
+      if (anchors.isEmpty) continue;
+      final anchor = anchors.first;
+      final leftCenterY = (left.rect.top + left.rect.bottom) / 2;
+      final rightCenterY = (right.rect.top + right.rect.bottom) / 2;
+      final centerY = (leftCenterY + rightCenterY) / 2;
+      final height = math.max(left.rect.height, right.rect.height);
+      final rect = NormalizedRect(
+        math.min(left.rect.left, right.rect.left),
+        math.max(0, centerY - height / 2),
+        math.max(left.rect.right, right.rect.right),
+        math.min(1, centerY + height / 2),
+      ).clamp();
+      inferred.add(
+        VisualTabToken(
+          id: '${left.id}_sustain',
+          text: '(${anchor.text})',
+          rect: rect,
+          kind: VisualTabTokenKind.fret,
+          stringIndex: targetString,
+          confidence: math.max(
+            0.72,
+            math.min(left.confidence, right.confidence),
+          ),
+          sourceGlyphMatchesToken: false,
+        ),
+      );
+      removedIds.add(left.id);
+      removedIds.add(right.id);
+      break;
+    }
+  }
+  if (removedIds.isEmpty) return;
+  tokens.removeWhere((token) => removedIds.contains(token.id));
+  tokens.addAll(inferred);
 }
 
 VisualTabTokenKind classifyVisualTabToken(
@@ -2417,18 +2692,29 @@ VisualTabGeometry _detectVisualTabGeometryFromImage(
       connectedNotationRisks: rawConnectedNotationRisks,
       confidence: _spacingConfidence(lines),
     );
-    final openingSignatureRects = _detectOpeningSignatureRects(
-      _detectRasterGlyphCandidates(
-        image,
-        stripCrop: const NormalizedRect.full(),
-        system: provisionalSystem,
-      ),
-      connectedNotationRisks: rawConnectedNotationRisks,
-      barLines: normalizedBarLines,
-      stringSpacing: spacingPixels / image.width,
-      systemRect: normalizedRect,
-      stringCount: lines.length,
+    final rasterGlyphCandidates = _detectRasterGlyphCandidates(
+      image,
+      stripCrop: const NormalizedRect.full(),
+      system: provisionalSystem,
     );
+    final openingSignatureRects = <NormalizedRect>[
+      ..._detectOpeningSignatureRects(
+        rasterGlyphCandidates,
+        connectedNotationRisks: rawConnectedNotationRisks,
+        barLines: normalizedBarLines,
+        stringSpacing: spacingPixels / image.width,
+        systemRect: normalizedRect,
+        stringCount: lines.length,
+      ),
+      ..._detectMidSongSignatureRects(
+        rasterGlyphCandidates,
+        connectedNotationRisks: rawConnectedNotationRisks,
+        barLines: normalizedBarLines,
+        stringSpacing: spacingPixels / image.width,
+        systemRect: normalizedRect,
+        stringCount: lines.length,
+      ),
+    ];
     final connectedNotationRisks = rawConnectedNotationRisks
         .where(
           (risk) =>
@@ -2752,6 +3038,90 @@ bool _isOpeningSignatureX(double x, List<double> barLines, double spacing) {
   return x >= firstBar - spacing && x <= firstBar + (nextBar - firstBar) * 0.45;
 }
 
+List<NormalizedRect> _detectMidSongSignatureRects(
+  List<_RasterGlyphCandidate> candidates, {
+  required List<VisualConnectedNotationRisk> connectedNotationRisks,
+  required List<double> barLines,
+  required double stringSpacing,
+  required NormalizedRect systemRect,
+  required int stringCount,
+}) {
+  if (candidates.isEmpty ||
+      connectedNotationRisks.isEmpty ||
+      barLines.length < 2 ||
+      stringCount < 2) {
+    return const [];
+  }
+
+  final openingLimit = barLines.first + stringSpacing * 4;
+  final nearLaterBar =
+      candidates
+          .where((candidate) {
+            final centerX = (candidate.rect.left + candidate.rect.right) / 2;
+            if (centerX <= openingLimit) return false;
+            return barLines
+                .skip(1)
+                .any((bar) => (bar - centerX).abs() <= stringSpacing * 4);
+          })
+          .toList(growable: false)
+        ..sort((left, right) {
+          final leftCenter = (left.rect.left + left.rect.right) / 2;
+          final rightCenter = (right.rect.left + right.rect.right) / 2;
+          return leftCenter.compareTo(rightCenter);
+        });
+  if (nearLaterBar.isEmpty) return const [];
+
+  final columns = <List<_RasterGlyphCandidate>>[];
+  for (final candidate in nearLaterBar) {
+    final centerX = (candidate.rect.left + candidate.rect.right) / 2;
+    if (columns.isEmpty) {
+      columns.add([candidate]);
+      continue;
+    }
+    final previous = columns.last.last;
+    final previousCenter = (previous.rect.left + previous.rect.right) / 2;
+    if ((centerX - previousCenter).abs() <= stringSpacing * 0.75) {
+      columns.last.add(candidate);
+    } else {
+      columns.add([candidate]);
+    }
+  }
+
+  final signatures = <NormalizedRect>[];
+  for (final column in columns) {
+    final coveredStrings = column
+        .map((candidate) => candidate.lineIndex)
+        .toSet();
+    if (coveredStrings.length < 2) continue;
+    final left = column
+        .map((candidate) => candidate.rect.left)
+        .reduce(math.min);
+    final right = column
+        .map((candidate) => candidate.rect.right)
+        .reduce(math.max);
+    final centerX = (left + right) / 2;
+    final nearestLaterBarDistance = barLines
+        .skip(1)
+        .map((bar) => (bar - centerX).abs())
+        .reduce(math.min);
+    if (nearestLaterBarDistance > stringSpacing * 4) continue;
+    final intersectsPhysicalSeam = connectedNotationRisks.any((risk) {
+      final riskCenter = (risk.rect.left + risk.rect.right) / 2;
+      return (riskCenter - centerX).abs() <= stringSpacing * 1.5;
+    });
+    if (!intersectsPhysicalSeam) continue;
+    signatures.add(
+      _safeNormalizedRect(
+        left - stringSpacing * 0.55,
+        systemRect.top,
+        right + stringSpacing * 0.55,
+        systemRect.bottom,
+      ),
+    );
+  }
+  return signatures;
+}
+
 bool _isOpeningStructuralSeamRisk(
   VisualConnectedNotationRisk risk, {
   required List<double> barLines,
@@ -2766,8 +3136,7 @@ bool _isOpeningStructuralSeamRisk(
   final openingWidth = math.min(firstMeasureWidth * 0.28, stringSpacing * 4.5);
   final centerX = (risk.rect.left + risk.rect.right) / 2;
   final besideDetectedOpeningBar =
-      centerX >= firstBar - stringSpacing &&
-      centerX <= firstBar + openingWidth;
+      centerX >= firstBar - stringSpacing && centerX <= firstBar + openingWidth;
 
   // A large 4/4 glyph can obscure the left staff bar completely. In that
   // case `_detectBarLines` starts at the next measure boundary and the normal
@@ -2775,8 +3144,7 @@ bool _isOpeningStructuralSeamRisk(
   // deliberately narrow: the component must be in the first few string
   // spacings of the crop and materially precede the first detected bar.
   final beforeMissingOpeningBar =
-      centerX <= stringSpacing * 8 &&
-      firstBar - centerX >= stringSpacing * 3;
+      centerX <= stringSpacing * 8 && firstBar - centerX >= stringSpacing * 3;
   final openingArtifactBars = barLines
       .where((bar) => bar <= stringSpacing * 8)
       .length;
